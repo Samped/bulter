@@ -1,0 +1,25 @@
+{
+  "name": "@butler/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node ../../node_modules/tsx/dist/cli.mjs src/run.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@butler/arc": "*",
+    "@butler/core": "*",
+    "@butler/delegation": "*",
+    "@circle-fin/x402-batching": "file:../../.vendor/x402-batching.tgz",
+    "@x402/core": "file:../../.vendor/x402-core-2.16.0.tgz",
+    "@x402/evm": "file:../../.vendor/x402-evm-2.16.0.tgz",
+    "dotenv": "^16.4.5",
+    "viem": "file:../../.vendor/viem-2.52.2.tgz"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.3"
+  }
+}
