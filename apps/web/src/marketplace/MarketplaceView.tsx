@@ -1,0 +1,201 @@
+import { useCallback, useEffect, useState } from "react";
+import {
+  getAgentRegistry,
+  getMarketplaceAuction,
+  getMarketplaceAuctions,
+  getMarketplaceDeliverable,
+  type ReverseAuction,
+} from "../api.ts";
+import { IconPlus } from "../icons.tsx";
+import { AuctionPanel } from "./AuctionPanel.tsx";
+import {
+  CreateTaskFab,
+  CreateTaskModal,
+  payerResultToToast,
+  TaskCompletionToast,
+  type TaskCompletionToastState,
+} from "./CreateTaskModal.tsx";
+import { OpenRegistryPanel } from "./OpenRegistryPanel.tsx";
+
+type MarketplaceTab = "auctions" | "network";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForAuctionCompletion(
+  auctionId: string,
+  timeoutMs = 180_000
+): Promise<{ ok: boolean; jobId?: string; error?: string }> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const auction = await getMarketplaceAuction(auctionId);
+    if (auction.status === "completed" && auction.jobId) {
+      return { ok: true, jobId: auction.jobId };
+    }
+    if (auction.status === "cancelled") {
+      return { ok: false, error: "Auction was cancelled or payment failed" };
+    }
+    await sleep(3_000);
+  }
+  return { ok: false, error: "Timed out waiting for auction settlement" };
+}
+
+export function MarketplaceView({
+  onRunWorkflow: _onRunWorkflow,
+  workflowRunning: _workflowRunning,
+  onViewDeliverable,
+}: {
+  onRunWorkflow: (etfId: string, brief?: string) => Promise<void>;
+  workflowRunning: boolean;
+  onViewDeliverable?: (jobId: string) => void;
+}) {
+  const [tab, setTab] = useState<MarketplaceTab>("auctions");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [completionToast, setCompletionToast] = useState<TaskCompletionToastState | null>(null);
+  const [liveCount, setLiveCount] = useState(0);
+  const [agentCount, setAgentCount] = useState(0);
+  const [externalCount, setExternalCount] = useState(0);
+
+  const refreshStats = useCallback(async () => {
+    try {
+      const [auctions, registry] = await Promise.all([getMarketplaceAuctions(), getAgentRegistry()]);
+      setLiveCount(auctions.filter((a) => a.status === "open").length);
+      setAgentCount(registry.agents.length);
+      setExternalCount(registry.external);
+    } catch {
+      /* keep previous */
+    }
+  }, []);
+
+  const watchAuction = useCallback((auction: ReverseAuction) => {
+    setCompletionToast({
+      ok: false,
+      pending: true,
+      title: "Auction in progress",
+      brief: auction.brief,
+      meta: "Agents are bidding and settling…",
+    });
+    void waitForAuctionCompletion(auction.id).then(async (res) => {
+      if (res.ok && res.jobId) {
+        try {
+          const job = await getMarketplaceDeliverable(res.jobId);
+          setCompletionToast({
+            ok: true,
+            title: "Task complete",
+            brief: auction.brief,
+            jobId: res.jobId,
+            summary: job.summary,
+            meta: `${job.steps.filter((s) => s.status === "done").length} agents · $${job.totalUsdc}`,
+          });
+        } catch {
+          setCompletionToast({
+            ok: true,
+            title: "Task complete",
+            brief: auction.brief,
+            jobId: res.jobId,
+          });
+        }
+      } else {
+        setCompletionToast({
+          ok: false,
+          title: "Auction failed",
+          brief: auction.brief,
+          error: res.error ?? "Could not complete auction",
+        });
+      }
+      void refreshStats();
+    });
+  }, [refreshStats]);
+
+  useEffect(() => {
+    void refreshStats();
+    const id = setInterval(() => void refreshStats(), 8_000);
+    return () => clearInterval(id);
+  }, [refreshStats]);
+
+  return (
+    <div className="mp-page">
+      <header className="mp-hero">
+        <div className="mp-hero-copy">
+          <p className="mp-eyebrow">x402 · Arc testnet</p>
+          <h1 className="mp-title">Marketplace</h1>
+          <p className="mp-subtitle">
+            Post a task. Agents bid down every few seconds. Payer agent discovers, negotiates, and settles automatically.
+          </p>
+        </div>
+        <button type="button" className="btn accent mp-hero-cta" onClick={() => setCreateOpen(true)}>
+          <IconPlus size={18} />
+          <span>New task</span>
+        </button>
+      </header>
+
+      <div className="mp-stats" role="list">
+        <div className="mp-stat mp-stat-live" role="listitem">
+          <span className="mp-stat-value">{liveCount}</span>
+          <span className="mp-stat-label">Live auctions</span>
+        </div>
+        <div className="mp-stat" role="listitem">
+          <span className="mp-stat-value">{agentCount}</span>
+          <span className="mp-stat-label">Agents</span>
+        </div>
+        <div className="mp-stat mp-stat-open" role="listitem">
+          <span className="mp-stat-value">{externalCount}</span>
+          <span className="mp-stat-label">Open network</span>
+        </div>
+      </div>
+
+      <nav className="mp-tabs" aria-label="Marketplace sections">
+        <button
+          type="button"
+          className={`mp-tab ${tab === "auctions" ? "active" : ""}`}
+          onClick={() => setTab("auctions")}
+        >
+          Live auctions
+          {liveCount > 0 && <span className="mp-tab-badge">{liveCount}</span>}
+        </button>
+        <button
+          type="button"
+          className={`mp-tab ${tab === "network" ? "active" : ""}`}
+          onClick={() => setTab("network")}
+        >
+          Agent network
+        </button>
+      </nav>
+
+      <div className="mp-panel">
+        {tab === "auctions" ? (
+          <AuctionPanel embedded onStatsChange={refreshStats} onCreateTask={() => setCreateOpen(true)} />
+        ) : (
+          <OpenRegistryPanel onStatsChange={refreshStats} />
+        )}
+      </div>
+
+      <CreateTaskModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onPosted={(auction) => {
+          void refreshStats();
+          watchAuction(auction);
+        }}
+        onPayerComplete={(result) => {
+          setCompletionToast(payerResultToToast(result));
+          void refreshStats();
+        }}
+      />
+      {completionToast && (
+        <div className="mp-toast-wrap">
+          <TaskCompletionToast
+            toast={completionToast}
+            onDismiss={() => setCompletionToast(null)}
+            onViewLibrary={(jobId) => {
+              setCompletionToast(null);
+              onViewDeliverable?.(jobId);
+            }}
+          />
+        </div>
+      )}
+      <CreateTaskFab onClick={() => setCreateOpen(true)} />
+    </div>
+  );
+}
