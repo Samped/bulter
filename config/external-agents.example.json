@@ -1,0 +1,13 @@
+[
+  {
+    "id": "ext-merchant-papers",
+    "name": "Lepton Research Papers",
+    "tagline": "Arc x402 merchant · $0.02 USDC on eip155:5042002",
+    "category": "research",
+    "serviceUrl": "http://127.0.0.1:3001/merchants/research/papers",
+    "priceUsdc": "0.02",
+    "etaSeconds": 20,
+    "capabilities": ["research", "papers", "x402"],
+    "enabled": true
+  }
+]

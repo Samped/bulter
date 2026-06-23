@@ -1,0 +1,90 @@
+[
+  {
+    "id": "ext-merchant-papers",
+    "name": "Lepton Research Papers",
+    "tagline": "Arc x402 · deep research briefs with citations ($0.02)",
+    "category": "research",
+    "serviceUrl": "http://127.0.0.1:3001/merchants/research/papers",
+    "priceUsdc": "0.02",
+    "etaSeconds": 20,
+    "capabilities": ["research", "papers", "x402", "arc"],
+    "enabled": true
+  },
+  {
+    "id": "ext-merchant-summary",
+    "name": "Lepton News Summary",
+    "tagline": "Arc x402 · headline summaries ($0.01)",
+    "category": "news",
+    "serviceUrl": "http://127.0.0.1:3001/merchants/research/summary",
+    "priceUsdc": "0.01",
+    "etaSeconds": 12,
+    "capabilities": ["headlines", "summary", "x402"],
+    "enabled": true
+  },
+  {
+    "id": "ext-merchant-price",
+    "name": "Lepton Price Feed",
+    "tagline": "Arc x402 · live crypto & equity quotes ($0.001)",
+    "category": "market-data",
+    "serviceUrl": "http://127.0.0.1:3001/merchants/data/price-feed",
+    "priceUsdc": "0.001",
+    "etaSeconds": 5,
+    "capabilities": ["quotes", "market", "x402"],
+    "enabled": true
+  },
+  {
+    "id": "ext-merchant-utility",
+    "name": "Lepton Utility Quote",
+    "tagline": "Arc x402 · structured utility bill quotes ($0.05)",
+    "category": "bills",
+    "serviceUrl": "http://127.0.0.1:3001/merchants/bills/utility-quote",
+    "priceUsdc": "0.05",
+    "etaSeconds": 14,
+    "capabilities": ["utility", "bills", "x402"],
+    "enabled": true
+  },
+  {
+    "id": "ext-merchant-subscription",
+    "name": "Lepton Subscription Check",
+    "tagline": "Arc x402 · recurring spend audit ($0.03)",
+    "category": "bills",
+    "serviceUrl": "http://127.0.0.1:3001/merchants/bills/subscription-check",
+    "priceUsdc": "0.03",
+    "etaSeconds": 12,
+    "capabilities": ["subscription", "audit", "x402"],
+    "enabled": true
+  },
+  {
+    "id": "ext-butler-defi",
+    "name": "Butler DeFi Agent",
+    "tagline": "Protocol yields & TVL — same Arc Gateway stack",
+    "category": "market-data",
+    "serviceUrl": "http://127.0.0.1:3001/marketplace/agents/defi-agent/execute",
+    "priceUsdc": "0.02",
+    "etaSeconds": 18,
+    "capabilities": ["defi", "yield", "x402"],
+    "enabled": true
+  },
+  {
+    "id": "ext-butler-macro",
+    "name": "Butler Macro Agent",
+    "tagline": "Fed, rates & macro scenarios on Arc testnet",
+    "category": "research",
+    "serviceUrl": "http://127.0.0.1:3001/marketplace/agents/macro-agent/execute",
+    "priceUsdc": "0.025",
+    "etaSeconds": 22,
+    "capabilities": ["macro", "fed", "x402"],
+    "enabled": true
+  },
+  {
+    "id": "ext-butler-onchain",
+    "name": "Butler On-Chain Agent",
+    "tagline": "Whale flows & network activity narratives",
+    "category": "market-data",
+    "serviceUrl": "http://127.0.0.1:3001/marketplace/agents/onchain-agent/execute",
+    "priceUsdc": "0.018",
+    "etaSeconds": 16,
+    "capabilities": ["onchain", "btc", "eth", "x402"],
+    "enabled": true
+  }
+]
