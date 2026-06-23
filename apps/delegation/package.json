@@ -1,0 +1,17 @@
+{
+  "name": "@butler/delegation-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "node ../../node_modules/tsx/dist/cli.mjs src/deploy.ts",
+    "setup": "node ../../node_modules/tsx/dist/cli.mjs src/setup.ts",
+    "pay": "node ../../node_modules/tsx/dist/cli.mjs src/pay.ts",
+    "pay:dry": "node ../../node_modules/tsx/dist/cli.mjs src/pay.ts --dry-run"
+  },
+  "dependencies": {
+    "@butler/core": "*",
+    "@butler/delegation": "*",
+    "dotenv": "^16.4.5"
+  }
+}
