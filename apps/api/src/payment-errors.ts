@@ -1,0 +1,36 @@
+/** Strip emoji and noisy CLI decoration from user-facing payment errors. */
+export function sanitizeCliMessage(text: string): string {
+  return text
+    .replace(/[\u{1F300}-\u{1F9FF}\u2600-\u27BF\uFE0F]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Map Circle CLI / x402 failures to short, actionable copy (no emoji). */
+export function formatPaymentError(raw: string): string {
+  const text = sanitizeCliMessage(raw);
+
+  if (/insufficient gateway balance/i.test(text)) {
+    return "Insufficient Gateway USDC. Fund your payer wallet at faucet.circle.com (Arc testnet), then deposit to Gateway before running workflows.";
+  }
+  if (/could not reach the endpoint|failed during initial request|domexception.*aborted|operation was aborted due to timeout/i.test(text)) {
+    return "Payment endpoint timed out. Confirm the API is running (npm run dev:api) and your network can reach Circle Gateway.";
+  }
+  if (/payment submitted but request failed/i.test(text)) {
+    return "Agent payment succeeded but the service returned an error (often OpenAI timeout or a long workflow step). Retry, or check API logs.";
+  }
+  if (/configure circle login|payer address not set|payer not configured/i.test(text)) {
+    return "Payer wallet not configured. Log in via Payer and select an agent wallet.";
+  }
+
+  const first =
+    text
+      .split(/Common causes:|Technical details:|Payment details saved/i)[0]
+      ?.split("\n")
+      .map((l) => l.replace(/^Error:\s*/i, "").trim())
+      .find((l) => l.length > 0) ?? text;
+
+  const clean = sanitizeCliMessage(first);
+  if (clean.length > 200) return `${clean.slice(0, 197)}...`;
+  return clean || "Payment failed";
+}
