@@ -369,7 +369,7 @@ export function registerMarketplaceRoutes(
   app.get("/api/marketplace", (_req, res) => {
     const external = listMarketplaceAgents().filter((a) => a.origin === "external").length;
     res.json({
-      vision: "The economic layer for AI agents",
+      vision: "Micropayment infrastructure for autonomous agents",
       tagline: "Discover, negotiate, pay — instantly via x402. No accounts. No API keys.",
       agents: listMarketplaceAgents().length,
       localAgents: MARKETPLACE_AGENTS.length,

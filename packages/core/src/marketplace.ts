@@ -1,4 +1,4 @@
-/** Butler Agent Marketplace — agent-to-agent commerce via x402 (no accounts, no API keys). */
+/** Butler Agentic hub — agent commerce via x402 (no accounts, no API keys). */
 
 import { isHeadlineOnlyBrief, isChartOnlyBrief, isAuditOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, resolveExpressBrief, wantsDeepBrief } from "./brief-intent.ts";
 
