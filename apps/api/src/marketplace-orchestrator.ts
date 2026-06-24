@@ -23,6 +23,12 @@ function snippetFromStepBody(body: unknown): string {
   const row = body as Record<string, unknown>;
   const data = (row.data ?? row) as Record<string, unknown>;
   if (typeof data.summary === "string" && data.summary.length > 20) return data.summary;
+  if (Array.isArray(data.findings) && data.findings.length > 0) {
+    const first = data.findings[0] as Record<string, unknown>;
+    return typeof data.contract === "string"
+      ? `Audit ${data.contract}: ${String(first.title ?? first.severity ?? "finding")}`
+      : String(first.title ?? "Security finding");
+  }
   if (data.report && typeof data.report === "object") {
     const r = data.report as Record<string, unknown>;
     return [r.title, r.rating, r.summary, r.executiveSummary].filter((x) => typeof x === "string").join(" — ");
@@ -155,8 +161,11 @@ async function runOneStep(params: {
   const micro = BigInt(w) * 1_000_000n + BigInt((f + "000000").slice(0, 6));
 
   const serviceUrl = resolveAgentServiceUrl(agent, params.apiBase);
+  const fullBrief = params.job.brief ?? "";
+  const stashBrief = fullBrief.length > 800 || /pragma\s+solidity/i.test(fullBrief);
   const payUrl = appendServiceUrlParams(serviceUrl, {
-    brief: params.job.brief,
+    briefContextId: stashBrief ? stashWorkflowContext(fullBrief) : undefined,
+    brief: stashBrief ? undefined : fullBrief,
     initiator: params.initiator ?? "system",
     contextId: params.priorContext ? stashWorkflowContext(params.priorContext) : undefined,
   });
