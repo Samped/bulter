@@ -13,7 +13,7 @@ function prune(): void {
 export function stashWorkflowContext(text: string): string {
   prune();
   const id = crypto.randomUUID();
-  store.set(id, { at: Date.now(), text: text.slice(0, 12_000) });
+  store.set(id, { at: Date.now(), text: text.slice(0, 64_000) });
   return id;
 }
 
