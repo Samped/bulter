@@ -4,6 +4,7 @@ import {
   type MarketplaceAgent,
 } from "./agent-registry.ts";
 import { getMarketplaceEtf, MARKETPLACE_ETFS } from "./marketplace.ts";
+import { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, resolveExpressBrief, wantsDeepBrief } from "./brief-intent.ts";
 
 export type TaskStrategy = "etf" | "workflow" | "direct";
 
@@ -98,7 +99,7 @@ function matchEtf(task: string): TaskPlan | null {
     }
   }
 
-  if (/btc|bitcoin|onchain|on-chain/.test(t)) {
+  if (/btc|bitcoin|onchain|on-chain/.test(t) && !isResearchLiteratureBrief(task)) {
     const wantsFullThesis =
       /thesis|investment|bull|bear|whale|defi|aave|uniswap|support|resistance|executive|deep|comprehensive|scenario|risk|macro|sentiment/.test(
         t
@@ -251,8 +252,67 @@ export function planTaskExecution(params: {
     };
   }
 
+  const express = resolveExpressBrief(task);
+  if (express) {
+    const agent = getMarketplaceAgent(express.agentId);
+    if (agent) {
+      return {
+        strategy: "direct",
+        agentIds: [agent.id],
+        reason: `Express ${express.label} — ${agent.name}.`,
+        estimatedUsdc: agent.priceUsdc,
+        etaSeconds: agent.etaSeconds,
+      };
+    }
+  }
+
+  if (wantsDeepBrief(task)) {
+    const thesis =
+      /investment thesis/.test(task.toLowerCase()) && /btc|bitcoin/.test(task.toLowerCase())
+        ? getMarketplaceEtf("btc-full-thesis-etf")
+        : null;
+    const deep = getMarketplaceEtf("deep-dive-etf");
+    const etf = thesis ?? deep;
+    if (etf) {
+      return {
+        strategy: "etf",
+        etfId: etf.id,
+        agentIds: etf.agentIds,
+        reason: `Deep dive — all specialists contribute; Report Agent delivers one unified document.`,
+        estimatedUsdc: etf.bundlePriceUsdc,
+        etaSeconds: etf.etaSeconds,
+      };
+    }
+  }
+
   const etf = matchEtf(task);
   if (etf) return etf;
+
+  if (isHeadlineOnlyBrief(task)) {
+    const agent = getMarketplaceAgent("news-agent");
+    if (agent) {
+      return {
+        strategy: "direct",
+        agentIds: [agent.id],
+        reason: "Headlines request — News Agent with live RSS sources.",
+        estimatedUsdc: agent.priceUsdc,
+        etaSeconds: agent.etaSeconds,
+      };
+    }
+  }
+
+  if (isChartOnlyBrief(task)) {
+    const agent = getMarketplaceAgent("chart-agent");
+    if (agent) {
+      return {
+        strategy: "direct",
+        agentIds: [agent.id],
+        reason: "Technical analysis — Chart Agent with live price and levels.",
+        estimatedUsdc: agent.priceUsdc,
+        etaSeconds: agent.etaSeconds,
+      };
+    }
+  }
 
   const t = task.toLowerCase();
   if (/headline|headlines|news/.test(t) && /price|quote|market/.test(t)) {

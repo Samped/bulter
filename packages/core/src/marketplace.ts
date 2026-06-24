@@ -1,6 +1,6 @@
 /** Butler Agent Marketplace — agent-to-agent commerce via x402 (no accounts, no API keys). */
 
-import { getMarketplaceAgent } from "./agent-registry.ts";
+import { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, resolveExpressBrief, wantsDeepBrief } from "./brief-intent.ts";
 
 export type MarketplaceCategory =
   | "research"
@@ -414,6 +414,26 @@ export const MARKETPLACE_ETFS: AgentEtf[] = [
     bundlePriceUsdc: "0.06",
     etaSeconds: 51,
   },
+  {
+    id: "deep-dive-etf",
+    name: "Deep Dive ETF",
+    description:
+      "All specialists on one subject — news, market, on-chain, charts, DeFi, sentiment, macro, research, risk → unified report",
+    agentIds: [
+      "news-agent",
+      "market-agent",
+      "onchain-agent",
+      "chart-agent",
+      "defi-agent",
+      "sentiment-agent",
+      "macro-agent",
+      "research-agent",
+      "risk-agent",
+      "report-agent",
+    ],
+    bundlePriceUsdc: "0.22",
+    etaSeconds: 161,
+  },
 ];
 
 export const DEFAULT_TREASURY: AgentTreasury = {
@@ -484,6 +504,35 @@ export function scoreEtfForBrief(
   const t = brief.toLowerCase();
   let score = 0;
 
+  if (isHeadlineOnlyBrief(brief)) {
+    if (etf.agentIds.length === 1 && etf.agentIds[0] === "news-agent") score += 50;
+    else score -= 80;
+  }
+
+  if (isChartOnlyBrief(brief)) {
+    if (etf.agentIds.length === 1 && etf.agentIds[0] === "chart-agent") score += 50;
+    else score -= 80;
+  }
+
+  if (isOnchainOnlyBrief(brief)) {
+    if (etf.agentIds.length === 1 && etf.agentIds[0] === "onchain-agent") score += 50;
+    else score -= 80;
+  }
+
+  if (isResearchLiteratureBrief(brief)) {
+    if (etf.agentIds.length === 1 && etf.agentIds[0] === "research-agent") score += 50;
+    else score -= 80;
+  }
+
+  if (wantsDeepBrief(brief)) {
+    if (etf.id === "deep-dive-etf") score += 65;
+    else if (etf.id === "btc-full-thesis-etf" && /investment thesis/.test(t) && /btc|bitcoin/.test(t)) score += 30;
+    else score -= 55;
+  }
+
+  const express = resolveExpressBrief(brief);
+  if (express && !etf.agentIds.includes(express.agentId)) score -= 80;
+
   if (etf.id === "btc-full-thesis-etf") {
     if (/btc|bitcoin/.test(t)) score += 25;
     if (/thesis|investment|bull|bear|scenario|executive|deep dive|comprehensive|full/.test(t)) score += 20;
@@ -517,7 +566,7 @@ export function scoreEtfForBrief(
   }
 
   for (const agentId of etf.agentIds) {
-    const agent = getMarketplaceAgent(agentId);
+    const agent = MARKETPLACE_AGENTS.find((a) => a.id === agentId);
     if (!agent) continue;
     for (const cap of agent.capabilities) {
       if (cap.length > 3 && t.includes(cap)) score += 2;
