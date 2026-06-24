@@ -1,6 +1,8 @@
 import {
   getMarketplaceAgent,
+  getMarketplaceEtf,
   planTaskExecution,
+  resolveExpressBrief,
   type AgentCreditScore,
   type MarketplaceJob,
   type TaskPlan,
@@ -74,9 +76,11 @@ export function formatTaskResult(result: unknown): string {
   if (Array.isArray(obj.headlines)) {
     const lines = obj.headlines.map((h) => {
       const row = h as Record<string, unknown>;
-      return `- ${row.title ?? "Headline"}${row.source ? ` (${row.source})` : ""}`;
+      const impact = typeof row.traderImpact === "string" ? `\n  Why it matters: ${row.traderImpact}` : "";
+      const url = typeof row.url === "string" ? `\n  ${row.url}` : "";
+      return `- ${row.title ?? "Headline"} (${row.source ?? "source"})${impact}${url}`;
     });
-    return `Headlines for ${String(obj.ticker ?? "market")}:\n${lines.join("\n")}`;
+    return `Headlines for ${String(obj.topic ?? obj.ticker ?? "crypto")}:\n${lines.join("\n\n")}`;
   }
 
   if (typeof obj.symbol === "string" && obj.price != null) {
@@ -104,6 +108,9 @@ export function formatTaskResult(result: unknown): string {
         const abs = typeof p.abstract === "string" ? `\n  ${p.abstract}` : "";
         return `- ${p.title ?? "Paper"}${p.authors ? ` (${p.authors}` : ""}${p.year ? `, ${p.year})` : p.authors ? ")" : ""}${abs}`;
       }),
+      Array.isArray(obj.limitations)
+        ? `\nLimitations\n${(obj.limitations as string[]).map((l) => `• ${l}`).join("\n")}`
+        : null,
       Array.isArray(obj.risks) ? `\nRisks\n${(obj.risks as string[]).map((r) => `• ${r}`).join("\n")}` : null,
       typeof obj.methodology === "string" ? `\nMethodology: ${obj.methodology}` : null,
     ].filter(Boolean);
@@ -113,6 +120,22 @@ export function formatTaskResult(result: unknown): string {
   if (Array.isArray(obj.papers)) {
     const papers = (obj.papers as Record<string, unknown>[]).map((p) => `- ${p.title ?? "Paper"}`).join("\n");
     return `Research${obj.focus ? ` (${obj.focus})` : ""}:\n${papers}`;
+  }
+
+  if (typeof obj.pattern === "string" && obj.type === "technical-analysis") {
+    const lines = [
+      `${obj.symbol ?? "Asset"} Technical Analysis`,
+      obj.price != null ? `\nPrice: $${obj.price} (${obj.change24h ?? "?"}% 24h)` : null,
+      obj.bias ? `Bias: ${obj.bias}` : null,
+      obj.support != null ? `Support: $${obj.support}` : null,
+      obj.resistance != null ? `Resistance: $${obj.resistance}` : null,
+      obj.rsi != null ? `RSI: ${obj.rsi}` : null,
+      obj.pattern ? `Pattern: ${obj.pattern}` : null,
+      typeof obj.summary === "string" ? `\n${obj.summary}` : null,
+      Array.isArray(obj.keyLevels) ? `\nKey levels\n${(obj.keyLevels as string[]).map((l) => `• ${l}`).join("\n")}` : null,
+      Array.isArray(obj.catalysts) ? `\nCatalysts\n${(obj.catalysts as string[]).map((c) => `• ${c}`).join("\n")}` : null,
+    ].filter(Boolean);
+    return lines.join("\n");
   }
 
   if (typeof obj.pattern === "string") {
@@ -153,7 +176,10 @@ export function formatTaskResult(result: unknown): string {
       .join("\n");
     return [
       `On-chain: ${obj.asset ?? "asset"}`,
+      typeof obj.exchangeFlows === "string" ? `\nExchange flows: ${obj.exchangeFlows}` : null,
+      typeof obj.whaleActivity === "string" ? `\nWhales: ${obj.whaleActivity}` : null,
       typeof obj.networkActivity === "string" ? obj.networkActivity : null,
+      typeof obj.outlook7d === "string" ? `\n7-day outlook: ${obj.outlook7d}` : null,
       signals ? `\nSignals\n${signals}` : null,
       typeof obj.summary === "string" ? `\n${obj.summary}` : null,
     ]
@@ -228,19 +254,27 @@ import { combineWorkflowResult } from "./deliverable-combine.ts";
 
 export function inferPlanFromJob(job: MarketplaceJob): MarketplaceJob["plan"] {
   const agentIds = job.steps.map((s) => s.agentId);
+  const brief = job.brief ?? "";
+
   if (job.etfId) {
+    const etf = getMarketplaceEtf(job.etfId);
     return {
       strategy: "etf",
       agentIds,
       etfId: job.etfId,
-      reason: "Multi-agent ETF workflow — combined deliverable.",
+      reason:
+        etf?.id === "deep-dive-etf"
+          ? "Deep Dive — all specialists contributed one unified research document."
+          : etf
+            ? `${etf.name} — multi-agent workflow, single combined deliverable.`
+            : "Multi-agent ETF workflow — combined deliverable.",
     };
   }
   if (job.type === "auction" && agentIds.length > 1) {
     return {
       strategy: "workflow",
       agentIds,
-      reason: "Auction award — multi-agent workflow.",
+      reason: "Auction award — multi-agent workflow, single combined deliverable.",
     };
   }
   if (agentIds.length > 1) {
@@ -250,10 +284,23 @@ export function inferPlanFromJob(job: MarketplaceJob): MarketplaceJob["plan"] {
       reason: "Multi-agent workflow — combined deliverable.",
     };
   }
+
+  const express = brief ? resolveExpressBrief(brief) : null;
+  const agentId = agentIds[0] ?? job.targetAgentId;
+  const agent = agentId ? getMarketplaceAgent(agentId) : undefined;
+
+  if (express && agent) {
+    return {
+      strategy: "direct",
+      agentIds: agentId ? [agentId] : [],
+      reason: `${agent.name} — ${express.label}.`,
+    };
+  }
+
   return {
     strategy: "direct",
-    agentIds: agentIds.length ? agentIds : job.targetAgentId ? [job.targetAgentId] : [],
-    reason: "Single-agent task.",
+    agentIds: agentId ? [agentId] : [],
+    reason: agent ? `${agent.name} — focused deliverable for this brief.` : "Single-agent deliverable.",
   };
 }
 
