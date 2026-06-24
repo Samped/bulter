@@ -24,7 +24,7 @@ export function formatPaymentError(raw: string): string {
       }
       return `Payment settled but the agent service rejected the request: ${server}`;
     }
-    return "Agent payment succeeded but the service returned an error (often OpenAI timeout or a long workflow step). Retry, or check API logs.";
+    return "Agent payment succeeded but the service returned an error. Retry once, or check API logs if it persists.";
   }
   if (/configure circle login|payer address not set|payer not configured/i.test(text)) {
     return "Payer wallet not configured. Log in via Payer and select an agent wallet.";

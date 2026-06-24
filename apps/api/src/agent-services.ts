@@ -1,5 +1,11 @@
 import { openAiConfigured, openAiJson } from "./openai-client.ts";
 
+const ANALYST_SOURCE = "butler";
+
+function analystUnavailable(agent: string): never {
+  throw new Error(`${agent} is unavailable — configure the research service on the API host`);
+}
+
 const CRYPTO_IDS: Record<string, string> = {
   btc: "bitcoin",
   bitcoin: "bitcoin",
@@ -81,7 +87,7 @@ export async function buildNewsPayload(brief?: string) {
   const live = await fetchLiveCryptoHeadlines(12).catch(() => [] as LiveHeadline[]);
 
   if (live.length === 0 && !openAiConfigured()) {
-    throw new Error("OPENAI_API_KEY is required for News Agent when live feeds are unavailable");
+    throw analystUnavailable("News Agent");
   }
 
   if (!openAiConfigured()) {
@@ -130,7 +136,7 @@ ${JSON.stringify(seed, null, 2)}`
     ...data,
     topic,
     generatedAt: new Date().toISOString(),
-    source: live.length > 0 ? "rss+openai" : "openai",
+    source: live.length > 0 ? "rss+butler" : ANALYST_SOURCE,
     feedCount: live.length,
   }));
 }
@@ -280,13 +286,13 @@ When the brief asks for N papers/themes, return exactly that many. Use realistic
     brief: brief?.trim() || undefined,
     marketContext: market ?? undefined,
     generatedAt: new Date().toISOString(),
-    source: "openai",
+    source: ANALYST_SOURCE,
   }));
 }
 
 export async function buildSentimentPayload(brief?: string) {
   if (!openAiConfigured()) {
-    throw new Error("OPENAI_API_KEY is required for Sentiment Agent");
+    throw analystUnavailable("Sentiment Agent");
   }
   const topic = brief?.trim() || "crypto and equities";
   const market = await fetchMarketQuote(brief).catch(() => null);
@@ -305,7 +311,7 @@ export async function buildSentimentPayload(brief?: string) {
     topic,
     marketContext: market ?? undefined,
     generatedAt: new Date().toISOString(),
-    source: "openai",
+    source: ANALYST_SOURCE,
   }));
 }
 
@@ -372,7 +378,7 @@ Baseline levels: support ${baseSupport}, resistance ${baseResistance}, RSI ~${ba
 
 export async function buildThesisPayload(brief?: string, priorContext?: string) {
   if (!openAiConfigured()) {
-    throw new Error("OPENAI_API_KEY is required for Thesis Agent");
+    throw analystUnavailable("Thesis Agent");
   }
   const topic = brief?.trim() || "BTC investment thesis";
   const { symbol } = inferSymbol(brief);
@@ -426,13 +432,13 @@ Technicals: support ${support}, resistance ${resistance}, RSI ${rsi}${ctx}`
     ...data,
     brief: brief?.trim() || undefined,
     generatedAt: new Date().toISOString(),
-    source: "openai",
+    source: ANALYST_SOURCE,
   }));
 }
 
 export async function buildReportPayload(brief?: string, priorContext?: string) {
   if (!openAiConfigured()) {
-    throw new Error("OPENAI_API_KEY is required for Report Agent");
+    throw analystUnavailable("Report Agent");
   }
   const topic = brief?.trim() || "investment analysis";
   const market = await fetchMarketQuote(brief).catch(() => null);
@@ -460,13 +466,13 @@ export async function buildReportPayload(brief?: string, priorContext?: string) 
     ...data,
     brief: brief?.trim() || undefined,
     generatedAt: new Date().toISOString(),
-    source: "openai",
+    source: ANALYST_SOURCE,
   }));
 }
 
 export async function buildAuditPayload(brief?: string, contract?: string) {
   if (!openAiConfigured()) {
-    throw new Error("OPENAI_API_KEY is required for Audit Agent");
+    throw analystUnavailable("Audit Agent");
   }
   const contractSource = contract?.trim();
   const briefText = brief?.trim() ?? "";
@@ -491,7 +497,7 @@ Focus on access control, reentrancy, integer issues, centralization, tx.origin, 
     brief: briefText || undefined,
     sourceCode: contractSource || extractSolidityFromText(briefText) || undefined,
     generatedAt: new Date().toISOString(),
-    source: "openai",
+    source: ANALYST_SOURCE,
   }));
 }
 
@@ -512,7 +518,7 @@ function extractSolidityFromText(text: string): string | undefined {
 
 export async function buildResearchSummary(brief?: string) {
   if (!openAiConfigured()) {
-    throw new Error("OPENAI_API_KEY is required for research summary");
+    throw analystUnavailable("Research Agent");
   }
   const topic = brief?.trim() || "Arc nanopayments and agent commerce";
   return openAiJson<{ summary: string; sources: number; topics: string[] }>(
@@ -522,13 +528,13 @@ export async function buildResearchSummary(brief?: string) {
     ...data,
     brief: brief?.trim() || undefined,
     generatedAt: new Date().toISOString(),
-    source: "openai",
+    source: ANALYST_SOURCE,
   }));
 }
 
 export async function buildUtilityQuote(brief?: string) {
   if (!openAiConfigured()) {
-    throw new Error("OPENAI_API_KEY is required for utility quotes");
+    throw analystUnavailable("Bill Agent");
   }
   const request = brief?.trim() || "monthly electricity bill";
   return openAiJson<{
@@ -546,13 +552,13 @@ Base estimates on typical US utility pricing when specifics are missing; state a
     type: "utility-bill",
     brief: brief?.trim() || undefined,
     generatedAt: new Date().toISOString(),
-    source: "openai",
+    source: ANALYST_SOURCE,
   }));
 }
 
 export async function buildDefiPayload(brief?: string) {
   if (!openAiConfigured()) {
-    throw new Error("OPENAI_API_KEY is required for DeFi Agent");
+    throw analystUnavailable("DeFi Agent");
   }
   const topic = brief?.trim() || "DeFi market overview";
   const market = await fetchMarketQuote(brief).catch(() => null);
@@ -573,13 +579,13 @@ export async function buildDefiPayload(brief?: string) {
     brief: brief?.trim() || undefined,
     marketContext: market ?? undefined,
     generatedAt: new Date().toISOString(),
-    source: "openai",
+    source: ANALYST_SOURCE,
   }));
 }
 
 export async function buildMacroPayload(brief?: string) {
   if (!openAiConfigured()) {
-    throw new Error("OPENAI_API_KEY is required for Macro Agent");
+    throw analystUnavailable("Macro Agent");
   }
   const topic = brief?.trim() || "global macro outlook";
 
@@ -599,7 +605,7 @@ export async function buildMacroPayload(brief?: string) {
     ...data,
     brief: brief?.trim() || undefined,
     generatedAt: new Date().toISOString(),
-    source: "openai",
+    source: ANALYST_SOURCE,
   }));
 }
 
@@ -664,13 +670,13 @@ Cover exchange inflows/outflows, large whale transfers, and what signals imply f
     brief: brief?.trim() || undefined,
     marketContext: market ?? undefined,
     generatedAt: new Date().toISOString(),
-    source: "openai",
+    source: ANALYST_SOURCE,
   }));
 }
 
 export async function buildCompetitorPayload(brief?: string) {
   if (!openAiConfigured()) {
-    throw new Error("OPENAI_API_KEY is required for Competitor Agent");
+    throw analystUnavailable("Competitor Agent");
   }
   const topic = brief?.trim() || "competitive landscape";
 
@@ -689,13 +695,13 @@ export async function buildCompetitorPayload(brief?: string) {
     ...data,
     brief: brief?.trim() || undefined,
     generatedAt: new Date().toISOString(),
-    source: "openai",
+    source: ANALYST_SOURCE,
   }));
 }
 
 export async function buildRiskPayload(brief?: string, priorContext?: string) {
   if (!openAiConfigured()) {
-    throw new Error("OPENAI_API_KEY is required for Risk Agent");
+    throw analystUnavailable("Risk Agent");
   }
   const topic = brief?.trim() || "portfolio risk assessment";
   const market = await fetchMarketQuote(brief).catch(() => null);
@@ -717,13 +723,13 @@ export async function buildRiskPayload(brief?: string, priorContext?: string) {
     brief: brief?.trim() || undefined,
     marketContext: market ?? undefined,
     generatedAt: new Date().toISOString(),
-    source: "openai",
+    source: ANALYST_SOURCE,
   }));
 }
 
 export async function buildSubscriptionAudit(brief?: string) {
   if (!openAiConfigured()) {
-    throw new Error("OPENAI_API_KEY is required for subscription audit");
+    throw analystUnavailable("Subscription Agent");
   }
   const request = brief?.trim() || "audit recurring subscriptions";
   return openAiJson<{
@@ -738,7 +744,7 @@ If user lists services in the brief, include them; otherwise provide a template 
     ...data,
     brief: brief?.trim() || undefined,
     generatedAt: new Date().toISOString(),
-    source: "openai",
+    source: ANALYST_SOURCE,
   }));
 }
 

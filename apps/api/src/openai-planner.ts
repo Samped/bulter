@@ -45,7 +45,7 @@ function catalogForPrompt(credits: AgentCreditScore[]): string {
   return JSON.stringify({ agents, etfs }, null, 2);
 }
 
-const SYSTEM_PROMPT = `You are Butler's task router for an agent marketplace. Given a user task, pick the best execution route.
+const SYSTEM_PROMPT = `You are Butler's task router. Given a user task, pick the best execution route from the catalog.
 
 Rules:
 - Prefer a bundled ETF workflow when the task clearly matches a pre-built multi-agent workflow (cheaper + coordinated).
@@ -139,8 +139,8 @@ export async function planTaskWithOpenAi(
       strategy: parsed.strategy,
       agentIds: parsed.agentIds,
       etfId: parsed.etfId ?? null,
-      reason: parsed.reason ?? "AI-selected marketplace route.",
-      router: "openai",
+      reason: parsed.reason ?? "Matched to the best agent workflow for this task.",
+      router: "planner",
     });
 
     if (!plan) {

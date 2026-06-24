@@ -19,7 +19,7 @@ function parseJsonContent(content: string): unknown {
 export async function openAiJson<T>(system: string, user: string): Promise<T> {
   const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) {
-    throw new Error("OPENAI_API_KEY is required for agent intelligence services");
+    throw new Error("Research service is not configured on this server");
   }
 
   const timeoutMs = Number(process.env.OPENAI_TIMEOUT_MS ?? 45_000);
@@ -47,12 +47,12 @@ export async function openAiJson<T>(system: string, user: string): Promise<T> {
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
-      throw new Error(`OpenAI API error ${res.status}: ${errText.slice(0, 200)}`);
+      throw new Error(`Research service error ${res.status}: ${errText.slice(0, 200)}`);
     }
 
     const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
     const content = body.choices?.[0]?.message?.content;
-    if (!content) throw new Error("OpenAI returned empty response");
+    if (!content) throw new Error("Research service returned an empty response");
     return parseJsonContent(content) as T;
   } finally {
     clearTimeout(timer);
