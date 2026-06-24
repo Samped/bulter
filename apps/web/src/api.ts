@@ -471,7 +471,7 @@ export function awardMarketplaceAuction(auctionId: string, options?: { forceX402
   }, 180_000);
 }
 
-export interface PayerAgentQuote {
+export interface ButlerQuote {
   agentId: string;
   agentName: string;
   priceUsdc: string;
@@ -479,11 +479,11 @@ export interface PayerAgentQuote {
   etaSeconds: number;
 }
 
-export interface PayerAgentPhase {
+export interface ButlerPhase {
   phase: "discover" | "negotiate" | "settle";
   at: number;
   message: string;
-  quotes?: PayerAgentQuote[];
+  quotes?: ButlerQuote[];
   auctionId?: string;
   bids?: number;
   winner?: { agentId: string; agentName: string; priceUsdc: string };
@@ -492,20 +492,27 @@ export interface PayerAgentPhase {
   error?: string;
 }
 
-export interface PayerAgentResult {
+export interface ButlerResult {
   ok: boolean;
   strategy: "auction" | "direct";
   mode?: "x402" | "circle-cli";
   brief: string;
   category: string;
-  phases: PayerAgentPhase[];
+  phases: ButlerPhase[];
   auction?: ReverseAuction;
   jobId?: string;
   summary?: string;
   error?: string;
 }
 
-export function runPayerAgent(body: {
+/** @deprecated Use ButlerResult */
+export type PayerAgentResult = ButlerResult;
+/** @deprecated Use ButlerPhase */
+export type PayerAgentPhase = ButlerPhase;
+/** @deprecated Use ButlerQuote */
+export type PayerAgentQuote = ButlerQuote;
+
+export function runButler(body: {
   brief: string;
   category?: string;
   strategy?: "auction" | "direct";
@@ -516,16 +523,22 @@ export function runPayerAgent(body: {
   auctionMode?: AuctionMode;
   forceX402?: boolean;
 }) {
-  return request<PayerAgentResult>("/api/payer-agent/run", {
+  return request<ButlerResult>("/api/butler/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }, 300_000);
 }
 
-export function getPayerAgentReadiness() {
-  return request<{ canRun: boolean; reason?: string; mode?: string }>("/api/payer-agent/readiness");
+/** @deprecated Use runButler */
+export const runPayerAgent = runButler;
+
+export function getButlerReadiness() {
+  return request<{ canRun: boolean; reason?: string; mode?: string }>("/api/butler/readiness");
 }
+
+/** @deprecated Use getButlerReadiness */
+export const getPayerAgentReadiness = getButlerReadiness;
 
 export function runMarketplaceWorkflow(etfId: string, brief?: string) {
   return request<{ job: unknown; orchestration: unknown }>("/api/marketplace/workflows/run", {
