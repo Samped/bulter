@@ -1,3 +1,4 @@
+export * from "./brief-intent.ts";
 export * from "./types.ts";
 export * from "./policy.ts";
 export * from "./store.ts";
