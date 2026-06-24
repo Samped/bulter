@@ -40,9 +40,9 @@ import { probeX402Url } from "./x402-probe.ts";
 
 export { inferAuctionCategory, resolveTaskCategory } from "@butler/core";
 
-export type PayerAgentStrategy = "auction" | "direct";
+export type ButlerStrategy = "auction" | "direct";
 
-export interface PayerAgentQuote {
+export interface ButlerQuote {
   agentId: string;
   agentName: string;
   priceUsdc: string;
@@ -53,11 +53,11 @@ export interface PayerAgentQuote {
   x402Verified?: boolean;
 }
 
-export interface PayerAgentPhase {
+export interface ButlerPhase {
   phase: "discover" | "negotiate" | "settle";
   at: number;
   message: string;
-  quotes?: PayerAgentQuote[];
+  quotes?: ButlerQuote[];
   auctionId?: string;
   bids?: number;
   winner?: { agentId: string; agentName: string; priceUsdc: string };
@@ -66,13 +66,13 @@ export interface PayerAgentPhase {
   error?: string;
 }
 
-export interface PayerAgentResult {
+export interface ButlerResult {
   ok: boolean;
-  strategy: PayerAgentStrategy;
+  strategy: ButlerStrategy;
   mode?: "x402" | "circle-cli";
   brief: string;
   category: MarketplaceCategory;
-  phases: PayerAgentPhase[];
+  phases: ButlerPhase[];
   auction?: ReverseAuction;
   jobId?: string;
   summary?: string;
@@ -85,7 +85,7 @@ function sleep(ms: number): Promise<void> {
 
 const POLL_MS = 800;
 
-function resolvePayerTiming(
+function resolveButlerTiming(
   qualityTier: QualityTier,
   bidCount: number,
   auctionMode: AuctionMode
@@ -111,9 +111,9 @@ async function settleWinningBid(opts: {
   sellerAddress: string;
   bid: AuctionBid;
   forceX402?: boolean;
-  phases: PayerAgentPhase[];
+  phases: ButlerPhase[];
   now: () => number;
-}): Promise<PayerAgentResult> {
+}): Promise<ButlerResult> {
   const { bid } = opts;
   const job = bid.etfId ? buildEtfJob(bid.etfId, opts.brief) : buildDirectJob(bid.agentId, opts.brief);
   if (!job) {
@@ -185,7 +185,7 @@ function discoverQuotes(
   minReputation: number,
   apiBase: string,
   opts?: { qualityTier?: QualityTier; maxBudgetUsdc?: string; auctionMode?: AuctionMode }
-): PayerAgentQuote[] {
+): ButlerQuote[] {
   const now = Math.floor(Date.now() / 1000);
   const stub: ReverseAuction = {
     id: "discover",
@@ -309,12 +309,12 @@ async function waitForAuctionAward(opts: {
   return { auction, needsAward: auction.status === "open" && auction.bids.length > 0 };
 }
 
-export async function runPayerAgent(opts: {
+export async function runButler(opts: {
   brief: string;
   apiBase: string;
   statePath: string;
   sellerAddress: string;
-  strategy?: PayerAgentStrategy;
+  strategy?: ButlerStrategy;
   category?: MarketplaceCategory;
   minReputation?: number;
   ttlSeconds?: number;
@@ -322,7 +322,7 @@ export async function runPayerAgent(opts: {
   maxBudgetUsdc?: string;
   auctionMode?: AuctionMode;
   forceX402?: boolean;
-}): Promise<PayerAgentResult> {
+}): Promise<ButlerResult> {
   const brief = opts.brief.trim();
   if (!brief) {
     return { ok: false, strategy: opts.strategy ?? "auction", brief: "", category: "research", phases: [], error: "brief required" };
@@ -332,7 +332,12 @@ export async function runPayerAgent(opts: {
   const deepWork = resolveDeepWorkRouting(brief);
   const qualityTier = express ? "brief" : deepWork ? deepWork.qualityTier : (opts.qualityTier ?? "standard");
   const category = express?.category ?? resolveTaskCategory(brief, opts.category, qualityTier);
-  const auctionMode = express ? "single" : deepWork ? deepWork.auctionMode : defaultAuctionMode(qualityTier, opts.auctionMode);
+  const auctionMode =
+    express || qualityTier === "brief"
+      ? "single"
+      : deepWork
+        ? deepWork.auctionMode
+        : defaultAuctionMode(qualityTier, opts.auctionMode);
   const maxBudgetUsdc = opts.maxBudgetUsdc?.trim() || undefined;
 
   const readiness = agentRunReadiness();
@@ -349,7 +354,7 @@ export async function runPayerAgent(opts: {
 
   const strategy = opts.strategy ?? "auction";
   const minReputation = opts.minReputation ?? 70;
-  const phases: PayerAgentPhase[] = [];
+  const phases: ButlerPhase[] = [];
   const now = () => Math.floor(Date.now() / 1000);
   const policy = getExternalAgentPolicy();
 
@@ -403,7 +408,14 @@ export async function runPayerAgent(opts: {
     quotes,
   });
 
-  if (strategy === "direct") {
+  if (strategy === "direct" || (express && quotes.length === 0)) {
+    if (express && quotes.length === 0) {
+      phases.push({
+        phase: "negotiate",
+        at: now(),
+        message: `Express route — settling directly with ${express.label} (auction had no eligible bids)`,
+      });
+    }
     const plan = await planTaskForRun({ task: brief, mode: "auto", credits });
     phases.push({
       phase: "negotiate",
@@ -457,7 +469,7 @@ export async function runPayerAgent(opts: {
     }
   }
 
-  const timing = resolvePayerTiming(qualityTier, quotes.length, auctionMode);
+  const timing = resolveButlerTiming(qualityTier, quotes.length, auctionMode);
   const ttlSeconds = opts.ttlSeconds ?? timing.ttlSeconds;
   const auctionPreview = initializeAuction({
     brief,
@@ -466,7 +478,7 @@ export async function runPayerAgent(opts: {
     ttlSeconds,
     autoAward: true,
     bidIntervalSeconds: timing.bidIntervalSeconds,
-    payerAgentOwned: true,
+    butlerOwned: true,
     qualityTier,
     maxBudgetUsdc,
     auctionMode,
@@ -644,7 +656,7 @@ export async function runPayerAgent(opts: {
     error: award.ok ? undefined : award.error,
   };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Payer agent failed";
+    const message = error instanceof Error ? error.message : "Butler failed";
     phases.push({ phase: "settle", at: now(), message, ok: false, error: message });
     return {
       ok: false,
