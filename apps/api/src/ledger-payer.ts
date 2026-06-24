@@ -60,7 +60,7 @@ export function inferUserRecordIdsFromJobs(
       if (j.status !== "completed") return false;
       if (!j.auctionId) return true;
       const auction = auctionMap.get(j.auctionId);
-      return auction?.payerAgentOwned !== false;
+      return (auction?.butlerOwned ?? auction?.payerAgentOwned) !== false;
     })
     .sort((a, b) => a.at - b.at);
 
