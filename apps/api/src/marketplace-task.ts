@@ -91,9 +91,22 @@ export function formatTaskResult(result: unknown): string {
     return `Sentiment: ${obj.label} (score ${obj.score}, ${obj.sources ?? "?"} sources)`;
   }
 
-  if (typeof obj.contract === "string" && Array.isArray(obj.findings)) {
-    const findings = (obj.findings as unknown[]).map((f) => `- ${String(f)}`).join("\n");
-    return `Audit: ${obj.contract}\nRisk: ${obj.riskLevel ?? "—"}\n\n${findings}`;
+  if (typeof obj.contract === "string" || obj.type === "audit" || Array.isArray(obj.findings)) {
+    const findings = (obj.findings as Record<string, unknown>[] | undefined)
+      ?.map((f) => {
+        const sev = f.severity ? `[${String(f.severity).toUpperCase()}] ` : "";
+        const title = f.title ? String(f.title) : "Finding";
+        const detail = f.detail ? `: ${String(f.detail)}` : "";
+        return `- ${sev}${title}${detail}`;
+      })
+      .join("\n");
+    return [
+      `Security audit: ${obj.contract ?? "contract"}`,
+      typeof obj.summary === "string" ? obj.summary : null,
+      findings ? `\nFindings\n${findings}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
   }
 
   if (Array.isArray(obj.papers) && (obj.type === "research" || typeof obj.executiveSummary === "string")) {
@@ -115,6 +128,13 @@ export function formatTaskResult(result: unknown): string {
       typeof obj.methodology === "string" ? `\nMethodology: ${obj.methodology}` : null,
     ].filter(Boolean);
     return lines.join("\n");
+  }
+
+  if (typeof obj.provider === "string" && obj.amountDue != null) {
+    const items = (obj.lineItems as { label: string; amount: number }[] | undefined)
+      ?.map((i) => `- ${i.label}: $${i.amount}`)
+      .join("\n");
+    return [`Utility quote: ${obj.provider} — $${obj.amountDue} due ${obj.dueDate ?? "—"}`, items, obj.notes].filter(Boolean).join("\n");
   }
 
   if (Array.isArray(obj.papers)) {
