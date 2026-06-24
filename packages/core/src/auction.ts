@@ -1,6 +1,6 @@
 import { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, resolveExpressBrief, wantsDeepBrief } from "./brief-intent.ts";
 import { getMarketplaceAgent, listMarketplaceAgents, type AgentCreditScore } from "./agent-registry.ts";
-import { etfAgentsApproved } from "./agent-approvals.ts";
+import { etfAgentsApproved, isAgentApproved } from "./agent-approvals.ts";
 import { buildQuote, MARKETPLACE_ETFS, pickAuctionWinner, scoreEtfForBrief, type AuctionBid, type AuctionEvent, type MarketplaceCategory, type QualityTier, type ReverseAuction } from "./marketplace.ts";
 
 export { scoreEtfForBrief } from "./marketplace.ts";
@@ -28,6 +28,8 @@ const QUALITY_TIER_AGENTS: Record<QualityTier, string[] | null> = {
     "sentiment-agent",
     "onchain-agent",
     "research-agent",
+    "audit-agent",
+    "bill-agent",
   ],
   standard: null,
   full: ["research-agent", "report-agent", "macro-agent", "defi-agent"],
@@ -115,13 +117,15 @@ export function agentsEligibleForAuction(
   const tier = auction.qualityTier ?? "standard";
   const tierAgents = QUALITY_TIER_AGENTS[tier];
 
+  if (express) {
+    const agent = getMarketplaceAgent(express.agentId);
+    if (!agent || !isAgentApproved(agent.id)) return [];
+    return [agent];
+  }
+
   return listMarketplaceAgents().filter((agent) => {
-    if (express) {
-      if (agent.id !== express.agentId) return false;
-    } else if (!pool.includes(agent.category)) {
-      return false;
-    }
-    if (tierAgents && !express && !tierAgents.includes(agent.id)) return false;
+    if (!pool.includes(agent.category)) return false;
+    if (tierAgents && !tierAgents.includes(agent.id)) return false;
     const score = credits.get(agent.id)?.score ?? 0;
     return score >= auction.minReputation;
   });
@@ -386,6 +390,8 @@ export function initializeAuction(params: {
   ttlSeconds: number;
   autoAward?: boolean;
   bidIntervalSeconds?: number;
+  butlerOwned?: boolean;
+  /** @deprecated Use butlerOwned */
   payerAgentOwned?: boolean;
   qualityTier?: QualityTier;
   maxBudgetUsdc?: string;
@@ -411,7 +417,7 @@ export function initializeAuction(params: {
     bidRound: 0,
     lastRoundAt: now,
     bidIntervalSeconds: params.bidIntervalSeconds ?? 12,
-    payerAgentOwned: params.payerAgentOwned,
+    butlerOwned: params.butlerOwned ?? params.payerAgentOwned,
     events: [],
   };
 
@@ -487,6 +493,8 @@ export function defaultAuctionMode(
   qualityTier?: QualityTier,
   explicit?: ReverseAuction["auctionMode"]
 ): NonNullable<ReverseAuction["auctionMode"]> {
+  if (qualityTier === "brief") return "single";
+  if (explicit === "etf" && qualityTier !== "full") return "single";
   if (explicit) return explicit;
   return qualityTier === "full" ? "etf" : "single";
 }
