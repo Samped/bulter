@@ -111,7 +111,13 @@ export interface AgentRunResult {
   remainingDailyUsdc: string;
 }
 
-const API = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+const API = (import.meta.env.VITE_API_URL as string | undefined)?.trim() || "http://localhost:3001";
+
+function responseOk(res: Response): boolean {
+  if (res && typeof res.ok === "boolean") return res.ok;
+  if (res && typeof res.status === "number") return res.status >= 200 && res.status < 300;
+  return false;
+}
 
 async function request<T>(path: string, init?: RequestInit, timeoutMs = 20_000): Promise<T> {
   const controller = new AbortController();
@@ -131,10 +137,10 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs = 20_000):
           : msg
       );
     }
-    if (!res || typeof res.ok !== "boolean") {
-      throw new Error(`Invalid response from ${path}`);
+    if (!res || (typeof res.ok !== "boolean" && typeof res.status !== "number")) {
+      throw new Error(`Cannot reach API at ${API} — unexpected response from ${path}`);
     }
-    if (!res.ok) {
+    if (!responseOk(res)) {
       let detail = `${res.status} ${path}`;
       try {
         const body = (await res.json()) as { error?: string; ok?: boolean };
@@ -161,9 +167,9 @@ export interface AppConfig {
 }
 
 export const getConfig = () => request<AppConfig>("/api/config");
-export const getHealth = () => request<Health>("/api/health", undefined, 15_000);
+export const getHealth = () => request<Health>("/api/health", undefined, 30_000);
 
-export const getPolicy = () => request<Policy>("/api/policy", undefined, 15_000);
+export const getPolicy = () => request<Policy>("/api/policy", undefined, 30_000);
 export const getLedger = (scope?: "all" | "mine") =>
   request<{ remainingDailyUsdc: string; records: SpendRecord[]; totalCount?: number; activityPayerAddresses?: string[] }>(
     scope === "mine" ? "/api/ledger?scope=mine" : "/api/ledger",
@@ -297,12 +303,15 @@ export interface ExternalAgentPolicy {
   baselineReputation: number;
   openDiscovery: boolean;
   requireX402Verified: boolean;
+  requireAgentApproval?: boolean;
 }
 
 export interface AgentRegistryResponse {
   policy: ExternalAgentPolicy;
   registryPath: string;
-  agents: MarketplaceAgentCard[];
+  approvalsPath?: string;
+  approvedCount?: number;
+  agents: (MarketplaceAgentCard & { approved?: boolean })[];
   local: number;
   external: number;
 }
@@ -374,6 +383,18 @@ export const getMarketplaceAgents = () =>
 
 export const getAgentRegistry = () =>
   request<AgentRegistryResponse>("/api/marketplace/registry", undefined, 20_000);
+
+export function setAgentApproval(agentId: string, approved: boolean) {
+  return request<{ ok: boolean; agentId: string; approved: boolean; approvedAgentIds: string[] }>(
+    "/api/marketplace/registry/approvals",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agentId, approved }),
+    },
+    15_000
+  );
+}
 
 export function probeRegistryUrl(url: string, options?: { name?: string; save?: boolean }) {
   return request<{ probe: { ok: boolean; priceUsdc?: string; error?: string }; agent?: MarketplaceAgentCard; error?: string }>(
@@ -499,7 +520,7 @@ export function runPayerAgent(body: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  }, 180_000);
+  }, 300_000);
 }
 
 export function getPayerAgentReadiness() {

@@ -1565,6 +1565,31 @@ code {
   color: var(--accent);
 }
 
+.mp-badge.approved {
+  background: var(--green-muted, rgba(34, 197, 94, 0.15));
+  color: var(--green, #16a34a);
+}
+
+.mp-badge.pending {
+  background: var(--amber-muted, rgba(245, 158, 11, 0.15));
+  color: var(--amber, #d97706);
+}
+
+.mp-agent-card.pending {
+  border-color: var(--amber, #d97706);
+  opacity: 0.92;
+}
+
+.mp-network-intro {
+  margin: 0 0 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.mp-approve-btn {
+  margin-left: auto;
+}
+
 .mp-agent-card-foot {
   display: flex;
   flex-wrap: wrap;
@@ -3597,6 +3622,22 @@ select.field-input {
 .chat-bubble.assistant.error {
   border-color: rgba(239, 68, 68, 0.35);
   background: var(--danger-muted);
+}
+
+.chat-bubble.assistant.success {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: var(--accent-muted);
+}
+
+.agent-toast-wrap {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.agent-toast-wrap .mp-toast {
+  box-shadow: var(--shadow-md);
 }
 
 .chat-plan {
