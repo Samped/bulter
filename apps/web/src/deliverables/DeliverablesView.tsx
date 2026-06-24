@@ -1,3 +1,4 @@
+/** Library — completed agent deliverables and exports. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatUsdc, getMarketplaceDeliverable, getMarketplaceDeliverables, type MarketplaceDeliverable } from "../api.ts";
 import { IconCheck, IconDownload, IconLibrary, IconRefresh, IconSearch } from "../icons.tsx";
@@ -227,7 +228,7 @@ export function DeliverablesView({
                         <span className={`library-type-badge ${job.plan?.strategy ?? "direct"}`}>{strategy}</span>
                         <span className="library-list-time">{formatRelativeTime(job.at)}</span>
                       </div>
-                      <p className="library-list-title">{job.brief ?? "Marketplace task"}</p>
+                      <p className="library-list-title">{job.brief ?? "Auction task"}</p>
                       <div className="library-list-item-foot">
                         <span className="library-list-price">${formatUsdc(job.totalUsdc)}</span>
                         <span className="library-list-agents">

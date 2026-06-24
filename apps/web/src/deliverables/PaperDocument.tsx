@@ -29,7 +29,7 @@ export const PaperDocument = forwardRef<
           </span>
           <span>${formatUsdc(job.totalUsdc)} USDC</span>
         </div>
-        {job.plan?.reason && (
+        {job.plan?.reason && !/^single-agent task\.?$/i.test(job.plan.reason) && (
           <div className="paper-abstract">
             <p className="paper-abstract-label">Abstract</p>
             <p className="paper-abstract-text">{job.plan.reason}</p>
