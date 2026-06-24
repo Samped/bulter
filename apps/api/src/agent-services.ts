@@ -468,22 +468,46 @@ export async function buildAuditPayload(brief?: string, contract?: string) {
   if (!openAiConfigured()) {
     throw new Error("OPENAI_API_KEY is required for Audit Agent");
   }
-  const target = contract?.trim() || brief?.trim() || "smart contract security review";
+  const contractSource = contract?.trim();
+  const briefText = brief?.trim() ?? "";
+  const target = contractSource || briefText || "smart contract security review";
+  const contractName =
+    briefText.match(/contract\s+(\w+)/i)?.[1] ??
+    contractSource?.match(/contract\s+(\w+)/i)?.[1] ??
+    "SmartContract";
 
   return openAiJson<{
     contract: string;
     findings: { severity: string; title: string; detail: string }[];
     summary: string;
   }>(
-    `You are a smart contract security auditor. Return JSON: contract (name), findings (severity: critical/high/medium/low/info, title, detail), summary.
-Focus on common Solidity risks: access control, reentrancy, integer issues, centralization, upgrade patterns.`,
-    `Audit request: ${target}`
+    `You are a smart contract security auditor. Return JSON: contract (short contract name string, NOT source code), findings (array of objects with severity: critical/high/medium/low/info, title, detail), summary (2-4 sentences).
+Focus on access control, reentrancy, integer issues, centralization, tx.origin, and unsafe external calls. Include at least 3 findings when reviewing Solidity source.`,
+    `Audit request for ${contractName}:\n${target}`
   ).then((data) => ({
     ...data,
-    brief: brief?.trim() || undefined,
+    type: "audit",
+    contract: data.contract || contractName,
+    brief: briefText || undefined,
+    sourceCode: contractSource || extractSolidityFromText(briefText) || undefined,
     generatedAt: new Date().toISOString(),
     source: "openai",
   }));
+}
+
+function extractSolidityFromText(text: string): string | undefined {
+  if (!/pragma\s+solidity/i.test(text)) return undefined;
+  const lines = text.split("\n");
+  let start = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!.trim();
+    if (/^(\/\/|\/\*|pragma\s+solidity|contract\s+|interface\s+|library\s+|import\s+)/i.test(line)) {
+      start = i;
+      break;
+    }
+  }
+  const source = lines.slice(start).join("\n").trim();
+  return source || undefined;
 }
 
 export async function buildResearchSummary(brief?: string) {
@@ -519,6 +543,7 @@ Base estimates on typical US utility pricing when specifics are missing; state a
     `Quote request: ${request}`
   ).then((data) => ({
     ...data,
+    type: "utility-bill",
     brief: brief?.trim() || undefined,
     generatedAt: new Date().toISOString(),
     source: "openai",
