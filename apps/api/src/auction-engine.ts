@@ -18,7 +18,7 @@ import { finalizeCompletedJob } from "./marketplace-task.ts";
 const awardingLocks = new Set<string>();
 
 const STALE_PAYER_AUCTION_SECS = 180;
-const SETTLEMENT_POLL_MS = 3_000;
+const SETTLEMENT_POLL_MS = 1_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

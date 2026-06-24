@@ -4,6 +4,9 @@ import {
   defaultAuctionMode,
   getAgentCredits,
   initializeAuction,
+  resolveExpressBrief,
+  resolveDeepWorkRouting,
+  wantsDeepBrief,
   listMarketplaceAgents,
   loadMarketplaceState,
   pickAuctionWinner,
@@ -14,14 +17,20 @@ import {
   solicitCatalogBids,
   updateMarketplaceState,
   type AgentCreditScore,
+  type AuctionBid,
   type AuctionMode,
   type MarketplaceCategory,
   type QualityTier,
   type ReverseAuction,
+  mergeJobUpdates,
+  patchMarketplaceState,
+  recordAgentSuccess,
+  treasuryCredit,
 } from "@butler/core";
 import { agentRunReadiness } from "./agent-runner.ts";
 import { executeAuctionAward } from "./auction-engine.ts";
-import { planTaskForRun, runMarketplaceTask, buildJobSummary } from "./marketplace-task.ts";
+import { planTaskForRun, runMarketplaceTask, buildJobSummary, finalizeCompletedJob } from "./marketplace-task.ts";
+import { buildDirectJob, buildEtfJob, runMarketplaceWorkflow } from "./marketplace-orchestrator.ts";
 import {
   discoverOpenAgents,
   getExternalAgentPolicy,
@@ -74,10 +83,99 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const POLL_MS = 800;
+
+function resolvePayerTiming(
+  qualityTier: QualityTier,
+  bidCount: number,
+  auctionMode: AuctionMode
+): { ttlSeconds: number; bidIntervalSeconds: number } {
+  if (bidCount === 1) return { ttlSeconds: 6, bidIntervalSeconds: 2 };
+  if (qualityTier === "brief") return { ttlSeconds: 10, bidIntervalSeconds: 3 };
+  if (auctionMode === "etf") return { ttlSeconds: 22, bidIntervalSeconds: 4 };
+  if (qualityTier === "full") return { ttlSeconds: 35, bidIntervalSeconds: 5 };
+  return { ttlSeconds: 15, bidIntervalSeconds: 4 };
+}
+
 function settlementTimeoutMs(qualityTier: QualityTier): number {
-  if (qualityTier === "full") return 2 * 60_000;
-  if (qualityTier === "brief") return 90_000;
-  return 3 * 60_000;
+  if (qualityTier === "full") return 90_000;
+  if (qualityTier === "brief") return 60_000;
+  return 75_000;
+}
+
+async function settleWinningBid(opts: {
+  brief: string;
+  category: MarketplaceCategory;
+  apiBase: string;
+  statePath: string;
+  sellerAddress: string;
+  bid: AuctionBid;
+  forceX402?: boolean;
+  phases: PayerAgentPhase[];
+  now: () => number;
+}): Promise<PayerAgentResult> {
+  const { bid } = opts;
+  const job = bid.etfId ? buildEtfJob(bid.etfId, opts.brief) : buildDirectJob(bid.agentId, opts.brief);
+  if (!job) {
+    return {
+      ok: false,
+      strategy: "auction",
+      brief: opts.brief,
+      category: opts.category,
+      phases: opts.phases,
+      error: "Failed to create job for settlement",
+    };
+  }
+  job.totalUsdc = bid.priceUsdc;
+  if (bid.etfId) job.etfId = bid.etfId;
+
+  opts.phases.push({
+    phase: "negotiate",
+    at: opts.now(),
+    message: `Fast settle — ${bid.agentName} at $${bid.priceUsdc}`,
+    winner: { agentId: bid.agentId, agentName: bid.agentName, priceUsdc: bid.priceUsdc },
+  });
+
+  const result = await runMarketplaceWorkflow({
+    apiBase: opts.apiBase,
+    job,
+    forceX402: opts.forceX402,
+    initiator: "user",
+  });
+  const finalized = finalizeCompletedJob(job, result);
+  const completed = finalized.status === "completed";
+  const settlementId = result.steps.find((s) => s.settlementId)?.settlementId;
+
+  patchMarketplaceState(opts.statePath, opts.sellerAddress, (state) => {
+    let next = { ...state, jobs: mergeJobUpdates(state.jobs, [finalized]) };
+    if (result.steps[0]?.ok) {
+      next = recordAgentSuccess(next, bid.agentId, bid.priceUsdc, bid.etaSeconds);
+      next = treasuryCredit(next, bid.priceUsdc);
+    }
+    return next;
+  });
+
+  opts.phases.push({
+    phase: "settle",
+    at: opts.now(),
+    message: completed ? "x402 payment settled — deliverable received" : (result.steps.find((s) => !s.ok)?.error ?? "Settlement failed"),
+    settlementId,
+    ok: completed,
+    winner: { agentId: bid.agentId, agentName: bid.agentName, priceUsdc: bid.priceUsdc },
+    error: completed ? undefined : result.steps.find((s) => !s.ok)?.error,
+  });
+
+  return {
+    ok: completed,
+    strategy: "auction",
+    mode: result.mode,
+    brief: opts.brief,
+    category: opts.category,
+    phases: opts.phases,
+    jobId: finalized.id,
+    summary: finalized.summary ?? buildJobSummary(finalized),
+    error: completed ? undefined : opts.phases[opts.phases.length - 1]?.error,
+  };
 }
 
 function discoverQuotes(
@@ -147,10 +245,10 @@ async function pollAuctionUntilSettled(opts: {
     const mp = loadMarketplaceState(opts.statePath, opts.sellerAddress);
     const auction = mp.auctions.find((a) => a.id === opts.auctionId);
     if (!auction) throw new Error("Auction not found during settlement");
-    if (auction.status === "completed" || auction.status === "cancelled" || auction.status === "open") {
+    if (auction.status === "completed" || auction.status === "cancelled") {
       return auction;
     }
-    await sleep(2_000);
+    await sleep(POLL_MS);
   }
   const mp = loadMarketplaceState(opts.statePath, opts.sellerAddress);
   const auction = mp.auctions.find((a) => a.id === opts.auctionId);
@@ -173,7 +271,7 @@ async function waitForAuctionAward(opts: {
     const idx = mp.auctions.findIndex((a) => a.id === opts.auctionId);
     if (idx < 0) {
       if (missingRetries++ < 5) {
-        await sleep(400);
+        await sleep(200);
         continue;
       }
       throw new Error("Auction not found during negotiation");
@@ -201,7 +299,7 @@ async function waitForAuctionAward(opts: {
       return { auction: tick.auction, needsAward: false };
     }
 
-    await sleep(2_000);
+    await sleep(POLL_MS);
   }
 
   const mp = loadMarketplaceState(opts.statePath, opts.sellerAddress);
@@ -230,9 +328,11 @@ export async function runPayerAgent(opts: {
     return { ok: false, strategy: opts.strategy ?? "auction", brief: "", category: "research", phases: [], error: "brief required" };
   }
 
-  const qualityTier = opts.qualityTier ?? "standard";
-  const category = resolveTaskCategory(brief, opts.category, qualityTier);
-  const auctionMode = defaultAuctionMode(qualityTier, opts.auctionMode);
+  const express = resolveExpressBrief(brief);
+  const deepWork = resolveDeepWorkRouting(brief);
+  const qualityTier = express ? "brief" : deepWork ? deepWork.qualityTier : (opts.qualityTier ?? "standard");
+  const category = express?.category ?? resolveTaskCategory(brief, opts.category, qualityTier);
+  const auctionMode = express ? "single" : deepWork ? deepWork.auctionMode : defaultAuctionMode(qualityTier, opts.auctionMode);
   const maxBudgetUsdc = opts.maxBudgetUsdc?.trim() || undefined;
 
   const readiness = agentRunReadiness();
@@ -249,7 +349,6 @@ export async function runPayerAgent(opts: {
 
   const strategy = opts.strategy ?? "auction";
   const minReputation = opts.minReputation ?? 70;
-  const ttlSeconds = opts.ttlSeconds ?? 60;
   const phases: PayerAgentPhase[] = [];
   const now = () => Math.floor(Date.now() / 1000);
   const policy = getExternalAgentPolicy();
@@ -282,7 +381,9 @@ export async function runPayerAgent(opts: {
     }
   }
 
-  await refreshExternalPrices(opts.apiBase);
+  if (discoveryUrls.length > 0 && policy.openDiscovery) {
+    await refreshExternalPrices(opts.apiBase);
+  }
 
   let mp = loadMarketplaceState(opts.statePath, opts.sellerAddress);
   const credits = getAgentCredits(mp, policy.baselineReputation);
@@ -356,19 +457,37 @@ export async function runPayerAgent(opts: {
     }
   }
 
-  const auction = initializeAuction({
+  const timing = resolvePayerTiming(qualityTier, quotes.length, auctionMode);
+  const ttlSeconds = opts.ttlSeconds ?? timing.ttlSeconds;
+  const auctionPreview = initializeAuction({
     brief,
     category,
     minReputation,
     ttlSeconds,
     autoAward: true,
-    bidIntervalSeconds: 10,
+    bidIntervalSeconds: timing.bidIntervalSeconds,
     payerAgentOwned: true,
     qualityTier,
     maxBudgetUsdc,
     auctionMode,
     credits,
   });
+
+  if (auctionPreview.bids.length === 1) {
+    return settleWinningBid({
+      brief,
+      category,
+      apiBase: opts.apiBase,
+      statePath: opts.statePath,
+      sellerAddress: opts.sellerAddress,
+      bid: auctionPreview.bids[0]!,
+      forceX402: opts.forceX402,
+      phases,
+      now,
+    });
+  }
+
+  const auction = auctionPreview;
   mp = updateMarketplaceState(opts.statePath, opts.sellerAddress, (state) => ({
     ...state,
     auctions: [...state.auctions, auction],
