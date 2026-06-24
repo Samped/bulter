@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "viem": "file:../../.vendor/viem-2.52.2.tgz"
+    "viem": "^2.48.11"
   },
   "devDependencies": {
     "typescript": "^5.8.3"
