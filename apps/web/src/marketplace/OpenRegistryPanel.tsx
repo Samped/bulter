@@ -3,6 +3,7 @@ import {
   formatUsdc,
   getAgentRegistry,
   probeRegistryUrl,
+  setAgentApproval,
   type AgentRegistryResponse,
   type MarketplaceAgentCard,
 } from "../api.ts";
@@ -12,6 +13,7 @@ export function OpenRegistryPanel({ onStatsChange }: { onStatsChange?: () => voi
   const [registry, setRegistry] = useState<AgentRegistryResponse | null>(null);
   const [probeUrl, setProbeUrl] = useState("");
   const [probing, setProbing] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [localOpen, setLocalOpen] = useState(false);
@@ -44,8 +46,8 @@ export function OpenRegistryPanel({ onStatsChange }: { onStatsChange?: () => voi
       }
       setMessage(
         res.agent
-          ? `${res.agent.name} registered · $${formatUsdc(res.probe.priceUsdc ?? res.agent.priceUsdc)}`
-          : "x402 endpoint verified"
+          ? `${res.agent.name} probed · $${formatUsdc(res.probe.priceUsdc ?? res.agent.priceUsdc)} — approve below to allow auctions and payment`
+          : "x402 endpoint verified — approve the agent to enable payment"
       );
       setProbeUrl("");
       await refresh();
@@ -56,8 +58,24 @@ export function OpenRegistryPanel({ onStatsChange }: { onStatsChange?: () => voi
     }
   };
 
-  const local = registry?.agents.filter((a) => a.origin !== "external") ?? [];
-  const external = registry?.agents.filter((a) => a.origin === "external") ?? [];
+  const handleApproval = async (agentId: string, approved: boolean) => {
+    setTogglingId(agentId);
+    setError(null);
+    try {
+      await setAgentApproval(agentId, approved);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not update approval");
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const agents = registry?.agents ?? [];
+  const local = agents.filter((a) => a.origin !== "external");
+  const external = agents.filter((a) => a.origin === "external");
+  const approvalRequired = registry?.policy?.requireAgentApproval !== false;
+  const approvedCount = registry?.approvedCount ?? agents.filter((a) => a.approved).length;
 
   return (
     <div className="mp-network">
@@ -83,7 +101,22 @@ export function OpenRegistryPanel({ onStatsChange }: { onStatsChange?: () => voi
               {registry.policy.openDiscovery ? "On" : "Off"}
             </span>
           </span>
+          {approvalRequired && (
+            <>
+              <span className="mp-policy-divider" />
+              <span className="mp-policy-item">
+                <span className="mp-policy-k">Approval</span>
+                <span className="mp-policy-v on">{approvedCount} approved</span>
+              </span>
+            </>
+          )}
         </div>
+      )}
+
+      {approvalRequired && (
+        <p className="mp-network-intro muted">
+          Only approved agents can bid in auctions and receive payment. Probed or discovered agents stay pending until you approve them.
+        </p>
       )}
 
       <div className="mp-probe-card">
@@ -112,7 +145,7 @@ export function OpenRegistryPanel({ onStatsChange }: { onStatsChange?: () => voi
           </button>
         </div>
         <p className="mp-probe-hint muted">
-          Validates HTTP 402 + PAYMENT-REQUIRED, then adds the agent to competitive auctions.
+          Validates HTTP 402 + PAYMENT-REQUIRED, registers the agent, then waits for your approval before auctions or payment.
         </p>
         {message && <p className="mp-alert mp-alert-success">{message}</p>}
         {error && <p className="mp-alert mp-alert-error">{error}</p>}
@@ -126,7 +159,13 @@ export function OpenRegistryPanel({ onStatsChange }: { onStatsChange?: () => voi
           </div>
           <div className="mp-agent-grid">
             {external.map((a) => (
-              <AgentCard key={a.id} agent={a} />
+              <AgentCard
+                key={a.id}
+                agent={a}
+                approvalRequired={approvalRequired}
+                toggling={togglingId === a.id}
+                onApprovalChange={(approved) => void handleApproval(a.id, approved)}
+              />
             ))}
           </div>
         </section>
@@ -147,7 +186,14 @@ export function OpenRegistryPanel({ onStatsChange }: { onStatsChange?: () => voi
         {localOpen && (
           <div className="mp-agent-grid compact">
             {local.map((a) => (
-              <AgentCard key={a.id} agent={a} compact />
+              <AgentCard
+                key={a.id}
+                agent={a}
+                compact
+                approvalRequired={approvalRequired}
+                toggling={togglingId === a.id}
+                onApprovalChange={(approved) => void handleApproval(a.id, approved)}
+              />
             ))}
           </div>
         )}
@@ -156,19 +202,32 @@ export function OpenRegistryPanel({ onStatsChange }: { onStatsChange?: () => voi
       {external.length === 0 && (
         <p className="mp-network-foot muted">
           No external agents yet. Probe a URL above or add entries to{" "}
-          <code>.data/external-agents.json</code>.
+          <code>.data/external-agents.json</code>, then approve them here.
         </p>
       )}
     </div>
   );
 }
 
-function AgentCard({ agent, compact = false }: { agent: MarketplaceAgentCard; compact?: boolean }) {
+function AgentCard({
+  agent,
+  compact = false,
+  approvalRequired = false,
+  toggling = false,
+  onApprovalChange,
+}: {
+  agent: MarketplaceAgentCard & { approved?: boolean };
+  compact?: boolean;
+  approvalRequired?: boolean;
+  toggling?: boolean;
+  onApprovalChange?: (approved: boolean) => void;
+}) {
   const external = agent.origin === "external";
   const host = agent.domain ?? (agent.serviceUrl ? safeHostname(agent.serviceUrl) : null);
+  const approved = agent.approved !== false;
 
   return (
-    <article className={`mp-agent-card ${compact ? "compact" : ""} ${external ? "external" : ""}`}>
+    <article className={`mp-agent-card ${compact ? "compact" : ""} ${external ? "external" : ""} ${!approved ? "pending" : ""}`}>
       <div className="mp-agent-card-top">
         <div className="mp-agent-avatar lg" aria-hidden>
           {agent.name.charAt(0).toUpperCase()}
@@ -178,6 +237,11 @@ function AgentCard({ agent, compact = false }: { agent: MarketplaceAgentCard; co
             <h4>{agent.name}</h4>
             {external && <span className="mp-badge open">Open</span>}
             {agent.x402Verified && <span className="mp-badge x402">x402</span>}
+            {approvalRequired && (
+              <span className={`mp-badge ${approved ? "approved" : "pending"}`}>
+                {approved ? "Approved" : "Pending"}
+              </span>
+            )}
           </div>
           {!compact && <p className="mp-agent-tagline">{agent.tagline}</p>}
         </div>
@@ -186,6 +250,16 @@ function AgentCard({ agent, compact = false }: { agent: MarketplaceAgentCard; co
         <span className="mp-agent-price mono">${formatUsdc(agent.priceUsdc)}</span>
         {agent.credit != null && <span className="mp-agent-rep">Rep {agent.credit.score}</span>}
         {host && !compact && <span className="mp-agent-host mono" title={agent.serviceUrl}>{host}</span>}
+        {approvalRequired && onApprovalChange && (
+          <button
+            type="button"
+            className={`btn sm mp-approve-btn ${approved ? "ghost" : "accent"}`}
+            disabled={toggling}
+            onClick={() => onApprovalChange(!approved)}
+          >
+            {toggling ? "…" : approved ? "Revoke" : "Approve"}
+          </button>
+        )}
       </div>
     </article>
   );
