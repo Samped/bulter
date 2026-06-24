@@ -139,17 +139,27 @@ export function patchMarketplaceState(
 }
 
 export function getAgentCredits(state: MarketplaceState, externalBaseline = 72): AgentCreditScore[] {
+  const LOCAL_BASELINE = 76;
   return listMarketplaceAgents().map((agent) => {
     const stats = state.agentStats[agent.id];
-    if (!stats || (stats.tasksCompleted === 0 && agent.origin === "external")) {
+    if (!stats || stats.tasksCompleted === 0) {
       if (agent.origin === "external") return externalBaselineCredit(agent, externalBaseline);
+      return {
+        agentId: agent.id,
+        score: LOCAL_BASELINE,
+        successRate: 100,
+        tasksCompleted: 0,
+        revenueUsdc: "0",
+        avgEtaSeconds: agent.etaSeconds,
+        reliability: 80,
+      };
     }
-    const s = stats ?? DEFAULT_STATS;
-    const avgEta = s.tasksCompleted > 0 ? Math.round(s.totalEtaSeconds / s.tasksCompleted) : agent.etaSeconds;
-    return {
-      agentId: agent.id,
-      ...computeCreditScore({ ...s, avgEtaSeconds: avgEta }),
-    };
+    const avgEta = stats.tasksCompleted > 0 ? Math.round(stats.totalEtaSeconds / stats.tasksCompleted) : agent.etaSeconds;
+    const credit = computeCreditScore({ ...stats, avgEtaSeconds: avgEta });
+    if (agent.origin === "local" && credit.score < LOCAL_BASELINE && stats.tasksCompleted < 8) {
+      return { agentId: agent.id, ...credit, score: LOCAL_BASELINE };
+    }
+    return { agentId: agent.id, ...credit };
   });
 }
 
