@@ -36,15 +36,32 @@ function HeadlinesBlock({ data }: { data: Record<string, unknown> }) {
   return (
     <section className="paper-section">
       <h2 className="paper-section-title">
-        Headlines{data.ticker ? ` — ${String(data.ticker)}` : ""}
+        Top Headlines{data.topic ? ` — ${String(data.topic)}` : data.ticker ? ` — ${String(data.ticker)}` : ""}
       </h2>
       <ol className="paper-numbered-list">
         {headlines.map((h, i) => {
           const row = h as Record<string, unknown>;
+          const url = typeof row.url === "string" ? row.url : null;
           return (
             <li key={i}>
-              <strong>{String(row.title ?? "Headline")}</strong>
+              <strong>
+                {url ? (
+                  <a href={url} target="_blank" rel="noreferrer">
+                    {String(row.title ?? "Headline")}
+                  </a>
+                ) : (
+                  String(row.title ?? "Headline")
+                )}
+              </strong>
               {row.source ? <span className="paper-ref-meta"> — {String(row.source)}</span> : null}
+              {row.publishedAt ? (
+                <span className="paper-ref-meta"> · {new Date(String(row.publishedAt)).toLocaleString()}</span>
+              ) : null}
+              {typeof row.traderImpact === "string" && (
+                <p className="paper-prose" style={{ marginTop: "0.35rem" }}>
+                  {row.traderImpact}
+                </p>
+              )}
             </li>
           );
         })}
@@ -141,9 +158,20 @@ function ResearchBlock({ data }: { data: Record<string, unknown> }) {
         </div>
       </section>
 
+      {isFull && Array.isArray(data.limitations) && data.limitations.length > 0 && (
+        <section className="paper-section">
+          <h2 className="paper-section-title">4. Limitations</h2>
+          <ul className="paper-bullet-list">
+            {(data.limitations as string[]).map((l, i) => (
+              <li key={i}>{l}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {isFull && Array.isArray(data.risks) && data.risks.length > 0 && (
         <section className="paper-section">
-          <h2 className="paper-section-title">4. Risk Assessment</h2>
+          <h2 className="paper-section-title">{Array.isArray(data.limitations) && data.limitations.length > 0 ? "5" : "4"}. Risk Assessment</h2>
           <ul className="paper-bullet-list">
             {(data.risks as string[]).map((r, i) => (
               <li key={i}>{r}</li>
@@ -198,31 +226,121 @@ function AuditBlock({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-function ChartBlock({ data }: { data: Record<string, unknown> }) {
-  if (typeof data.pattern !== "string") return null;
+function OnchainBlock({ data }: { data: Record<string, unknown> }) {
+  if (data.type !== "onchain" && !Array.isArray(data.signals)) return null;
+  const market = data.marketContext as Record<string, unknown> | undefined;
+  const signals = Array.isArray(data.signals) ? (data.signals as Record<string, unknown>[]) : [];
+
   return (
     <section className="paper-section">
-      <h2 className="paper-section-title">Technical Analysis</h2>
+      <h2 className="paper-section-title">On-Chain Analysis{data.asset ? ` — ${String(data.asset)}` : ""}</h2>
+      {market?.price != null && (
+        <p className="paper-inline-meta">
+          Spot ${String(market.price)} ({String(market.change24h ?? "?")}% 24h)
+        </p>
+      )}
+      {typeof data.summary === "string" && <p className="paper-prose">{data.summary}</p>}
+      {typeof data.exchangeFlows === "string" && (
+        <>
+          <h3 className="paper-section-subtitle">Exchange flows</h3>
+          <p className="paper-prose">{data.exchangeFlows}</p>
+        </>
+      )}
+      {typeof data.whaleActivity === "string" && (
+        <>
+          <h3 className="paper-section-subtitle">Whale activity</h3>
+          <p className="paper-prose">{data.whaleActivity}</p>
+        </>
+      )}
+      {typeof data.networkActivity === "string" && (
+        <>
+          <h3 className="paper-section-subtitle">Network activity</h3>
+          <p className="paper-prose">{data.networkActivity}</p>
+        </>
+      )}
+      {typeof data.holderTrends === "string" && (
+        <>
+          <h3 className="paper-section-subtitle">Holder trends</h3>
+          <p className="paper-prose">{data.holderTrends}</p>
+        </>
+      )}
+      {typeof data.outlook7d === "string" && (
+        <>
+          <h3 className="paper-section-subtitle">7-day outlook</h3>
+          <p className="paper-prose">{data.outlook7d}</p>
+        </>
+      )}
+      {signals.length > 0 && (
+        <>
+          <h3 className="paper-section-subtitle">Signals</h3>
+          <ul className="paper-bullet-list">
+            {signals.map((s, i) => (
+              <li key={i}>
+                <strong>{String(s.label ?? "Signal")}</strong> ({String(s.direction ?? "neutral")}):{" "}
+                {String(s.detail ?? "")}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
+function ChartBlock({ data }: { data: Record<string, unknown> }) {
+  if (typeof data.pattern !== "string" && data.type !== "technical-analysis") return null;
+  return (
+    <section className="paper-section">
+      <h2 className="paper-section-title">
+        Technical Analysis{data.symbol ? ` — ${String(data.symbol)}` : ""}
+      </h2>
+      {typeof data.summary === "string" && <p className="paper-prose">{data.summary}</p>}
       <table className="paper-table">
         <tbody>
+          {data.bias ? (
+            <tr>
+              <th>Bias</th>
+              <td>{String(data.bias)}</td>
+            </tr>
+          ) : null}
           <tr>
             <th>Pattern</th>
-            <td>{data.pattern}</td>
+            <td>{String(data.pattern ?? "—")}</td>
           </tr>
           <tr>
             <th>Support</th>
-            <td>{String(data.support)}</td>
+            <td>{data.support != null ? `$${data.support}` : "—"}</td>
           </tr>
           <tr>
             <th>Resistance</th>
-            <td>{String(data.resistance)}</td>
+            <td>{data.resistance != null ? `$${data.resistance}` : "—"}</td>
           </tr>
           <tr>
             <th>RSI</th>
-            <td>{String(data.rsi)}</td>
+            <td>{String(data.rsi ?? "—")}</td>
           </tr>
         </tbody>
       </table>
+      {Array.isArray(data.keyLevels) && data.keyLevels.length > 0 && (
+        <>
+          <h3 className="paper-section-subtitle">Key levels</h3>
+          <ul className="paper-bullet-list">
+            {(data.keyLevels as string[]).map((l, i) => (
+              <li key={i}>{l}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      {Array.isArray(data.catalysts) && data.catalysts.length > 0 && (
+        <>
+          <h3 className="paper-section-subtitle">Catalysts</h3>
+          <ul className="paper-bullet-list">
+            {(data.catalysts as string[]).map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </>
+      )}
     </section>
   );
 }
@@ -231,13 +349,56 @@ function renderPayload(data: Record<string, unknown>) {
   const blocks: ReactNode[] = [];
   if (data.report && typeof data.report === "object") blocks.push(<ReportBlock key="report" data={data} />);
   if (Array.isArray(data.headlines)) blocks.push(<HeadlinesBlock key="headlines" data={data} />);
-  if (typeof data.symbol === "string" && data.price != null) blocks.push(<MarketBlock key="market" data={data} />);
+  if (data.type === "onchain" || Array.isArray(data.signals)) {
+    blocks.push(<OnchainBlock key="onchain" data={data} />);
+  } else if (typeof data.symbol === "string" && data.price != null) {
+    blocks.push(<MarketBlock key="market" data={data} />);
+  }
   if (Array.isArray(data.papers)) blocks.push(<ResearchBlock key="research" data={data} />);
   if (typeof data.score === "number" && typeof data.label === "string")
     blocks.push(<SentimentBlock key="sentiment" data={data} />);
   if (typeof data.contract === "string") blocks.push(<AuditBlock key="audit" data={data} />);
-  if (typeof data.pattern === "string") blocks.push(<ChartBlock key="chart" data={data} />);
+  if (data.type === "technical-analysis" || (typeof data.pattern === "string" && !Array.isArray(data.papers))) {
+    blocks.push(<ChartBlock key="chart" data={data} />);
+  }
   return blocks.length > 0 ? blocks : null;
+}
+
+function MacroBlock({ data }: { data: Record<string, unknown> }) {
+  if (data.type !== "macro" && typeof data.fedOutlook !== "string") return null;
+  return (
+    <section className="paper-section">
+      <h2 className="paper-section-title">Macro Outlook</h2>
+      {typeof data.summary === "string" && <p className="paper-prose">{data.summary}</p>}
+      {typeof data.fedOutlook === "string" && (
+        <p className="paper-prose">
+          <strong>Fed:</strong> {data.fedOutlook}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function DefiBlock({ data }: { data: Record<string, unknown> }) {
+  if (data.type !== "defi" && !Array.isArray(data.topProtocols)) return null;
+  return (
+    <section className="paper-section">
+      <h2 className="paper-section-title">DeFi Context</h2>
+      {typeof data.summary === "string" && <p className="paper-prose">{data.summary}</p>}
+    </section>
+  );
+}
+
+function RiskBlock({ data }: { data: Record<string, unknown> }) {
+  if (data.type !== "risk" && typeof data.riskScore !== "number") return null;
+  return (
+    <section className="paper-section">
+      <h2 className="paper-section-title">
+        Risk Assessment{data.riskLabel ? ` — ${String(data.riskLabel)}` : ""}
+      </h2>
+      {typeof data.summary === "string" && <p className="paper-prose">{data.summary}</p>}
+    </section>
+  );
 }
 
 /** One unified document from all agent step outputs (no per-agent section headers). */
@@ -247,7 +408,17 @@ export function CombinedDeliverableBody({ steps }: { steps: { output?: unknown }
     return <p className="paper-prose paper-empty">No structured output was stored for this job.</p>;
   }
 
+  const onchain = merged.onchain as Record<string, unknown> | undefined;
+  const defi = merged.defi as Record<string, unknown> | undefined;
+  const macro = merged.macro as Record<string, unknown> | undefined;
+  const risk = merged.risk as Record<string, unknown> | undefined;
+  const chartData =
+    merged.pattern != null || merged.type === "technical-analysis"
+      ? merged
+      : null;
+
   const blocks: ReactNode[] = [];
+  if (merged.report && typeof merged.report === "object") blocks.push(<ReportBlock key="report" data={merged} />);
   if (typeof merged.symbol === "string" && merged.price != null) {
     blocks.push(<MarketBlock key="market" data={merged} />);
   }
@@ -255,9 +426,12 @@ export function CombinedDeliverableBody({ steps }: { steps: { output?: unknown }
   if (typeof merged.score === "number" && typeof merged.label === "string") {
     blocks.push(<SentimentBlock key="sentiment" data={merged} />);
   }
+  if (onchain) blocks.push(<OnchainBlock key="onchain" data={onchain} />);
+  if (chartData) blocks.push(<ChartBlock key="chart" data={chartData} />);
+  if (defi) blocks.push(<DefiBlock key="defi" data={defi} />);
+  if (macro) blocks.push(<MacroBlock key="macro" data={macro} />);
   if (Array.isArray(merged.papers)) blocks.push(<ResearchBlock key="research" data={merged} />);
-  if (typeof merged.pattern === "string") blocks.push(<ChartBlock key="chart" data={merged} />);
-  if (merged.report && typeof merged.report === "object") blocks.push(<ReportBlock key="report" data={merged} />);
+  if (risk) blocks.push(<RiskBlock key="risk" data={risk} />);
   if (typeof merged.contract === "string") blocks.push(<AuditBlock key="audit" data={merged} />);
 
   return (

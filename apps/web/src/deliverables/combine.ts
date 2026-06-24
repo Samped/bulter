@@ -1,5 +1,9 @@
 import { unwrapAgentPayload } from "./format.ts";
 
+function appendUnique<T>(existing: T[] | undefined, incoming: T[]): T[] {
+  return [...(existing ?? []), ...incoming];
+}
+
 /** Merge multi-agent step outputs into one library document (mirrors API deliverable-combine). */
 export function combineWorkflowResult(steps: { output?: unknown }[]): Record<string, unknown> | null {
   const payloads = steps
@@ -12,7 +16,7 @@ export function combineWorkflowResult(steps: { output?: unknown }[]): Record<str
 
   for (const p of payloads) {
     if (Array.isArray(p.headlines)) {
-      combined.headlines = [...(Array.isArray(combined.headlines) ? combined.headlines : []), ...p.headlines];
+      combined.headlines = appendUnique(combined.headlines as unknown[], p.headlines);
       if (p.topic) combined.ticker = p.topic;
     }
     if (typeof p.symbol === "string" && p.price != null) {
@@ -24,17 +28,24 @@ export function combineWorkflowResult(steps: { output?: unknown }[]): Record<str
       combined.source = p.source;
     }
     if (p.report && typeof p.report === "object") combined.report = p.report;
-    if (typeof p.executiveSummary === "string") combined.executiveSummary = p.executiveSummary;
+    if (typeof p.executiveSummary === "string") {
+      combined.executiveSummary = combined.executiveSummary
+        ? `${combined.executiveSummary}\n\n${p.executiveSummary}`
+        : p.executiveSummary;
+    }
     if (p.focus) combined.focus = p.focus;
     if (p.type === "research") combined.type = "research";
     if (Array.isArray(p.keyFindings)) {
-      combined.keyFindings = [...(Array.isArray(combined.keyFindings) ? combined.keyFindings : []), ...p.keyFindings];
+      combined.keyFindings = appendUnique(combined.keyFindings as string[], p.keyFindings as string[]);
     }
     if (Array.isArray(p.papers)) {
-      combined.papers = [...(Array.isArray(combined.papers) ? combined.papers : []), ...p.papers];
+      combined.papers = appendUnique(combined.papers as unknown[], p.papers);
+    }
+    if (Array.isArray(p.limitations)) {
+      combined.limitations = appendUnique(combined.limitations as string[], p.limitations as string[]);
     }
     if (Array.isArray(p.risks)) {
-      combined.risks = [...(Array.isArray(combined.risks) ? combined.risks : []), ...p.risks];
+      combined.risks = appendUnique(combined.risks as string[], p.risks as string[]);
     }
     if (typeof p.methodology === "string") combined.methodology = p.methodology;
     if (typeof p.score === "number" && typeof p.label === "string") {
@@ -42,12 +53,18 @@ export function combineWorkflowResult(steps: { output?: unknown }[]): Record<str
       combined.label = p.label;
       combined.sources = p.sources;
     }
-    if (typeof p.pattern === "string") {
-      combined.pattern = p.pattern;
-      combined.support = p.support;
-      combined.resistance = p.resistance;
-      combined.rsi = p.rsi;
+    if (p.type === "technical-analysis" || typeof p.pattern === "string") {
+      combined.pattern = p.pattern ?? combined.pattern;
+      combined.support = p.support ?? combined.support;
+      combined.resistance = p.resistance ?? combined.resistance;
+      combined.rsi = p.rsi ?? combined.rsi;
+      combined.bias = p.bias ?? combined.bias;
+      if (typeof p.summary === "string") combined.technicalSummary = p.summary;
     }
+    if (p.type === "defi" || Array.isArray(p.topProtocols)) combined.defi = p;
+    if (p.type === "macro" || typeof p.fedOutlook === "string") combined.macro = p;
+    if (p.type === "onchain" || Array.isArray(p.signals)) combined.onchain = p;
+    if (p.type === "risk" || typeof p.riskScore === "number") combined.risk = p;
     if (typeof p.contract === "string") {
       combined.contract = p.contract;
       combined.findings = p.findings;
