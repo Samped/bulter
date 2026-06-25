@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "node ../../node_modules/vite/bin/vite.js --port 5174",
     "build": "vite build",
+    "vercel:install": "bash vercel-install.sh",
+    "vercel:build": "bash vercel-build.sh",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit"
   },
