@@ -4,11 +4,12 @@
   "version": "0.1.0",
   "description": "Lepton Butler — autonomous paying agent on Arc with policy-enforced budgets",
   "workspaces": [
-    "packages/*",
-    "apps/*"
+    "packages/core",
+    "packages/arc",
+    "apps/web"
   ],
   "scripts": {
-    "postinstall": "node -e \"console.log('Butler ready. Run npm run setup:lepton then copy .env.example → .env')\"",
+    "postinstall": "node -e \"console.log('Butler ready. For API/agent: npm run install:full')\"",
     "setup:lepton": "bash scripts/setup-lepton-stack.sh",
     "arc:login": "PATH=\"$HOME/.local/bin:$PATH\" arc-canteen login",
     "arc:context": "PATH=\"$HOME/.local/bin:$PATH\" arc-canteen context sync",
@@ -21,6 +22,7 @@
     "dev:api": "npm run dev -w @butler/api",
     "dev:web": "npm run dev -w @butler/web",
     "install:deps": "python3 scripts/install-deps.py",
+    "install:full": "node scripts/set-workspaces-full.js && npm install",
     "repair:deps": "python3 scripts/repair-deps.py",
     "agent": "npm run start -w @butler/agent",
     "delegation:deploy": "npm run deploy -w @butler/delegation-app",
