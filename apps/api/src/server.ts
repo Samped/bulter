@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import cors from "cors";
 import express from "express";
 import { ARC_EIP155, resolveArcRpc } from "@butler/arc";
-import { loadCoreRoutes } from "./load-core-routes.ts";
+import { registerCircleLoginRoutes } from "./circle-login-routes.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../../../.env") });
@@ -26,7 +26,9 @@ const routesReady = new Promise<void>((resolve) => {
   resolveRoutesReady = resolve;
 });
 
-/** Wait for route registration instead of failing mid-boot (login, policy, etc.). */
+/** Login routes register first — never blocked by heavy route imports. */
+registerCircleLoginRoutes(app);
+
 app.use((req, res, next) => {
   if (req.path === "/api/health") return next();
   void routesReady.then(() => next());
@@ -44,10 +46,19 @@ app.get("/api/health", (_req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Butler API http://localhost:${PORT} (booting…)`);
-  loadCoreRoutes(app);
   ready = true;
   resolveRoutesReady();
-  console.log(`Butler API core ready · Circle login available`);
+  console.log(`Butler API login ready · Circle OTP`);
+
+  void import("./load-core-routes.ts")
+    .then(({ loadCoreRoutes }) => {
+      loadCoreRoutes(app);
+      console.log(`Butler API core ready · Circle status + config`);
+    })
+    .catch((error) => {
+      console.error("Butler API failed to load core routes:", error);
+    });
+
   setImmediate(() => {
     void import("./load-routes.ts")
       .then(({ loadRoutes }) => loadRoutes(app))

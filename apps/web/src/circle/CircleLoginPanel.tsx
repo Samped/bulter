@@ -7,7 +7,7 @@ import {
   getCircleWallets,
   setCircleExecutor,
   shortAddr,
-  waitForApiReady,
+  IS_LOCAL_API,
   type CircleAgentWallet,
   type CircleStatus,
 } from "../api.ts";
@@ -128,8 +128,15 @@ export function CircleLoginPanel({
     setSendElapsed(0);
     const tick = window.setInterval(() => setSendElapsed((s) => s + 1), 1_000);
     try {
-      await waitForApiReady();
-      const res = await circleLoginInit(email);
+      const res = await Promise.race([
+        circleLoginInit(email),
+        new Promise<never>((_, reject) =>
+          window.setTimeout(
+            () => reject(new Error("No code after 2 minutes — server may be waking up. Refresh and try again.")),
+            IS_LOCAL_API ? 90_000 : 125_000
+          )
+        ),
+      ]);
       if (!res?.requestId) {
         throw new Error("Code may have been sent, but the session ID was missing. Click Resend code.");
       }
@@ -369,7 +376,7 @@ export function CircleLoginPanel({
                 {busy && (
                   <p className="muted small" style={{ margin: "0.35rem 0 0" }}>
                     Contacting Circle… {sendElapsed > 0 ? `${sendElapsed}s` : ""}
-                    {sendElapsed > 45 ? " — still working, check spam soon" : " — can take up to 3 minutes on free tier"}
+                    {sendElapsed > 90 ? " — taking longer than usual" : " — usually under 60s"}
                   </p>
                 )}
               </>
