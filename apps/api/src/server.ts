@@ -63,7 +63,7 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-app.listen(PORT, () => {
+  app.listen(PORT, "0.0.0.0", () => {
   console.log(`Butler API http://localhost:${PORT} (booting…)`);
   ready = true;
   resolveRoutesReady();

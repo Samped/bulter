@@ -228,7 +228,7 @@ export async function wakeApiForLogin(maxWaitMs = IS_LOCAL_API ? 15_000 : 120_00
   throw new Error(
     IS_LOCAL_API
       ? `Cannot reach API at ${API} — is npm run dev:api running?`
-      : `API not ready after ${Math.round(maxWaitMs / 1000)}s. Open ${API}/api/health in a new tab, wait for "ok":true, then tap Send login code again.`
+      : `API is down (${API}). Open ${API}/api/health — if you see Bad Gateway, wait for Render to redeploy (check the Render dashboard), then try again.`
   );
 }
 
@@ -300,7 +300,8 @@ export async function pollCircleLoginJob(
   jobId: string,
   opts?: { onPending?: (elapsedMs: number) => void }
 ): Promise<CircleLoginInitResult> {
-  const deadline = Date.now() + (IS_LOCAL_API ? 120_000 : 180_000);
+  const startedAt = Date.now();
+  const deadline = startedAt + (IS_LOCAL_API ? 120_000 : 180_000);
   let delay = 1_500;
   while (Date.now() < deadline) {
     let status: {
@@ -325,8 +326,8 @@ export async function pollCircleLoginJob(
       if (/job not found|expired/i.test(msg)) {
         throw new Error("Server restarted while sending the code. Tap Resend, then enter the new code.");
       }
-      if (/502|503|504|Cannot reach API|timed out|waking up/i.test(msg)) {
-        opts?.onPending?.(Date.now());
+      if (/502|503|504|Cannot reach API|timed out|waking up|Bad Gateway|unavailable/i.test(msg)) {
+        opts?.onPending?.(Date.now() - startedAt);
         await wakeApiForLogin(30_000);
         await new Promise((r) => setTimeout(r, delay));
         delay = Math.min(delay + 500, 4_000);
