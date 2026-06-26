@@ -464,12 +464,16 @@ export function circleLoginInit(email: string, testnet = true): CircleLoginInitR
   return parseCircleLoginInitResult(ok, data, raw, err, email);
 }
 
-export async function circleLoginInitAsync(email: string, testnet = true): Promise<CircleLoginInitResult> {
+export async function circleLoginInitAsync(
+  email: string,
+  testnet = true,
+  timeoutMs = 28_000
+): Promise<CircleLoginInitResult> {
   invalidateCircleCache();
   const args = ["wallet", "login", email, "--type", "agent"];
   if (testnet) args.push("--testnet");
   args.push("--init");
-  const { ok, data, raw, err } = await runCircleJsonAsync(args, 28_000);
+  const { ok, data, raw, err } = await runCircleJsonAsync(args, timeoutMs);
   return parseCircleLoginInitResult(ok, data, raw, err, email);
 }
 

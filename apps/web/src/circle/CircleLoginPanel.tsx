@@ -123,10 +123,6 @@ export function CircleLoginPanel({
     setBusy(true);
     setError(null);
     setOpen(true);
-    const watchdog = window.setTimeout(() => {
-      setBusy(false);
-      setError("Sending timed out. Tap Send login code to try again.");
-    }, 40_000);
     try {
       const res = await circleLoginInit(email);
       if (!res?.requestId) {
@@ -148,7 +144,6 @@ export function CircleLoginPanel({
       setError(msg);
       setStep("email");
     } finally {
-      window.clearTimeout(watchdog);
       setBusy(false);
     }
   };
@@ -367,7 +362,7 @@ export function CircleLoginPanel({
                 </button>
                 {busy && (
                   <p className="muted small" style={{ margin: "0.35rem 0 0" }}>
-                    Contacting Circle — usually under 30 seconds.
+                    Contacting Circle — this can take up to 2 minutes on first try.
                   </p>
                 )}
               </>

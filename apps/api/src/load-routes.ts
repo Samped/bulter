@@ -16,7 +16,6 @@ import {
   circleCliRunnable,
   circleGatewayBalance,
   circleListAgentWallets,
-  circleLoginInitAsync as circleCliLoginInit,
   circleLoginVerifyAsync as circleCliLoginVerify,
   circleLogout,
   circleVersion,
@@ -26,6 +25,7 @@ import {
   probeCircleCli,
   scheduleGatewayBalanceRefresh,
 } from "./circle-cli.ts";
+import { getCircleLoginInitJob, startCircleLoginInitJob } from "./circle-login-jobs.ts";
 import { loadCircleConfig, resolveCircleExecutorAddress, resolveCircleChain, saveCircleConfig, useCircleCliPayments } from "./circle-config.ts";
 import {
   appendRecord,
@@ -278,7 +278,7 @@ app.get("/api/circle/status", (_req, res) => {
   }
 });
 
-app.post("/api/circle/login/init", async (req, res) => {
+app.post("/api/circle/login/init", (req, res) => {
   try {
     const email = String(req.body?.email ?? "").trim();
     if (!email.includes("@")) {
@@ -289,26 +289,42 @@ app.post("/api/circle/login/init", async (req, res) => {
       res.status(503).json({ error: "Circle CLI not installed. Run npm run circle:install on the server." });
       return;
     }
-    const result = await circleCliLoginInit(email, req.body?.testnet !== false);
-    if (!result || !result.ok) {
-      res.status(500).json({ error: result?.error ?? "Failed to send OTP" });
-      return;
-    }
-    res.json({
-      ok: true,
-      requestId: result.requestId,
-      email: result.email,
-      message: result.message,
-      otpPrefix: result.otpPrefix,
-      hint: result.otpPrefix
-        ? `Enter ${result.otpPrefix}-123456 or the 6 digits from your email (one verify attempt per code).`
-        : "Check your email for a code like B1X-123456 (6 digits also works). One verify attempt per code.",
-    });
+    const testnet = req.body?.testnet !== false;
+    const jobId = startCircleLoginInitJob(email, testnet);
+    res.status(202).json({ pending: true, jobId, email });
   } catch (error) {
     res.status(500).json({
       error: error instanceof Error ? error.message : "Failed to send OTP",
     });
   }
+});
+
+app.get("/api/circle/login/init/:jobId", (req, res) => {
+  const job = getCircleLoginInitJob(req.params.jobId);
+  if (!job) {
+    res.status(404).json({ error: "Login job not found or expired — send a new code." });
+    return;
+  }
+  if (job.status === "pending") {
+    res.json({ status: "pending", email: job.email });
+    return;
+  }
+  const result = job.result;
+  if (!result?.ok) {
+    res.status(500).json({ status: "error", error: result?.error ?? "Failed to send OTP" });
+    return;
+  }
+  res.json({
+    status: "ok",
+    ok: true,
+    requestId: result.requestId,
+    email: result.email,
+    message: result.message,
+    otpPrefix: result.otpPrefix,
+    hint: result.otpPrefix
+      ? `Enter ${result.otpPrefix}-123456 or the 6 digits from your email (one verify attempt per code).`
+      : "Check your email for a code like B1X-123456 (6 digits also works). One verify attempt per code.",
+  });
 });
 
 app.post("/api/circle/login/verify", async (req, res) => {

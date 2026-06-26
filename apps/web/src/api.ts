@@ -239,16 +239,51 @@ export function getCircleStatus() {
   return request<CircleStatus>("/api/circle/status", undefined, IS_LOCAL_API ? 25_000 : 90_000);
 }
 
-export function circleLoginInit(email: string) {
-  return request<{ ok?: boolean; requestId: string; email: string; message?: string; hint?: string; otpPrefix?: string }>(
+export async function circleLoginInit(email: string) {
+  const started = await request<{ pending?: boolean; jobId: string; email: string }>(
     "/api/circle/login/init",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, testnet: true }),
     },
-    IS_LOCAL_API ? 90_000 : 35_000
+    15_000
   );
+
+  const deadline = Date.now() + (IS_LOCAL_API ? 90_000 : 120_000);
+  let delay = 1_500;
+  while (Date.now() < deadline) {
+    const status = await request<{
+      status: string;
+      requestId?: string;
+      email?: string;
+      message?: string;
+      hint?: string;
+      otpPrefix?: string;
+      error?: string;
+    }>(`/api/circle/login/init/${started.jobId}`, undefined, 15_000);
+
+    if (status.status === "pending") {
+      await new Promise((r) => setTimeout(r, delay));
+      delay = Math.min(delay + 500, 4_000);
+      continue;
+    }
+    if (status.status === "error" || status.error) {
+      throw new Error(status.error ?? "Failed to send OTP");
+    }
+    if (!status.requestId) {
+      throw new Error("Code may have been sent, but the session ID was missing. Click Resend code.");
+    }
+    return {
+      ok: true,
+      requestId: status.requestId,
+      email: status.email ?? started.email,
+      message: status.message,
+      hint: status.hint,
+      otpPrefix: status.otpPrefix,
+    };
+  }
+  throw new Error("Sending timed out. Tap Send login code to try again.");
 }
 
 export function circleLoginVerify(requestId: string, otp: string, email?: string) {
