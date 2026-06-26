@@ -296,6 +296,19 @@ export async function startCircleLoginJob(email: string) {
 const LOGIN_POLL_TIMEOUT = IS_LOCAL_API ? 15_000 : 25_000;
 const LOGIN_POLL_RETRIES = IS_LOCAL_API ? 3 : 12;
 
+export async function fetchCircleLoginJobOnce(jobId: string) {
+  return request<{
+    status: string;
+    requestId?: string;
+    email?: string;
+    message?: string;
+    hint?: string;
+    otpPrefix?: string;
+    error?: string;
+    elapsedMs?: number;
+  }>(`/api/circle/login/init/${jobId}`, undefined, LOGIN_POLL_TIMEOUT, LOGIN_POLL_RETRIES);
+}
+
 export async function pollCircleLoginJob(
   jobId: string,
   opts?: { onPending?: (elapsedMs: number) => void }
@@ -363,11 +376,14 @@ export async function pollCircleLoginJob(
   throw new Error("Sending timed out. Tap Resend and try again.");
 }
 
-/** Wake API, start Circle OTP job, and wait until the code is actually sent. */
-export async function sendLoginCode(
+/** Start OTP send, call onJobStarted as soon as the job exists, then poll for requestId. */
+export async function beginLoginCodeSend(
   email: string,
-  opts?: { onProgress?: (elapsedSec: number) => void }
-): Promise<CircleLoginInitResult & { email: string }> {
+  opts?: {
+    onJobStarted?: (job: { jobId: string; email: string }) => void;
+    onProgress?: (elapsedSec: number) => void;
+  }
+): Promise<CircleLoginInitResult & { email: string; jobId: string }> {
   const deadline = Date.now() + (IS_LOCAL_API ? 90_000 : 180_000);
   const budget = () => Math.max(5_000, deadline - Date.now());
   let lastErr: Error | null = null;
@@ -377,10 +393,11 @@ export async function sendLoginCode(
     try {
       await wakeApiForLogin(Math.min(IS_LOCAL_API ? 20_000 : 90_000, budget()));
       const started = await startCircleLoginJob(email);
+      opts?.onJobStarted?.(started);
       const result = await pollCircleLoginJob(started.jobId, {
         onPending: (elapsedMs) => opts?.onProgress?.(Math.floor(elapsedMs / 1000)),
       });
-      return { ...result, email: result.email || started.email };
+      return { ...result, email: result.email || started.email, jobId: started.jobId };
     } catch (err) {
       lastErr = err instanceof Error ? err : new Error(String(err));
       const retryable =
@@ -399,9 +416,59 @@ export async function sendLoginCode(
     new Error(
       IS_LOCAL_API
         ? "Could not send code. Check the API is running and try again."
-        : "Could not send code — the server may be waking up. Wait 60 seconds and tap Send code again."
+        : "Could not confirm the code was sent. If you got the email, enter the code and tap Verify."
     )
   );
+}
+
+/** @deprecated Use beginLoginCodeSend so the UI can show the OTP step immediately. */
+export async function sendLoginCode(
+  email: string,
+  opts?: { onProgress?: (elapsedSec: number) => void }
+): Promise<CircleLoginInitResult & { email: string }> {
+  const result = await beginLoginCodeSend(email, { onProgress: opts?.onProgress });
+  return result;
+}
+
+/** Poll until job has requestId (e.g. before verify when email arrived before poll finished). */
+export async function waitForLoginRequestId(
+  jobId: string,
+  maxWaitMs = IS_LOCAL_API ? 60_000 : 90_000
+): Promise<CircleLoginInitResult> {
+  const deadline = Date.now() + maxWaitMs;
+  let delay = 1_000;
+  while (Date.now() < deadline) {
+    try {
+      const status = await fetchCircleLoginJobOnce(jobId);
+      if (status.status === "pending") {
+        await new Promise((r) => setTimeout(r, delay));
+        delay = Math.min(delay + 500, 3_000);
+        continue;
+      }
+      if (status.status === "error" || status.error) {
+        throw new Error(status.error ?? "Failed to send OTP");
+      }
+      if (!status.requestId) {
+        throw new Error("Code sent but session ID missing. Tap Verify again.");
+      }
+      return {
+        ok: true,
+        requestId: status.requestId,
+        email: status.email ?? "",
+        message: status.message,
+        hint: status.hint,
+        otpPrefix: status.otpPrefix,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Poll failed";
+      if (/502|503|504|Cannot reach API|Bad Gateway|unavailable|timed out/i.test(msg)) {
+        await wakeApiForLogin(Math.min(30_000, deadline - Date.now()));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("Still connecting to server. Tap Verify again in a few seconds.");
 }
 
 export async function circleLoginInit(email: string) {
