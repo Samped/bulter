@@ -112,7 +112,7 @@ export interface AgentRunResult {
 }
 
 const API = (import.meta.env.VITE_API_URL as string | undefined)?.trim() || "http://localhost:3001";
-const IS_LOCAL_API = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(API.replace(/\/$/, ""));
+export const IS_LOCAL_API = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(API.replace(/\/$/, ""));
 
 function defaultTimeoutMs(): number {
   return IS_LOCAL_API ? 20_000 : 90_000;
@@ -252,14 +252,14 @@ export async function circleLoginInit(email: string) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, testnet: true }),
     },
-    20_000,
-    4
+    12_000,
+    2
   );
 
-  const deadline = Date.now() + (IS_LOCAL_API ? 90_000 : 180_000);
+  const deadline = Date.now() + (IS_LOCAL_API ? 90_000 : 120_000);
   let delay = 1_500;
   while (Date.now() < deadline) {
-    const status = await request<{
+    let status: {
       status: string;
       requestId?: string;
       email?: string;
@@ -268,11 +268,30 @@ export async function circleLoginInit(email: string) {
       otpPrefix?: string;
       error?: string;
       elapsedMs?: number;
-    }>(`/api/circle/login/init/${started.jobId}`, undefined, 20_000, 2);
+    };
+    try {
+      status = await request(
+        `/api/circle/login/init/${started.jobId}`,
+        undefined,
+        12_000,
+        1
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Poll failed";
+      if (/502|503|504|Cannot reach API/i.test(msg)) {
+        await new Promise((r) => setTimeout(r, delay));
+        delay = Math.min(delay + 500, 3_000);
+        continue;
+      }
+      throw err;
+    }
 
     if (status.status === "pending") {
+      if ((status.elapsedMs ?? 0) > 120_000) {
+        throw new Error("Circle did not respond in time. The server may be overloaded — try again in a minute.");
+      }
       await new Promise((r) => setTimeout(r, delay));
-      delay = Math.min(delay + 500, 4_000);
+      delay = Math.min(delay + 500, 3_000);
       continue;
     }
     if (status.status === "error" || status.error) {
@@ -290,7 +309,7 @@ export async function circleLoginInit(email: string) {
       otpPrefix: status.otpPrefix,
     };
   }
-  throw new Error("Sending timed out after 3 minutes. Tap Send login code to try again.");
+  throw new Error("No code received after 2 minutes. Tap Send login code to try again.");
 }
 
 export function circleLoginVerify(requestId: string, otp: string, email?: string) {

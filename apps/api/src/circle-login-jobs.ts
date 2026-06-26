@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { circleCliInstalled, circleCliQuickRunnable, circleLoginInitAsync, type CircleLoginInitResult } from "./circle-cli.ts";
+
+export type CircleLoginInitResult = {
+  ok: boolean;
+  requestId?: string;
+  email?: string;
+  message?: string;
+  otpPrefix?: string;
+  error?: string;
+};
 
 type LoginInitJob = {
   status: "pending" | "ok" | "error";
@@ -25,21 +33,13 @@ export function startCircleLoginInitJob(email: string, testnet = true): string {
   jobs.set(jobId, { status: "pending", email, testnet, startedAt: Date.now() });
   void (async () => {
     try {
+      const { circleCliInstalled, circleCliQuickRunnable, circleLoginInitAsync } = await import("./circle-cli.ts");
       if (!circleCliInstalled()) {
-        const job = jobs.get(jobId);
-        if (!job) return;
-        job.status = "error";
-        job.result = { ok: false, error: "Circle CLI not installed on the server." };
+        fail(jobId, "Circle CLI not installed on the server.");
         return;
       }
       if (!circleCliQuickRunnable()) {
-        const job = jobs.get(jobId);
-        if (!job) return;
-        job.status = "error";
-        job.result = {
-          ok: false,
-          error: "Circle CLI is installed but not responding. Try again in a moment.",
-        };
+        fail(jobId, "Circle CLI is installed but not responding. Try again in a moment.");
         return;
       }
       const result = await circleLoginInitAsync(email, testnet, 120_000);
@@ -48,16 +48,17 @@ export function startCircleLoginInitJob(email: string, testnet = true): string {
       job.status = result.ok ? "ok" : "error";
       job.result = result;
     } catch (error) {
-      const job = jobs.get(jobId);
-      if (!job) return;
-      job.status = "error";
-      job.result = {
-        ok: false,
-        error: error instanceof Error ? error.message : "Failed to send OTP",
-      };
+      fail(jobId, error instanceof Error ? error.message : "Failed to send OTP");
     }
   })();
   return jobId;
+}
+
+function fail(jobId: string, error: string): void {
+  const job = jobs.get(jobId);
+  if (!job) return;
+  job.status = "error";
+  job.result = { ok: false, error };
 }
 
 export function getCircleLoginInitJob(jobId: string): LoginInitJob | undefined {
