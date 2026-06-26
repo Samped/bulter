@@ -95,13 +95,13 @@ function fixEmailTypos(email: string): { email: string; corrected: boolean } {
   return { email: `${local}@${fixed}`, corrected: true };
 }
 
-function measurePopoverPos(chip: HTMLButtonElement | null) {
+function measurePopoverPos(chip: HTMLButtonElement | null, wide = false) {
   if (!chip) return null;
   const rect = chip.getBoundingClientRect();
   return {
     top: rect.bottom + 6,
     right: Math.max(12, window.innerWidth - rect.right),
-    width: Math.min(300, window.innerWidth - 24),
+    width: Math.min(wide ? 340 : 300, window.innerWidth - 24),
   };
 }
 
@@ -130,7 +130,6 @@ export function CircleLoginPanel({
   const [sendElapsed, setSendElapsed] = useState(0);
   const [open, setOpen] = useState(false);
   const [showFundModal, setShowFundModal] = useState(false);
-  const [showOtpModal, setShowOtpModal] = useState(Boolean(saved?.requestId));
   const [fundBusy, setFundBusy] = useState(false);
   const [fundMessage, setFundMessage] = useState<string | null>(null);
   const [loggedInAddress, setLoggedInAddress] = useState<string | null>(null);
@@ -161,15 +160,11 @@ export function CircleLoginPanel({
   }, [refresh]);
 
   useEffect(() => {
-    if (step === "otp" && !connected) setShowOtpModal(true);
-  }, [step, connected]);
-
-  useEffect(() => {
     if (!open) {
       setPopoverPos(null);
       return;
     }
-    const update = () => setPopoverPos(measurePopoverPos(chipRef.current));
+    const update = () => setPopoverPos(measurePopoverPos(chipRef.current, step === "otp"));
     update();
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
@@ -177,19 +172,19 @@ export function CircleLoginPanel({
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [open]);
+  }, [open, step]);
 
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (busy || showFundModal || showOtpModal) return;
+      if (step === "otp" || busy || showFundModal) return;
       const target = e.target as Node;
       if (rootRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
       setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [open, busy, showFundModal, showOtpModal]);
+  }, [open, step, busy, showFundModal]);
 
   const goToEmail = () => {
     setStep("email");
@@ -197,7 +192,6 @@ export function CircleLoginPanel({
     setOtp("");
     setOtpPrefix(null);
     setHint(null);
-    setShowOtpModal(false);
     clearSession();
   };
 
@@ -214,8 +208,8 @@ export function CircleLoginPanel({
     setSending(true);
     setError(null);
     setStep("otp");
-    setShowOtpModal(true);
-    setOpen(false);
+    setOpen(true);
+    setPopoverPos(measurePopoverPos(chipRef.current, true));
     setRequestId(null);
     setOtp("");
     setSendElapsed(0);
@@ -274,7 +268,6 @@ export function CircleLoginPanel({
       clearSession();
       setStep("email");
       setOtp("");
-      setShowOtpModal(false);
       setOpen(false);
       setLoggedInAddress(address);
       setShowFundModal(true);
@@ -338,98 +331,6 @@ export function CircleLoginPanel({
       setBusy(false);
     }
   };
-
-  const otpModal =
-    showOtpModal && !connected && step === "otp" ? (
-      <div className="payer-fund-backdrop" role="presentation" onClick={() => !busy && !sending && setShowOtpModal(false)}>
-        <div
-          className="payer-fund-modal payer-otp-modal"
-          role="dialog"
-          aria-label="Enter verification code"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <p className="payer-fund-title">Check your email</p>
-          <p className="payer-otp-hint">
-            {sending ? (
-              <>
-                Sending code to <strong>{email}</strong>…
-                <br />
-                <span className="muted">
-                  Usually 30–60s{sendElapsed > 0 ? ` (${sendElapsed}s)` : ""}. You can type the code below while you wait.
-                </span>
-              </>
-            ) : codeReady ? (
-              <>
-                We sent a code to <strong>{email}</strong>.
-                {otpPrefix ? (
-                  <>
-                    {" "}
-                    Enter <strong>{otpPrefix}-######</strong> from the email.
-                  </>
-                ) : (
-                  <> {hint ?? "Enter the code from your email."}</>
-                )}
-              </>
-            ) : (
-              <>
-                Could not send a code to <strong>{email}</strong>. Tap Resend or change email.
-              </>
-            )}
-          </p>
-          <label className="payer-otp-label" htmlFor="butler-otp-input">
-            Verification code
-          </label>
-          <input
-            id="butler-otp-input"
-            className="field-input payer-otp-input"
-            placeholder={otpPrefix ? `${otpPrefix}-123456` : "ABC-123456 or 6 digits"}
-            value={otp}
-            onChange={(e) => setOtp(e.target.value)}
-            autoComplete="one-time-code"
-            inputMode="text"
-            autoFocus
-            disabled={busy}
-            aria-label="Email verification code"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && codeReady && otpDigits(otp) >= 6 && !busy) void handleVerify();
-            }}
-          />
-          <div className="payer-actions payer-otp-actions">
-            <button
-              type="button"
-              className="btn primary payer-fund-btn"
-              disabled={sending || busy || !codeReady || otpDigits(otp) < 6}
-              onClick={() => void handleVerify()}
-            >
-              {sending ? "Sending code…" : busy ? "Verifying…" : "Verify & log in"}
-            </button>
-            <button type="button" className="btn ghost sm" disabled={sending || busy} onClick={() => void handleSendOtp()}>
-              Resend code
-            </button>
-            <button type="button" className="btn ghost sm" disabled={sending || busy} onClick={goToEmail}>
-              Change email
-            </button>
-          </div>
-          {error && (
-            <p className="payer-error">
-              {error}
-              {/waking up|API is down|Bad Gateway/i.test(error) && (
-                <>
-                  {" "}
-                  <a
-                    href={`${import.meta.env.VITE_API_URL || "https://butler-api-x7lh.onrender.com"}/api/health`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Check API health
-                  </a>
-                </>
-              )}
-            </p>
-          )}
-        </div>
-      </div>
-    ) : null;
 
   const fundModal =
     showFundModal && loggedInAddress ? (
@@ -508,6 +409,73 @@ export function CircleLoginPanel({
               Sign out
             </button>
           </>
+        ) : step === "otp" ? (
+          <>
+            <p className="payer-otp-hint">
+              {sending ? (
+                <>
+                  Sending code to <strong>{email}</strong>…
+                  <br />
+                  <span className="muted">
+                    Usually 30–60s{sendElapsed > 0 ? ` (${sendElapsed}s)` : ""}. You can enter the code below while you wait.
+                  </span>
+                </>
+              ) : codeReady ? (
+                <>
+                  Code sent to <strong>{email}</strong>
+                  {otpPrefix ? (
+                    <>
+                      <br />
+                      Enter <strong>{otpPrefix}-######</strong> from your email
+                    </>
+                  ) : (
+                    <>
+                      <br />
+                      {hint ?? "Enter the code from your email"}
+                    </>
+                  )}
+                </>
+              ) : (
+                <>
+                  Could not send code to <strong>{email}</strong>. Tap Resend.
+                </>
+              )}
+            </p>
+            <label className="payer-otp-label" htmlFor="butler-otp-input">
+              Verification code
+            </label>
+            <input
+              id="butler-otp-input"
+              className="field-input payer-otp-input"
+              placeholder={otpPrefix ? `${otpPrefix}-123456` : "ABC-123456 or 6 digits"}
+              value={otp}
+              onChange={(e) => setOtp(e.target.value)}
+              autoComplete="one-time-code"
+              inputMode="text"
+              autoFocus
+              disabled={busy}
+              aria-label="Email verification code"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && codeReady && otpDigits(otp) >= 6 && !busy) void handleVerify();
+              }}
+            />
+            <div className="payer-actions">
+              <button
+                type="button"
+                className="btn primary sm"
+                disabled={sending || busy || !codeReady || otpDigits(otp) < 6}
+                onClick={() => void handleVerify()}
+              >
+                {sending ? "Sending code…" : busy ? "Logging in…" : "Verify & log in"}
+              </button>
+              <button type="button" className="btn ghost sm" disabled={sending || busy} onClick={() => void handleSendOtp()}>
+                Resend
+              </button>
+              <button type="button" className="btn ghost sm" disabled={sending || busy} onClick={goToEmail}>
+                Back
+              </button>
+            </div>
+          </>
         ) : (
           <>
             <input
@@ -533,7 +501,7 @@ export function CircleLoginPanel({
           </>
         )}
 
-        {error && step === "email" && (
+        {error && (
           <p className="payer-error">
             {error}
             {/waking up|API is down|Bad Gateway/i.test(error) && (
@@ -557,13 +525,9 @@ export function CircleLoginPanel({
           type="button"
           className={`payer-toolbar-chip ${connected ? "connected" : "action"}`}
           onClick={() => {
-            if (!connected && step === "otp") {
-              setShowOtpModal(true);
-              return;
-            }
             setOpen((v) => {
               const next = !v;
-              if (next) setPopoverPos(measurePopoverPos(chipRef.current));
+              if (next) setPopoverPos(measurePopoverPos(chipRef.current, step === "otp"));
               return next;
             });
           }}
@@ -589,7 +553,6 @@ export function CircleLoginPanel({
         </button>
 
         {popover && createPortal(popover, document.body)}
-        {otpModal && createPortal(otpModal, document.body)}
         {fundModal && createPortal(fundModal, document.body)}
       </div>
     );

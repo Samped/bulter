@@ -12,6 +12,7 @@ import {
   toggleAgent,
   toggleMerchant,
   waitForApiReady,
+  IS_LOCAL_API,
   type AgentStatus,
   type CircleStatus,
   type Health,
@@ -169,15 +170,17 @@ export function App() {
     }, 18_000);
 
     void (async () => {
-      try {
-        await waitForApiReady();
-      } catch {
-        /* API may still be waking — show the app and keep retrying */
-      }
+      await refresh({ quiet: true });
       if (!cancelled) {
         setLoading(false);
         setConnectSlow(false);
       }
+      try {
+        await waitForApiReady(IS_LOCAL_API ? 15_000 : 12_000);
+      } catch {
+        /* API may still be waking — app is already visible */
+      }
+      if (!cancelled) void refresh({ quiet: true });
       while (!cancelled) {
         await refresh({ quiet: true });
         await new Promise((r) => setTimeout(r, 3_000));
@@ -279,9 +282,6 @@ export function App() {
               Connecting to Butler…
             </p>
           )}
-          <div className="splash-login">
-            <CircleLoginPanel variant="toolbar" onReady={refresh} />
-          </div>
         </div>
       </div>
     );
