@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  beginLoginCodeSend,
   circleLoginVerify,
   circleLogout,
   fundCircleWallet,
   getCircleStatus,
   getCircleWallets,
-  sendLoginCode,
+  pollCircleLoginJob,
   setCircleExecutor,
   shortAddr,
+  waitForLoginRequestId,
   type CircleAgentWallet,
   type CircleStatus,
 } from "../api.ts";
@@ -20,6 +22,7 @@ const SESSION_KEY = "butler.circleLogin";
 const SESSION_TTL_MS = 15 * 60 * 1000;
 
 type SavedSession = {
+  jobId?: string;
   requestId?: string;
   email?: string;
   otpPrefix?: string;
@@ -42,7 +45,13 @@ function loadSession(): SavedSession | null {
   }
 }
 
-function saveSession(data: { requestId: string; email: string; otpPrefix?: string; hint?: string }) {
+function saveSession(data: {
+  jobId?: string;
+  requestId?: string;
+  email: string;
+  otpPrefix?: string;
+  hint?: string;
+}) {
   sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...data, savedAt: Date.now() }));
 }
 
@@ -116,10 +125,11 @@ export function CircleLoginPanel({
   const saved = loadSession();
   const [status, setStatus] = useState<CircleStatus | null>(null);
   const [email, setEmail] = useState(saved?.email ?? "");
+  const [jobId, setJobId] = useState<string | null>(saved?.jobId ?? null);
   const [requestId, setRequestId] = useState<string | null>(saved?.requestId ?? null);
   const [otpPrefix, setOtpPrefix] = useState<string | null>(saved?.otpPrefix ?? null);
   const [otp, setOtp] = useState("");
-  const [step, setStep] = useState<Step>(saved?.requestId ? "otp" : "email");
+  const [step, setStep] = useState<Step>(saved?.requestId || saved?.jobId ? "otp" : "email");
   const [wallets, setWallets] = useState<CircleAgentWallet[]>([]);
   const [emailHint, setEmailHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -136,6 +146,7 @@ export function CircleLoginPanel({
   const rootRef = useRef<HTMLDivElement>(null);
   const chipRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const skipResumePoll = useRef(false);
 
   const connected = status?.loggedIn ?? false;
 
@@ -186,12 +197,34 @@ export function CircleLoginPanel({
 
   const goToEmail = () => {
     setStep("email");
+    setJobId(null);
     setRequestId(null);
     setOtp("");
     setOtpPrefix(null);
     setHint(null);
     setError(null);
     clearSession();
+  };
+
+  const applyLoginJobResult = (
+    result: {
+      requestId: string;
+      email?: string;
+      otpPrefix?: string;
+      hint?: string;
+    },
+    meta?: { jobId?: string; email?: string }
+  ) => {
+    setRequestId(result.requestId);
+    setOtpPrefix(result.otpPrefix ?? null);
+    setHint(result.hint ?? null);
+    saveSession({
+      jobId: meta?.jobId ?? jobId ?? undefined,
+      requestId: result.requestId,
+      email: meta?.email ?? email,
+      otpPrefix: result.otpPrefix,
+      hint: result.hint,
+    });
   };
 
   const handleSendCode = async () => {
@@ -207,41 +240,85 @@ export function CircleLoginPanel({
     setSending(true);
     setError(null);
     setSendElapsed(0);
+    setRequestId(null);
+    setOtp("");
+    skipResumePoll.current = true;
+    let startedJobId: string | null = null;
     const tick = window.setInterval(() => setSendElapsed((s) => s + 1), 1_000);
     try {
-      const res = await sendLoginCode(sendTo, {
+      const res = await beginLoginCodeSend(sendTo, {
+        onJobStarted: ({ jobId: id }) => {
+          startedJobId = id;
+          setJobId(id);
+          setStep("otp");
+          setOpen(true);
+          setPopoverPos(measurePopoverPos(chipRef.current, true));
+          saveSession({ jobId: id, email: sendTo });
+        },
         onProgress: (sec) => setSendElapsed(Math.max(sec, 1)),
       });
-      setRequestId(res.requestId);
-      setOtpPrefix(res.otpPrefix ?? null);
-      setHint(res.hint ?? null);
-      setOtp("");
-      setStep("otp");
-      saveSession({
-        requestId: res.requestId,
-        email: sendTo,
-        otpPrefix: res.otpPrefix,
-        hint: res.hint,
-      });
+      setJobId(res.jobId);
+      applyLoginJobResult(res, { jobId: res.jobId, email: sendTo });
     } catch (e) {
-      setStep("email");
-      setRequestId(null);
-      clearSession();
-      setError(e instanceof Error ? e.message : "Could not send code. Try again.");
+      if (startedJobId) {
+        setError(
+          e instanceof Error
+            ? e.message
+            : "If you received the email, enter the code below and tap Verify & log in."
+        );
+      } else {
+        setStep("email");
+        setJobId(null);
+        clearSession();
+        setError(e instanceof Error ? e.message : "Could not send code. Try again.");
+      }
     } finally {
       window.clearInterval(tick);
       setSending(false);
       setBusy(false);
+      skipResumePoll.current = false;
     }
   };
 
+  useEffect(() => {
+    if (skipResumePoll.current || !jobId || requestId || connected || step !== "otp") return;
+    let cancelled = false;
+    void (async () => {
+      setSending(true);
+      try {
+        const res = await pollCircleLoginJob(jobId, {
+          onPending: (ms) => {
+            if (!cancelled) setSendElapsed(Math.max(1, Math.floor(ms / 1000)));
+          },
+        });
+        if (!cancelled) applyLoginJobResult(res, { jobId, email });
+      } catch {
+        /* user can still verify — waitForLoginRequestId runs on submit */
+      } finally {
+        if (!cancelled) setSending(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, requestId, connected, step, email]);
+
   const handleVerify = async () => {
-    if (!requestId || otpDigits(otp) < 6 || busy) return;
+    if (otpDigits(otp) < 6 || busy) return;
     setBusy(true);
     setError(null);
     try {
+      let rid = requestId;
+      if (!rid && jobId) {
+        const res = await waitForLoginRequestId(jobId);
+        rid = res.requestId;
+        applyLoginJobResult(res, { jobId, email });
+      }
+      if (!rid) {
+        throw new Error("Still connecting. Wait a few seconds and tap Verify & log in again.");
+      }
       const res = await circleLoginVerify(
-        requestId,
+        rid,
         formatOtpForVerify(otp, otpPrefix),
         email,
         otpPrefix ?? undefined
@@ -401,17 +478,28 @@ export function CircleLoginPanel({
               Sign out
             </button>
           </>
-        ) : step === "otp" && requestId ? (
+        ) : step === "otp" ? (
           <>
             <p className="payer-otp-hint">
-              Code sent to <strong>{email}</strong>.
-              {otpPrefix ? (
+              {sending && !requestId ? (
                 <>
-                  {" "}
-                  Enter <strong>{otpPrefix}-######</strong> from your email.
+                  Sending to <strong>{email}</strong>
+                  {sendElapsed > 0 ? ` (${sendElapsed}s)` : ""}.
+                  <br />
+                  <span className="muted">Got the email? Enter the code below while we finish connecting.</span>
                 </>
               ) : (
-                <> {hint ?? "Enter the code from your email."}</>
+                <>
+                  Code sent to <strong>{email}</strong>.
+                  {otpPrefix ? (
+                    <>
+                      {" "}
+                      Enter <strong>{otpPrefix}-######</strong> from your email.
+                    </>
+                  ) : (
+                    <> {hint ?? "Enter the code from your email."}</>
+                  )}
+                </>
               )}
             </p>
             <label className="payer-otp-label" htmlFor="butler-otp-input">
@@ -440,7 +528,7 @@ export function CircleLoginPanel({
             >
               {busy ? "Logging in…" : "Verify & log in"}
             </button>
-            <button type="button" className="btn ghost sm payer-link-btn" disabled={busy} onClick={goToEmail}>
+            <button type="button" className="btn ghost sm payer-link-btn" disabled={busy || sending} onClick={goToEmail}>
               Use a different email
             </button>
           </>
