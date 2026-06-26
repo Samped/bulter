@@ -141,6 +141,7 @@ export function CircleLoginPanel({
   const [showFundModal, setShowFundModal] = useState(false);
   const [fundBusy, setFundBusy] = useState(false);
   const [fundMessage, setFundMessage] = useState<string | null>(null);
+  const [verifyHint, setVerifyHint] = useState<string | null>(null);
   const [loggedInAddress, setLoggedInAddress] = useState<string | null>(null);
   const [popoverPos, setPopoverPos] = useState<{ top: number; right: number; width: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -307,9 +308,11 @@ export function CircleLoginPanel({
     if (otpDigits(otp) < 6 || busy) return;
     setBusy(true);
     setError(null);
+    setVerifyHint("Connecting…");
     try {
       let rid = requestId;
       if (!rid && jobId) {
+        setVerifyHint("Fetching login session…");
         const res = await waitForLoginRequestId(jobId);
         rid = res.requestId;
         applyLoginJobResult(res, { jobId, email });
@@ -317,12 +320,10 @@ export function CircleLoginPanel({
       if (!rid) {
         throw new Error("Still connecting. Wait a few seconds and tap Verify & log in again.");
       }
-      const res = await circleLoginVerify(
-        rid,
-        formatOtpForVerify(otp, otpPrefix),
-        email,
-        otpPrefix ?? undefined
-      );
+      const formattedOtp = formatOtpForVerify(otp, otpPrefix);
+      const res = await circleLoginVerify(rid, formattedOtp, email, otpPrefix ?? undefined, {
+        onProgress: (msg) => setVerifyHint(msg),
+      });
       const loggedInEmail = res.email ?? email;
       const address = res.executorAddress ?? null;
       setWallets(res.wallets ?? []);
@@ -348,12 +349,18 @@ export function CircleLoginPanel({
       onReady?.();
     } catch (e) {
       const err = e as Error & { needsNewCode?: boolean };
-      setError(err.message);
+      const msg = err.message;
+      setError(
+        /Cannot reach API|waking up|502|503|504|Bad Gateway/i.test(msg) && !err.needsNewCode
+          ? `${msg} Your code is still valid — tap Verify & log in again in 30 seconds.`
+          : msg
+      );
       if (err.needsNewCode) {
         goToEmail();
       }
     } finally {
       setBusy(false);
+      setVerifyHint(null);
     }
   };
 
@@ -526,8 +533,9 @@ export function CircleLoginPanel({
               disabled={busy || otpDigits(otp) < 6}
               onClick={() => void handleVerify()}
             >
-              {busy ? "Logging in…" : "Verify & log in"}
+              {busy ? verifyHint ?? "Logging in…" : "Verify & log in"}
             </button>
+            {verifyHint && busy && <p className="muted small payer-send-status">{verifyHint}</p>}
             <button type="button" className="btn ghost sm payer-link-btn" disabled={busy || sending} onClick={goToEmail}>
               Use a different email
             </button>
