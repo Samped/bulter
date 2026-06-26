@@ -104,10 +104,14 @@ export function CircleLoginPanel({
   };
 
   const handleSendOtp = async () => {
-    if (!email.includes("@")) return;
+    if (!email.includes("@") || busy) return;
     setBusy(true);
     setError(null);
     setOpen(true);
+    const watchdog = window.setTimeout(() => {
+      setBusy(false);
+      setError("Sending timed out. Tap Send login code to try again.");
+    }, 40_000);
     try {
       const res = await circleLoginInit(email);
       if (!res?.requestId) {
@@ -127,8 +131,9 @@ export function CircleLoginPanel({
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to send OTP";
       setError(msg);
-      setStep("otp");
+      setStep("email");
     } finally {
+      window.clearTimeout(watchdog);
       setBusy(false);
     }
   };
@@ -341,8 +346,13 @@ export function CircleLoginPanel({
                   disabled={busy || !email.includes("@")}
                   onClick={handleSendOtp}
                 >
-                  {busy ? "Sending…" : "Send login code"}
+                  {busy ? "Sending code…" : "Send login code"}
                 </button>
+                {busy && (
+                  <p className="muted small" style={{ margin: "0.35rem 0 0" }}>
+                    Contacting Circle — usually under 30 seconds.
+                  </p>
+                )}
               </>
             )}
 
