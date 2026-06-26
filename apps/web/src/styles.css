@@ -2918,6 +2918,16 @@ select.field-input {
   letter-spacing: 0.05em;
 }
 
+.payer-send-status {
+  margin: 0.5rem 0 0;
+  line-height: 1.4;
+}
+
+.payer-link-btn {
+  width: 100%;
+  margin-top: 0.35rem;
+}
+
 .payer-popover-title {
   margin: 0 0 0.625rem;
   font-size: 0.6875rem;
