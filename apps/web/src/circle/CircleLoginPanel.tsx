@@ -77,6 +77,7 @@ export function CircleLoginPanel({
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(saved?.hint ?? null);
   const [busy, setBusy] = useState(false);
+  const [sendElapsed, setSendElapsed] = useState(0);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -124,6 +125,8 @@ export function CircleLoginPanel({
     setBusy(true);
     setError(null);
     setOpen(true);
+    setSendElapsed(0);
+    const tick = window.setInterval(() => setSendElapsed((s) => s + 1), 1_000);
     try {
       await waitForApiReady();
       const res = await circleLoginInit(email);
@@ -146,6 +149,7 @@ export function CircleLoginPanel({
       setError(msg);
       setStep("email");
     } finally {
+      window.clearInterval(tick);
       setBusy(false);
     }
   };
@@ -364,7 +368,8 @@ export function CircleLoginPanel({
                 </button>
                 {busy && (
                   <p className="muted small" style={{ margin: "0.35rem 0 0" }}>
-                    Contacting Circle — this can take up to 2 minutes on first try.
+                    Contacting Circle… {sendElapsed > 0 ? `${sendElapsed}s` : ""}
+                    {sendElapsed > 45 ? " — still working, check spam soon" : " — can take up to 3 minutes on free tier"}
                   </p>
                 )}
               </>

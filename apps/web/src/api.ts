@@ -135,8 +135,13 @@ function isRetryableHttp(status: number): boolean {
   return status === 404 || status === 502 || status === 503 || status === 504;
 }
 
-async function request<T>(path: string, init?: RequestInit, timeoutMs = defaultTimeoutMs()): Promise<T> {
-  const retries = IS_LOCAL_API ? 2 : 8;
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  timeoutMs = defaultTimeoutMs(),
+  maxRetries = IS_LOCAL_API ? 2 : 8
+): Promise<T> {
+  const retries = maxRetries;
   let lastErr: Error | null = null;
 
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -247,10 +252,11 @@ export async function circleLoginInit(email: string) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, testnet: true }),
     },
-    15_000
+    20_000,
+    4
   );
 
-  const deadline = Date.now() + (IS_LOCAL_API ? 90_000 : 120_000);
+  const deadline = Date.now() + (IS_LOCAL_API ? 90_000 : 180_000);
   let delay = 1_500;
   while (Date.now() < deadline) {
     const status = await request<{
@@ -261,7 +267,8 @@ export async function circleLoginInit(email: string) {
       hint?: string;
       otpPrefix?: string;
       error?: string;
-    }>(`/api/circle/login/init/${started.jobId}`, undefined, 15_000);
+      elapsedMs?: number;
+    }>(`/api/circle/login/init/${started.jobId}`, undefined, 20_000, 2);
 
     if (status.status === "pending") {
       await new Promise((r) => setTimeout(r, delay));
@@ -283,7 +290,7 @@ export async function circleLoginInit(email: string) {
       otpPrefix: status.otpPrefix,
     };
   }
-  throw new Error("Sending timed out. Tap Send login code to try again.");
+  throw new Error("Sending timed out after 3 minutes. Tap Send login code to try again.");
 }
 
 export function circleLoginVerify(requestId: string, otp: string, email?: string) {
