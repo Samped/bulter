@@ -493,24 +493,37 @@ export async function circleLoginVerify(
   requestId: string,
   otp: string,
   email?: string,
-  otpPrefix?: string
+  otpPrefix?: string,
+  opts?: { onProgress?: (message: string) => void }
 ) {
   const timeout = IS_LOCAL_API ? 90_000 : 120_000;
+  const perRequestRetries = IS_LOCAL_API ? 4 : 15;
   const init: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ requestId, otp, testnet: true, email, otpPrefix }),
   };
   let lastErr: Error | null = null;
-  for (let attempt = 1; attempt <= 5; attempt++) {
+
+  for (let attempt = 1; attempt <= 8; attempt++) {
     try {
+      opts?.onProgress?.(
+        attempt === 1 ? "Waking server…" : `Retrying verify (${attempt}/8)…`
+      );
+      try {
+        await wakeApiForLogin(Math.min(IS_LOCAL_API ? 20_000 : 60_000, 90_000));
+      } catch {
+        /* try verify anyway — health may lag behind login routes */
+      }
+      opts?.onProgress?.("Verifying code…");
       const body = await request<{
         ok?: boolean;
         email?: string;
         message?: string;
         wallets?: CircleAgentWallet[];
         executorAddress?: string | null;
-      }>("/api/circle/login/verify", init, timeout, 1);
+        needsNewCode?: boolean;
+      }>("/api/circle/login/verify", init, timeout, perRequestRetries);
       return {
         ok: true as const,
         email: body.email,
@@ -520,14 +533,21 @@ export async function circleLoginVerify(
       };
     } catch (err) {
       lastErr = err instanceof Error ? err : new Error(String(err));
+      const needsNewCode = !!(lastErr as Error & { needsNewCode?: boolean }).needsNewCode;
       const retryable =
-        attempt < 5 &&
-        /404|502|503|504|waking up|Cannot reach API/i.test(lastErr.message);
+        attempt < 8 &&
+        !needsNewCode &&
+        /404|502|503|504|waking up|Cannot reach API|timed out|Bad Gateway|unavailable/i.test(
+          lastErr.message
+        );
       if (!retryable) throw lastErr;
-      await new Promise((r) => setTimeout(r, Math.min(attempt * 2_000, 8_000)));
+      await new Promise((r) => setTimeout(r, Math.min(attempt * 3_000, 12_000)));
     }
   }
-  throw lastErr ?? new Error("Verify failed");
+  throw (
+    lastErr ??
+    new Error("Could not reach the server. Open the API health link in a new tab, wait for JSON, then tap Verify again.")
+  );
 }
 
 export function fundCircleWallet() {
