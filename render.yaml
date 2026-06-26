@@ -16,6 +16,8 @@ services:
     startCommand: npm run start -w @butler/api
     healthCheckPath: /api/health
     envVars:
+      - key: RENDER
+        value: "true"
       - key: BUTLER_LITE_API
         value: "true"
       - key: NODE_OPTIONS

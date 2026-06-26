@@ -7,6 +7,7 @@ import {
   getCircleWallets,
   setCircleExecutor,
   shortAddr,
+  wakeApiForLogin,
   IS_LOCAL_API,
   type CircleAgentWallet,
   type CircleStatus,
@@ -128,6 +129,7 @@ export function CircleLoginPanel({
     setSendElapsed(0);
     const tick = window.setInterval(() => setSendElapsed((s) => s + 1), 1_000);
     try {
+      await wakeApiForLogin();
       const res = await Promise.race([
         circleLoginInit(email),
         new Promise<never>((_, reject) =>

@@ -33,13 +33,9 @@ export function startCircleLoginInitJob(email: string, testnet = true): string {
   jobs.set(jobId, { status: "pending", email, testnet, startedAt: Date.now() });
   void (async () => {
     try {
-      const { circleCliInstalled, circleCliQuickRunnable, circleLoginInitAsync } = await import("./circle-cli.ts");
+      const { circleCliInstalled, circleLoginInitAsync } = await import("./circle-cli.ts");
       if (!circleCliInstalled()) {
-        fail(jobId, "Circle CLI not installed on the server.");
-        return;
-      }
-      if (!circleCliQuickRunnable()) {
-        fail(jobId, "Circle CLI is installed but not responding. Try again in a moment.");
+        fail(jobId, "Circle CLI not installed on the server. Redeploy the API on Render.");
         return;
       }
       const result = await circleLoginInitAsync(email, testnet, 120_000);

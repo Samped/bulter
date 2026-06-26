@@ -209,7 +209,23 @@ async function request<T>(
   throw lastErr ?? new Error(apiUnreachableMessage());
 }
 
-export const getHealth = () => request<Health>("/api/health");
+export const getHealth = () => request<Health>("/api/health", undefined, IS_LOCAL_API ? 15_000 : 25_000, 3);
+
+/** Wake Render free tier before Circle login (health can take 30–60s when asleep). */
+export async function wakeApiForLogin(maxWaitMs = IS_LOCAL_API ? 10_000 : 75_000): Promise<void> {
+  const started = Date.now();
+  let delay = 2_000;
+  while (Date.now() - started < maxWaitMs) {
+    try {
+      const h = await getHealth();
+      if (h.ok && h.mode !== "starting") return;
+    } catch {
+      /* retry */
+    }
+    await new Promise((r) => setTimeout(r, delay));
+    delay = Math.min(delay + 1_000, 6_000);
+  }
+}
 
 /** Poll until API health reports live (Render cold start / route bootstrap). */
 export async function waitForApiReady(maxWaitMs = IS_LOCAL_API ? 15_000 : 180_000): Promise<Health> {
