@@ -11,6 +11,11 @@ import { resumePendingLoginJobs } from "./circle-login-jobs.ts";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../../../.env") });
 
+/** Render free tier: skip heavy x402/marketplace unless explicitly disabled. */
+if (process.env.RENDER === "true" && process.env.BUTLER_LITE_API == null) {
+  process.env.BUTLER_LITE_API = "true";
+}
+
 const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);
 const WEB_URL = process.env.WEB_URL ?? `http://localhost:${process.env.WEB_PORT ?? 5174}`;
 const SELLER = (process.env.BUTLER_SELLER_ADDRESS ?? "0x933a2405f84c224be1ef373ba16e992e1f459682") as `0x${string}`;
