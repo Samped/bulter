@@ -350,24 +350,40 @@ export async function circleLoginInit(email: string) {
   throw new Error("No code received after 2 minutes. Tap Send login code to try again.");
 }
 
-export function circleLoginVerify(requestId: string, otp: string, email?: string) {
-  return request<{
-    ok?: boolean;
-    email?: string;
-    message?: string;
-    wallets?: CircleAgentWallet[];
-    executorAddress?: string | null;
-  }>("/api/circle/login/verify", {
+export async function circleLoginVerify(requestId: string, otp: string, email?: string) {
+  const timeout = IS_LOCAL_API ? 90_000 : 120_000;
+  const init: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ requestId, otp, testnet: true, email }),
-  }, IS_LOCAL_API ? 90_000 : 45_000).then((body) => ({
-    ok: true as const,
-    email: body.email,
-    message: body.message,
-    wallets: body.wallets ?? [],
-    executorAddress: body.executorAddress ?? null,
-  }));
+  };
+  let lastErr: Error | null = null;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      const body = await request<{
+        ok?: boolean;
+        email?: string;
+        message?: string;
+        wallets?: CircleAgentWallet[];
+        executorAddress?: string | null;
+      }>("/api/circle/login/verify", init, timeout, 1);
+      return {
+        ok: true as const,
+        email: body.email,
+        message: body.message,
+        wallets: body.wallets ?? [],
+        executorAddress: body.executorAddress ?? null,
+      };
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      const retryable =
+        attempt < 5 &&
+        /404|502|503|504|waking up|Cannot reach API/i.test(lastErr.message);
+      if (!retryable) throw lastErr;
+      await new Promise((r) => setTimeout(r, Math.min(attempt * 2_000, 8_000)));
+    }
+  }
+  throw lastErr ?? new Error("Verify failed");
 }
 
 export function circleLogout() {

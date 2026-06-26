@@ -78,9 +78,15 @@ function readLoginRequestEmail(requestId: string): string | undefined {
 
 function normalizeOtp(otp: string): string {
   const trimmed = otp.trim().replace(/\s/g, "");
-  const prefixed = trimmed.match(/^([A-Za-z0-9]{3})-(\d{6})$/);
+  const prefixed = trimmed.match(/^([A-Za-z0-9]{3})-?(\d{6})$/i);
   if (prefixed) return `${prefixed[1].toUpperCase()}-${prefixed[2]}`;
-  if (/^\d{6}$/.test(trimmed)) return trimmed;
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length >= 6) {
+    const six = digits.slice(-6);
+    const prefixMatch = trimmed.match(/^([A-Za-z0-9]{3})[- ]?/i);
+    if (prefixMatch) return `${prefixMatch[1].toUpperCase()}-${six}`;
+    return six;
+  }
   return trimmed;
 }
 
@@ -535,13 +541,14 @@ export function circleLoginVerify(requestId: string, otp: string, testnet = true
 export async function circleLoginVerifyAsync(
   requestId: string,
   otp: string,
-  testnet = true
+  testnet = true,
+  timeoutMs = 60_000
 ): Promise<CircleLoginVerifyResult> {
   invalidateCircleCache();
   const normalized = normalizeOtp(otp);
   const args = ["wallet", "login", "--request", requestId, "--otp", normalized];
   if (testnet) args.push("--testnet");
-  const { ok, data, raw, err } = await runCircleJsonAsync(args, 28_000);
+  const { ok, data, raw, err } = await runCircleJsonAsync(args, timeoutMs);
   return parseCircleLoginVerifyResult(ok, data, raw, err, requestId, testnet);
 }
 
