@@ -112,6 +112,18 @@ export interface AgentRunResult {
 }
 
 const API = (import.meta.env.VITE_API_URL as string | undefined)?.trim() || "http://localhost:3001";
+const IS_LOCAL_API = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(API.replace(/\/$/, ""));
+
+function defaultTimeoutMs(): number {
+  return IS_LOCAL_API ? 20_000 : 90_000;
+}
+
+function apiUnreachableMessage(): string {
+  if (IS_LOCAL_API) {
+    return `Cannot reach API at ${API} — is npm run dev:api running?`;
+  }
+  return `Cannot reach API at ${API} — the server may be waking up (Render free tier can take up to 60s). Wait and refresh, or open the API URL in a new tab first.`;
+}
 
 function responseOk(res: Response): boolean {
   if (res && typeof res.ok === "boolean") return res.ok;
@@ -119,42 +131,57 @@ function responseOk(res: Response): boolean {
   return false;
 }
 
-async function request<T>(path: string, init?: RequestInit, timeoutMs = 20_000): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    let res: Response;
+async function request<T>(path: string, init?: RequestInit, timeoutMs = defaultTimeoutMs()): Promise<T> {
+  const retries = IS_LOCAL_API ? 1 : 3;
+  let lastErr: Error | null = null;
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      res = await fetch(`${API}${path}`, { ...init, signal: controller.signal });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (err instanceof Error && err.name === "AbortError") {
-        throw new Error(`Request timed out (${path})`);
-      }
-      throw new Error(
-        msg.includes("Failed to fetch") || msg.includes("NetworkError")
-          ? `Cannot reach API at ${API} — is npm run dev:api running?`
-          : msg
-      );
-    }
-    if (!res || (typeof res.ok !== "boolean" && typeof res.status !== "number")) {
-      throw new Error(`Cannot reach API at ${API} — unexpected response from ${path}`);
-    }
-    if (!responseOk(res)) {
-      let detail = `${res.status} ${path}`;
+      let res: Response;
       try {
-        const body = (await res.json()) as { error?: string; ok?: boolean };
-        if (body.error) detail = body.error;
-      } catch {
-        /* ignore non-JSON error bodies */
+        res = await fetch(`${API}${path}`, { ...init, signal: controller.signal });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (err instanceof Error && err.name === "AbortError") {
+          throw new Error(`Request timed out (${path})`);
+        }
+        throw new Error(
+          msg.includes("Failed to fetch") || msg.includes("NetworkError")
+            ? apiUnreachableMessage()
+            : msg
+        );
       }
-      throw new Error(detail);
+      if (!res || (typeof res.ok !== "boolean" && typeof res.status !== "number")) {
+        throw new Error(`Cannot reach API at ${API} — unexpected response from ${path}`);
+      }
+      if (!responseOk(res)) {
+        let detail = `${res.status} ${path}`;
+        try {
+          const body = (await res.json()) as { error?: string; ok?: boolean };
+          if (body.error) detail = body.error;
+        } catch {
+          /* ignore non-JSON error bodies */
+        }
+        throw new Error(detail);
+      }
+      return (await res.json()) as T;
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      const retryable =
+        attempt < retries &&
+        (lastErr.message.includes("Cannot reach API") ||
+          lastErr.message.includes("timed out") ||
+          lastErr.message.includes("waking up"));
+      if (!retryable) throw lastErr;
+      await new Promise((r) => setTimeout(r, attempt * 4_000));
+    } finally {
+      clearTimeout(timer);
     }
-    const data = (await res.json()) as T;
-    return data;
-  } finally {
-    clearTimeout(timer);
   }
+
+  throw lastErr ?? new Error(apiUnreachableMessage());
 }
 
 export interface AppConfig {
@@ -167,20 +194,17 @@ export interface AppConfig {
 }
 
 export const getConfig = () => request<AppConfig>("/api/config");
-export const getHealth = () => request<Health>("/api/health", undefined, 30_000);
-
-export const getPolicy = () => request<Policy>("/api/policy", undefined, 30_000);
+export const getHealth = () => request<Health>("/api/health");
+export const getPolicy = () => request<Policy>("/api/policy");
 export const getLedger = (scope?: "all" | "mine") =>
   request<{ remainingDailyUsdc: string; records: SpendRecord[]; totalCount?: number; activityPayerAddresses?: string[] }>(
-    scope === "mine" ? "/api/ledger?scope=mine" : "/api/ledger",
-    undefined,
-    20_000
+    scope === "mine" ? "/api/ledger?scope=mine" : "/api/ledger"
   );
-export const getAgentStatus = () => request<AgentStatus>("/api/agent/status", undefined, 25_000);
-export const getStackStatus = () => request<StackStatus>("/api/stack/status", undefined, 45_000);
+export const getAgentStatus = () => request<AgentStatus>("/api/agent/status");
+export const getStackStatus = () => request<StackStatus>("/api/stack/status", undefined, IS_LOCAL_API ? 45_000 : 120_000);
 
 export function getCircleStatus() {
-  return request<CircleStatus>("/api/circle/status", undefined, 25_000);
+  return request<CircleStatus>("/api/circle/status", undefined, IS_LOCAL_API ? 25_000 : 90_000);
 }
 
 export function circleLoginInit(email: string) {
