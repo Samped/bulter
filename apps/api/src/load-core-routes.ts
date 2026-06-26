@@ -8,7 +8,6 @@ import type { Express } from "express";
 import { GATEWAY_FACILITATOR, resolveArcRpc, ARC_EIP155 } from "@butler/arc";
 import {
   circleCliInstalled,
-  circleCliQuickRunnable,
   circleCliLoggedIn,
   circleGatewayBalance,
   circleListAgentWallets,
@@ -74,7 +73,7 @@ export function loadCoreRoutes(app: Express): void {
         res.status(400).json({ error: "Valid email required" });
         return;
       }
-      if (!circleCliInstalled() || !circleCliQuickRunnable()) {
+      if (!circleCliInstalled()) {
         res.status(503).json({ error: "Circle CLI not installed. Run npm run circle:install on the server." });
         return;
       }
@@ -94,8 +93,9 @@ export function loadCoreRoutes(app: Express): void {
       res.status(404).json({ error: "Login job not found or expired — send a new code." });
       return;
     }
+    const elapsedMs = Date.now() - job.startedAt;
     if (job.status === "pending") {
-      res.json({ status: "pending", email: job.email });
+      res.json({ status: "pending", email: job.email, elapsedMs });
       return;
     }
     const result = job.result;

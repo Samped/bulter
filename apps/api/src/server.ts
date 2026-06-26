@@ -48,15 +48,17 @@ app.listen(PORT, () => {
   ready = true;
   resolveRoutesReady();
   console.log(`Butler API core ready · Circle login available`);
-  void import("./load-routes.ts")
-    .then(({ loadRoutes }) => {
-      loadRoutes(app);
-      console.log(`Butler API ready · dashboard: ${WEB_URL}`);
-    })
-    .catch((error) => {
-      console.error("Butler API failed to load routes:", error);
-      process.exit(1);
-    });
+  setImmediate(() => {
+    void import("./load-routes.ts")
+      .then(({ loadRoutes }) => loadRoutes(app))
+      .then(() => {
+        console.log(`Butler API ready · dashboard: ${WEB_URL}`);
+      })
+      .catch((error) => {
+        console.error("Butler API failed to load routes:", error);
+        process.exit(1);
+      });
+  });
 });
 
 process.on("unhandledRejection", (reason) => {

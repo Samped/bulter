@@ -1,57 +1,11 @@
 import { config } from "dotenv";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import express, { type Express } from "express";
-import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
-import { formatUnits } from "viem";
-import { ARC_EIP155, GATEWAY_FACILITATOR, resolveArcRpc } from "@butler/arc";
-import { decodeBatch } from "./circle-agent/decode-batch.ts";
-import { fetchSettlement, resolveBatchTx } from "./circle-agent/trace.ts";
-import {
-  arcCanteenAvailable,
-  arcCanteenRpcUrl,
-  circleCliInstalled,
-  circleCliLoggedIn,
-  circleCliRunnable,
-  circleVersion,
-  ensureCircleExecutor,
-  getGatewayBalanceForApi,
-  probeCircleCli,
-} from "./circle-cli.ts";
-import { loadCircleConfig, resolveCircleExecutorAddress, resolveCircleChain, useCircleCliPayments } from "./circle-config.ts";
-import {
-  appendRecord,
-  createDefaultPolicy,
-  evaluateSpend,
-  loadState,
-  remainingDailyUsdc,
-  saveState,
-  type SpendRecord,
-} from "@butler/core";
-import { runAgentTasks, agentRunReadiness } from "./agent-runner.ts";
-import { registerMarketplaceRoutes } from "./marketplace-routes.ts";
-import { enrichSpendPayer, getExecutorWalletAddress, resolveActivityPayerAddresses, attributeLedgerRecords, filterMineRecords, applyJobAttribution, spendInitiatorFromQuery } from "./ledger-payer.ts";
-import { loadMarketplaceState } from "@butler/core";
-import {
-  buildResearchPayload,
-  buildResearchSummary,
-  buildSubscriptionAudit,
-  buildUtilityQuote,
-  fetchMarketQuote,
-} from "./agent-services.ts";
+import type { Express, Request, Response } from "express";
+import type { SpendRecord } from "@butler/core";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../../../.env") });
-
-type PaidRequest = express.Request & {
-  payment?: {
-    verified: boolean;
-    payer: string;
-    amount: string;
-    network: string;
-    transaction?: string;
-  };
-};
 
 const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);
 const WEB_URL = process.env.WEB_URL ?? `http://localhost:${process.env.WEB_PORT ?? 5174}`;
@@ -65,7 +19,91 @@ const SELLER = (process.env.BUTLER_SELLER_ADDRESS ?? "0x933a2405f84c224be1ef373b
 const STATE_PATH = resolve(__dirname, "../../../.data/butler-state.json");
 const MARKETPLACE_PATH = resolve(__dirname, "../../../.data/marketplace-state.json");
 
-export function loadRoutes(app: Express): void {
+const yieldEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+export async function loadRoutes(app: Express): Promise<void> {
+  const [
+    { createGatewayMiddleware },
+    { formatUnits },
+    arc,
+    circleAgentDecode,
+    circleAgentTrace,
+    circleCli,
+    circleConfig,
+    core,
+    agentRunner,
+    marketplaceRoutes,
+    ledgerPayer,
+    agentServices,
+  ] = await Promise.all([
+    import("@circle-fin/x402-batching/server"),
+    import("viem"),
+    import("@butler/arc"),
+    import("./circle-agent/decode-batch.ts"),
+    import("./circle-agent/trace.ts"),
+    import("./circle-cli.ts"),
+    import("./circle-config.ts"),
+    import("@butler/core"),
+    import("./agent-runner.ts"),
+    import("./marketplace-routes.ts"),
+    import("./ledger-payer.ts"),
+    import("./agent-services.ts"),
+  ]);
+  await yieldEventLoop();
+
+  const { ARC_EIP155, GATEWAY_FACILITATOR, resolveArcRpc } = arc;
+  const { decodeBatch } = circleAgentDecode;
+  const { fetchSettlement, resolveBatchTx } = circleAgentTrace;
+  const {
+    arcCanteenAvailable,
+    arcCanteenRpcUrl,
+    circleCliInstalled,
+    circleCliLoggedIn,
+    circleCliRunnable,
+    circleVersion,
+    ensureCircleExecutor,
+    getGatewayBalanceForApi,
+    probeCircleCli,
+  } = circleCli;
+  const { loadCircleConfig, resolveCircleExecutorAddress, resolveCircleChain, useCircleCliPayments } = circleConfig;
+  const {
+    appendRecord,
+    createDefaultPolicy,
+    evaluateSpend,
+    loadState,
+    remainingDailyUsdc,
+    saveState,
+    loadMarketplaceState,
+  } = core;
+  const { runAgentTasks, agentRunReadiness } = agentRunner;
+  const { registerMarketplaceRoutes } = marketplaceRoutes;
+  const {
+    enrichSpendPayer,
+    getExecutorWalletAddress,
+    resolveActivityPayerAddresses,
+    attributeLedgerRecords,
+    filterMineRecords,
+    applyJobAttribution,
+    spendInitiatorFromQuery,
+  } = ledgerPayer;
+  const {
+    buildResearchPayload,
+    buildResearchSummary,
+    buildSubscriptionAudit,
+    buildUtilityQuote,
+    fetchMarketQuote,
+  } = agentServices;
+
+type PaidRequest = Request & {
+  payment?: {
+    verified: boolean;
+    payer: string;
+    amount: string;
+    network: string;
+    transaction?: string;
+  };
+};
+
 const gateway = createGatewayMiddleware({
   sellerAddress: SELLER,
   facilitatorUrl: process.env.GATEWAY_FACILITATOR_URL ?? GATEWAY_FACILITATOR,
@@ -78,7 +116,7 @@ function merchantHandler(
   agent: SpendRecord["agent"],
   payloadFn: (req: PaidRequest) => Promise<unknown>
 ) {
-  return async (req: PaidRequest, res: express.Response) => {
+  return async (req: PaidRequest, res: Response) => {
     const state = loadState(STATE_PATH);
     const amountUsdc = req.payment ? formatUnits(BigInt(req.payment.amount), 6) : "0";
 
