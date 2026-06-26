@@ -162,8 +162,11 @@ async function request<T>(
             : msg
         );
       }
-      if (!res || (typeof res.ok !== "boolean" && typeof res.status !== "number")) {
-        throw new Error(`Cannot reach API at ${API} — unexpected response from ${path}`);
+      if (!res || typeof res.status !== "number") {
+        throw new Error(apiUnreachableMessage());
+      }
+      if (res.status === 0) {
+        throw new Error(apiUnreachableMessage());
       }
       if (!responseOk(res)) {
         if (isRetryableHttp(res.status) && attempt < retries) {
@@ -171,7 +174,10 @@ async function request<T>(
           await new Promise((r) => setTimeout(r, Math.min(attempt * 2_500, 12_000)));
           continue;
         }
-        let detail = `${res.status} ${path}`;
+        let detail =
+          res.status === 502 || res.status === 503 || res.status === 504
+            ? `API is waking up (${res.status}). Wait 30s and try again.`
+            : `${res.status} ${path}`;
         let needsNewCode = false;
         try {
           const body = (await res.json()) as { error?: string; ok?: boolean; needsNewCode?: boolean };
@@ -253,7 +259,7 @@ export async function circleLoginInit(email: string) {
       body: JSON.stringify({ email, testnet: true }),
     },
     12_000,
-    2
+    6
   );
 
   const deadline = Date.now() + (IS_LOCAL_API ? 90_000 : 120_000);

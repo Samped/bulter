@@ -60,14 +60,17 @@ app.listen(PORT, () => {
     });
 
   setImmediate(() => {
+    if (process.env.BUTLER_LITE_API === "true") {
+      console.log("Butler API lite mode — x402/marketplace routes skipped (set BUTLER_LITE_API=false for full API)");
+      return;
+    }
     void import("./load-routes.ts")
       .then(({ loadRoutes }) => loadRoutes(app))
       .then(() => {
         console.log(`Butler API ready · dashboard: ${WEB_URL}`);
       })
       .catch((error) => {
-        console.error("Butler API failed to load routes:", error);
-        process.exit(1);
+        console.error("Butler API failed to load heavy routes (login still works):", error);
       });
   });
 });
