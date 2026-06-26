@@ -266,86 +266,101 @@ export function getCircleStatus() {
   return request<CircleStatus>("/api/circle/status", undefined, IS_LOCAL_API ? 25_000 : 90_000);
 }
 
-export async function circleLoginInit(email: string) {
-  for (let sendAttempt = 1; sendAttempt <= 2; sendAttempt++) {
-    const started = await request<{ pending?: boolean; jobId: string; email: string }>(
-      "/api/circle/login/init",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, testnet: true }),
-      },
-      12_000,
-      6
-    );
+export type CircleLoginInitResult = {
+  ok: true;
+  requestId: string;
+  email: string;
+  message?: string;
+  hint?: string;
+  otpPrefix?: string;
+};
 
-    const deadline = Date.now() + (IS_LOCAL_API ? 90_000 : 120_000);
-    let delay = 1_500;
-    let jobLost = false;
-    while (Date.now() < deadline) {
-      let status: {
-        status: string;
-        requestId?: string;
-        email?: string;
-        message?: string;
-        hint?: string;
-        otpPrefix?: string;
-        error?: string;
-        elapsedMs?: number;
-      };
-      try {
-        status = await request(
-          `/api/circle/login/init/${started.jobId}`,
-          undefined,
-          12_000,
-          2
-        );
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Poll failed";
-        if (/job not found|expired/i.test(msg)) {
-          jobLost = true;
-          break;
-        }
-        if (/502|503|504|Cannot reach API/i.test(msg)) {
-          await new Promise((r) => setTimeout(r, delay));
-          delay = Math.min(delay + 500, 3_000);
-          continue;
-        }
-        throw err;
+export async function startCircleLoginJob(email: string) {
+  return request<{ pending?: boolean; jobId: string; email: string }>(
+    "/api/circle/login/init",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, testnet: true }),
+    },
+    12_000,
+    6
+  );
+}
+
+export async function pollCircleLoginJob(
+  jobId: string,
+  opts?: { onPending?: (elapsedMs: number) => void }
+): Promise<CircleLoginInitResult> {
+  const deadline = Date.now() + (IS_LOCAL_API ? 90_000 : 120_000);
+  let delay = 1_500;
+  while (Date.now() < deadline) {
+    let status: {
+      status: string;
+      requestId?: string;
+      email?: string;
+      message?: string;
+      hint?: string;
+      otpPrefix?: string;
+      error?: string;
+      elapsedMs?: number;
+    };
+    try {
+      status = await request(`/api/circle/login/init/${jobId}`, undefined, 12_000, 2);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Poll failed";
+      if (/job not found|expired/i.test(msg)) {
+        throw new Error("Server restarted while sending the code. Tap Resend, then enter the new code.");
       }
-
-      if (status.status === "pending") {
-        if ((status.elapsedMs ?? 0) > 120_000) {
-          throw new Error("Circle did not respond in time. Try Send login code again.");
-        }
+      if (/502|503|504|Cannot reach API/i.test(msg)) {
         await new Promise((r) => setTimeout(r, delay));
         delay = Math.min(delay + 500, 3_000);
         continue;
       }
-      if (status.status === "error" || status.error) {
-        throw new Error(status.error ?? "Failed to send OTP");
-      }
-      if (!status.requestId) {
-        throw new Error("Code may have been sent, but the session ID was missing. Click Resend code.");
-      }
-      return {
-        ok: true,
-        requestId: status.requestId,
-        email: status.email ?? started.email,
-        message: status.message,
-        hint: status.hint,
-        otpPrefix: status.otpPrefix,
-      };
+      throw err;
     }
 
-    if (jobLost && sendAttempt < 2) {
-      await new Promise((r) => setTimeout(r, 1_500));
+    if (status.status === "pending") {
+      opts?.onPending?.(status.elapsedMs ?? 0);
+      if ((status.elapsedMs ?? 0) > 120_000) {
+        throw new Error("Circle did not respond in time. Tap Resend and try again.");
+      }
+      await new Promise((r) => setTimeout(r, delay));
+      delay = Math.min(delay + 500, 3_000);
       continue;
     }
-    if (jobLost) {
-      throw new Error("Server restarted while sending the code. Tap Send login code once more.");
+    if (status.status === "error" || status.error) {
+      throw new Error(status.error ?? "Failed to send OTP");
     }
-    break;
+    if (!status.requestId) {
+      throw new Error("Code may have been sent, but the session ID was missing. Tap Resend.");
+    }
+    return {
+      ok: true,
+      requestId: status.requestId,
+      email: status.email ?? "",
+      message: status.message,
+      hint: status.hint,
+      otpPrefix: status.otpPrefix,
+    };
+  }
+  throw new Error("No code received after 2 minutes. Tap Resend to try again.");
+}
+
+export async function circleLoginInit(email: string) {
+  for (let sendAttempt = 1; sendAttempt <= 2; sendAttempt++) {
+    try {
+      const started = await startCircleLoginJob(email);
+      const result = await pollCircleLoginJob(started.jobId);
+      return { ...result, email: result.email || started.email };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to send OTP";
+      if (sendAttempt < 2 && /restarted|job not found/i.test(msg)) {
+        await new Promise((r) => setTimeout(r, 1_500));
+        continue;
+      }
+      throw err;
+    }
   }
   throw new Error("No code received after 2 minutes. Tap Send login code to try again.");
 }
