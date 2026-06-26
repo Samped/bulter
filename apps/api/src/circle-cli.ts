@@ -176,6 +176,21 @@ function parseWalletSession(
   };
 }
 
+/** CLI works when installed and `circle --version` succeeds (not logged-in is OK). */
+function quickCircleRunnable(): boolean {
+  if (!circleCliInstalled()) return false;
+  const r = runCircle(["--version"], { timeout: 15_000 });
+  const text = `${r.stdout ?? ""}\n${r.stderr ?? ""}`;
+  if (
+    text.includes("ERR_MODULE_NOT_FOUND") ||
+    text.includes("Cannot find module") ||
+    text.includes("Circle CLI not installed")
+  ) {
+    return false;
+  }
+  return r.status === 0;
+}
+
 /** Single CLI call for installed + runnable + session (cached; fast path from .data/circle-config.json). */
 function refreshProbeFromCli(preferTestnet: boolean): CircleProbeResult {
   const now = Date.now();
@@ -189,7 +204,7 @@ function refreshProbeFromCli(preferTestnet: boolean): CircleProbeResult {
   const stored = sessionFromStoredConfig();
   const loggedIn = (ok && session.loggedIn) || stored.loggedIn;
   const probe: CircleProbeResult = {
-    runnable: !broken && (ok || stored.loggedIn),
+    runnable: !broken && quickCircleRunnable(),
     loggedIn,
     raw: text || undefined,
     testnet: session.testnet ?? stored.loggedIn,
@@ -219,7 +234,7 @@ function scheduleProbeRefresh(preferTestnet = true): void {
       const stored = sessionFromStoredConfig();
       const loggedIn = (ok && session.loggedIn) || stored.loggedIn;
       const probe: CircleProbeResult = {
-        runnable: !broken && (ok || stored.loggedIn),
+        runnable: !broken && quickCircleRunnable(),
         loggedIn,
         raw: text || undefined,
         testnet: session.testnet ?? stored.loggedIn,
@@ -254,6 +269,18 @@ export function probeCircleCli(preferTestnet = true): CircleProbeResult {
     probeCache = { at: now, probe };
     runnableCache = { at: now, ok: true };
     loginCache = { at: now, loggedIn: true };
+    scheduleProbeRefresh(preferTestnet);
+    return probe;
+  }
+  if (quickCircleRunnable()) {
+    const probe: CircleProbeResult = {
+      runnable: true,
+      loggedIn: false,
+      testnet: preferTestnet,
+    };
+    probeCache = { at: now, probe };
+    runnableCache = { at: now, ok: true };
+    loginCache = { at: now, loggedIn: false };
     scheduleProbeRefresh(preferTestnet);
     return probe;
   }

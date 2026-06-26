@@ -204,7 +204,7 @@ export function CircleLoginPanel({
     }
   };
 
-  if (!status?.runnable) {
+  if (!status?.installed && !status?.runnable) {
     if (variant === "toolbar") {
       return (
         <div className="payer-toolbar-chip muted-chip" title="Run npm run circle:install on the API server">
