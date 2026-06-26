@@ -29,8 +29,26 @@ const routesReady = new Promise<void>((resolve) => {
 /** Login routes register first — never blocked by heavy route imports. */
 registerCircleLoginRoutes(app);
 
+app.get("/", (_req, res) => {
+  res.type("html").send(`<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Butler API</title>
+<style>body{font-family:system-ui,sans-serif;background:#06080d;color:#e8eef8;max-width:520px;margin:2rem auto;padding:0 1rem;line-height:1.5}
+a{color:#34d399}code{background:#121820;padding:.15rem .4rem;border-radius:4px;font-size:.9em}
+ul{padding-left:1.2rem}</style></head>
+<body>
+<h1>Butler API</h1>
+<p>Backend for the Lepton Butler dashboard (Circle x402 payer). This host has no web UI at <code>/automate</code> — open the dashboard instead.</p>
+<p><a href="${WEB_URL}">Open dashboard →</a></p>
+<ul>
+<li><a href="/api/health">/api/health</a></li>
+<li><code>POST /api/circle/login/init</code> — send OTP</li>
+</ul>
+</body></html>`);
+});
+
 app.use((req, res, next) => {
-  if (req.path === "/api/health") return next();
+  if (req.path === "/api/health" || req.path === "/") return next();
   void routesReady.then(() => next());
 });
 

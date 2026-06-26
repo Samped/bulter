@@ -32,10 +32,12 @@ export function resolveCircleBin(): string {
 function runCircle(args: string[], opts?: { timeout?: number }): ReturnType<typeof spawnSync> {
   const bin = resolveCircleBin();
   const isScript = bin.endsWith(".sh");
+  const timeout = opts?.timeout ?? (process.env.RENDER || process.env.BUTLER_LITE_API ? 60_000 : 30_000);
   return spawnSync(isScript ? "bash" : bin, isScript ? [bin, ...args] : args, {
     encoding: "utf8",
     env: circleChildEnv(),
-    timeout: opts?.timeout,
+    timeout,
+    cwd: ROOT,
   });
 }
 
@@ -327,18 +329,21 @@ let gatewayBalCache: { at: number; address: string; balance: string | null } | n
 let gatewayRefreshInflight: string | null = null;
 
 function runCircleAsync(args: string[], timeout = 45_000): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  const effectiveTimeout =
+    timeout === 45_000 && (process.env.RENDER || process.env.BUTLER_LITE_API) ? 120_000 : timeout;
   return new Promise((resolve) => {
     const bin = resolveCircleBin();
     const isScript = bin.endsWith(".sh");
     const child = spawn(isScript ? "bash" : bin, isScript ? [bin, ...args] : args, {
       env: circleChildEnv(),
+      cwd: ROOT,
     });
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => {
       child.kill();
       resolve({ ok: false, stdout, stderr: `${stderr}\nCircle CLI timed out`.trim() });
-    }, timeout);
+    }, effectiveTimeout);
     child.stdout?.on("data", (chunk) => {
       stdout += String(chunk);
     });
