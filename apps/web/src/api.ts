@@ -243,7 +243,7 @@ export function circleLoginInit(email: string) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, testnet: true }),
     },
-    90_000
+    IS_LOCAL_API ? 90_000 : 35_000
   );
 }
 

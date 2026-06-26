@@ -117,6 +117,17 @@ function runCircleJson(args: string[], timeout = 60_000): { ok: boolean; data: R
   return { ok: r.status === 0, data, raw, err };
 }
 
+async function runCircleJsonAsync(
+  args: string[],
+  timeout = 28_000
+): Promise<{ ok: boolean; data: Record<string, unknown> | null; raw: string; err: string }> {
+  const r = await runCircleAsync([...args, "--output", "json"], timeout);
+  const raw = r.stdout.trim();
+  const err = r.stderr.trim();
+  const data = parseCircleJson(raw);
+  return { ok: r.ok, data, raw, err };
+}
+
 let probeCache: { at: number; probe: CircleProbeResult } | null = null;
 let loginCache: { at: number; loggedIn: boolean } | null = null;
 let runnableCache: { at: number; ok: boolean } | null = null;
@@ -177,7 +188,7 @@ function parseWalletSession(
 }
 
 /** CLI works when installed and `circle --version` succeeds (not logged-in is OK). */
-function quickCircleRunnable(): boolean {
+export function circleCliQuickRunnable(): boolean {
   if (!circleCliInstalled()) return false;
   const r = runCircle(["--version"], { timeout: 15_000 });
   const text = `${r.stdout ?? ""}\n${r.stderr ?? ""}`;
@@ -189,6 +200,10 @@ function quickCircleRunnable(): boolean {
     return false;
   }
   return r.status === 0;
+}
+
+function quickCircleRunnable(): boolean {
+  return circleCliQuickRunnable();
 }
 
 /** Single CLI call for installed + runnable + session (cached; fast path from .data/circle-config.json). */
@@ -437,7 +452,30 @@ export function circleLoginInit(email: string, testnet = true): CircleLoginInitR
   if (testnet) args.push("--testnet");
   args.push("--init");
   const { ok, data, raw, err } = runCircleJson(args);
+  return parseCircleLoginInitResult(ok, data, raw, err, email);
+}
+
+export async function circleLoginInitAsync(email: string, testnet = true): Promise<CircleLoginInitResult> {
+  invalidateCircleCache();
+  const args = ["wallet", "login", email, "--type", "agent"];
+  if (testnet) args.push("--testnet");
+  args.push("--init");
+  const { ok, data, raw, err } = await runCircleJsonAsync(args, 28_000);
+  return parseCircleLoginInitResult(ok, data, raw, err, email);
+}
+
+function parseCircleLoginInitResult(
+  ok: boolean,
+  data: Record<string, unknown> | null,
+  raw: string,
+  err: string,
+  email: string
+): CircleLoginInitResult {
   if (!ok) {
+    const text = `${err}\n${raw}`.trim();
+    if (text.includes("timed out") || text.includes("ETIMEDOUT")) {
+      return { ok: false, error: "Circle login timed out — try again in a moment." };
+    }
     return { ok: false, error: err || raw || "Failed to send OTP" };
   }
   const message = circleOutputText(data, raw);
@@ -467,6 +505,30 @@ export function circleLoginVerify(requestId: string, otp: string, testnet = true
   const args = ["wallet", "login", "--request", requestId, "--otp", normalized];
   if (testnet) args.push("--testnet");
   const { ok, data, raw, err } = runCircleJson(args);
+  return parseCircleLoginVerifyResult(ok, data, raw, err, requestId, testnet);
+}
+
+export async function circleLoginVerifyAsync(
+  requestId: string,
+  otp: string,
+  testnet = true
+): Promise<CircleLoginVerifyResult> {
+  invalidateCircleCache();
+  const normalized = normalizeOtp(otp);
+  const args = ["wallet", "login", "--request", requestId, "--otp", normalized];
+  if (testnet) args.push("--testnet");
+  const { ok, data, raw, err } = await runCircleJsonAsync(args, 28_000);
+  return parseCircleLoginVerifyResult(ok, data, raw, err, requestId, testnet);
+}
+
+function parseCircleLoginVerifyResult(
+  ok: boolean,
+  data: Record<string, unknown> | null,
+  raw: string,
+  err: string,
+  requestId: string,
+  testnet: boolean
+): CircleLoginVerifyResult {
   if (!ok) {
     const errText = err || raw || "Login failed";
     const formatted = formatLoginVerifyError(errText);

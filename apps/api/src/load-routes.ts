@@ -11,12 +11,13 @@ import {
   arcCanteenAvailable,
   arcCanteenRpcUrl,
   circleCliInstalled,
+  circleCliQuickRunnable,
   circleCliLoggedIn,
   circleCliRunnable,
   circleGatewayBalance,
   circleListAgentWallets,
-  circleLoginInit as circleCliLoginInit,
-  circleLoginVerify as circleCliLoginVerify,
+  circleLoginInitAsync as circleCliLoginInit,
+  circleLoginVerifyAsync as circleCliLoginVerify,
   circleLogout,
   circleVersion,
   circleWalletStatus,
@@ -277,18 +278,18 @@ app.get("/api/circle/status", (_req, res) => {
   }
 });
 
-app.post("/api/circle/login/init", (req, res) => {
+app.post("/api/circle/login/init", async (req, res) => {
   try {
     const email = String(req.body?.email ?? "").trim();
     if (!email.includes("@")) {
       res.status(400).json({ error: "Valid email required" });
       return;
     }
-    if (!circleCliRunnable()) {
+    if (!circleCliInstalled() || !circleCliQuickRunnable()) {
       res.status(503).json({ error: "Circle CLI not installed. Run npm run circle:install on the server." });
       return;
     }
-    const result = circleCliLoginInit(email, req.body?.testnet !== false);
+    const result = await circleCliLoginInit(email, req.body?.testnet !== false);
     if (!result || !result.ok) {
       res.status(500).json({ error: result?.error ?? "Failed to send OTP" });
       return;
@@ -310,7 +311,7 @@ app.post("/api/circle/login/init", (req, res) => {
   }
 });
 
-app.post("/api/circle/login/verify", (req, res) => {
+app.post("/api/circle/login/verify", async (req, res) => {
   try {
     const requestId = String(req.body?.requestId ?? "").trim();
     const otp = String(req.body?.otp ?? "").trim();
@@ -319,7 +320,7 @@ app.post("/api/circle/login/verify", (req, res) => {
       return;
     }
     const emailHint = String(req.body?.email ?? "").trim();
-    const result = circleCliLoginVerify(requestId, otp, req.body?.testnet !== false);
+    const result = await circleCliLoginVerify(requestId, otp, req.body?.testnet !== false);
     if (!result || !result.ok) {
       res.status(401).json({ error: result?.error ?? "Login failed", needsNewCode: result?.needsNewCode ?? false });
       return;
