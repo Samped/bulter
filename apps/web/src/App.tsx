@@ -10,6 +10,7 @@ import {
   shortAddr,
   toggleAgent,
   toggleMerchant,
+  waitForApiReady,
   type AgentStatus,
   type Health,
   type Policy,
@@ -74,6 +75,7 @@ export function App() {
   const [libraryJobId, setLibraryJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [connectSlow, setConnectSlow] = useState(false);
   const [activityScope, setActivityScope] = useState<ActivityScope>("all");
   const [activityRecords, setActivityRecords] = useState<SpendRecord[]>([]);
   const [ledgerTotalCount, setLedgerTotalCount] = useState(0);
@@ -106,10 +108,11 @@ export function App() {
   }, []);
 
   const refresh = useCallback(async (opts?: { quiet?: boolean }) => {
+    const silent = opts?.quiet ?? false;
     const failed: string[] = [];
     const pick = <T,>(r: PromiseSettledResult<T>, label: string): T | null => {
       if (r.status === "fulfilled") return r.value;
-      if (!opts?.quiet) {
+      if (!silent) {
         failed.push(`${label}: ${formatWorkflowError(r.reason instanceof Error ? r.reason.message : "failed")}`);
       }
       return null;
@@ -123,19 +126,17 @@ export function App() {
     if (policyRes) setPolicy(policyRes);
 
     if (!healthRes && !policyRes) {
-      if (!opts?.quiet) {
+      if (!silent) {
         setError(failed.join(" · ") || "Cannot reach API — run npm run dev:api");
       }
-      setLoading(false);
-      return;
+      return false;
     }
 
-    if (!opts?.quiet) {
-      setError(failed.length > 0 ? failed.join(" · ") : null);
-    } else if (failed.length === 0) {
+    if (!silent && failed.length > 0) {
+      setError(failed.join(" · "));
+    } else if (!silent) {
       setError(null);
     }
-    setLoading(false);
 
     const [l, as] = await Promise.allSettled([getLedger(), getAgentStatus()]);
     const ledgerRes = pick(l, "ledger");
@@ -152,14 +153,56 @@ export function App() {
       setAgentStatus(asRes);
       if (asRes.activityPayerAddresses?.length) setActivityPayerAddresses(asRes.activityPayerAddresses);
     }
-    if (!opts?.quiet && failed.length > 0) setError(failed.join(" · "));
+    return !!policyRes;
   }, []);
 
   useEffect(() => {
-    refresh();
-    const id = setInterval(() => void refresh({ quiet: butlerBusy }), 15_000);
+    let cancelled = false;
+    const slowTimer = window.setTimeout(() => {
+      if (!cancelled) setConnectSlow(true);
+    }, 18_000);
+
+    void (async () => {
+      try {
+        await waitForApiReady();
+        if (cancelled) return;
+        while (!cancelled) {
+          const ok = await refresh({ quiet: true });
+          if (ok) {
+            setLoading(false);
+            setConnectSlow(false);
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 2_500));
+        }
+      } catch {
+        if (!cancelled) {
+          while (!cancelled) {
+            const ok = await refresh({ quiet: true });
+            if (ok) {
+              setLoading(false);
+              setConnectSlow(false);
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 3_000));
+          }
+        }
+      } finally {
+        window.clearTimeout(slowTimer);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(slowTimer);
+    };
+  }, [refresh]);
+
+  useEffect(() => {
+    if (loading) return;
+    const id = setInterval(() => void refresh({ quiet: true }), 15_000);
     return () => clearInterval(id);
-  }, [refresh, butlerBusy]);
+  }, [refresh, loading]);
 
   useEffect(() => {
     if (tab !== "activity") return;
@@ -230,7 +273,7 @@ export function App() {
   const dailyLimit = policy ? Number(policy.dailyLimitUsdc) : 0;
   const spentToday = dailyLimit > 0 ? dailyLimit - Number(remaining) : 0;
 
-  if (loading) {
+  if (loading || !policy) {
     return (
       <div className="app-shell">
         <div className="splash">
@@ -239,6 +282,14 @@ export function App() {
             Butler
           </div>
           <div className="splash-spinner" />
+          {connectSlow && (
+            <p className="muted small" style={{ margin: 0, maxWidth: 280, textAlign: "center" }}>
+              Connecting to Butler…
+            </p>
+          )}
+          <div style={{ marginTop: "0.75rem" }}>
+            <CircleLoginPanel variant="toolbar" onReady={() => void refresh({ quiet: true })} />
+          </div>
         </div>
       </div>
     );
@@ -249,21 +300,9 @@ export function App() {
       <div className="app-shell">
         <div className="error-screen">
           <h1>Cannot connect</h1>
-          <p>{error}</p>
-          <code>npm run dev:api</code>
-        </div>
-      </div>
-    );
-  }
-
-  if (!policy) {
-    return (
-      <div className="app-shell">
-        <div className="error-screen">
-          <h1>Policy unavailable</h1>
-          <p>{error ?? "Could not load Butler policy from the API."}</p>
-          <button type="button" className="btn accent" onClick={() => void refresh()}>
-            Retry
+          <p>Butler is still starting. This page will retry automatically.</p>
+          <button type="button" className="btn accent" onClick={() => void refresh({ quiet: true })}>
+            Retry now
           </button>
         </div>
       </div>
@@ -397,12 +436,6 @@ export function App() {
             <div className="inline-alert info">
               <strong>Butler is running</strong> — auctions and x402 payments can take several minutes. Keep this tab
               open; your deliverable will appear in Library when finished.
-            </div>
-          )}
-
-          {error && !butlerBusy && (
-            <div className="inline-alert">
-              <strong>Partial load</strong> — {error}
             </div>
           )}
 

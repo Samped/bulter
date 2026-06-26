@@ -18,6 +18,12 @@ app.use(express.json());
 
 let ready = false;
 
+/** While heavy routes load, avoid 404s that confuse the dashboard bootstrap. */
+app.use((req, res, next) => {
+  if (ready || req.path === "/api/health") return next();
+  res.status(503).json({ ok: false, mode: "starting", error: "API still starting" });
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: ready,

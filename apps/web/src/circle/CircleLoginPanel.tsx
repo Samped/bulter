@@ -204,19 +204,7 @@ export function CircleLoginPanel({
     }
   };
 
-  if (!status?.installed && !status?.runnable) {
-    if (variant === "toolbar") {
-      return (
-        <div className="payer-toolbar-chip muted-chip" title="Run npm run circle:install on the API server">
-          <IconWallet size={14} />
-          <span>CLI unavailable</span>
-        </div>
-      );
-    }
-    return <p className="muted small" style={{ margin: 0 }}>Circle CLI not installed</p>;
-  }
-
-  const connected = status.loggedIn;
+  const connected = status?.loggedIn ?? false;
 
   if (variant === "toolbar") {
     return (
@@ -232,8 +220,8 @@ export function CircleLoginPanel({
           {connected ? (
             <>
               <span className="payer-toolbar-label">Payer</span>
-              <span className="payer-toolbar-value email" title={status.email ?? status.executorAddress ?? ""}>
-                {status.email ? shortEmail(status.email) : shortAddr(status.executorAddress ?? "")}
+              <span className="payer-toolbar-value email" title={status?.email ?? status?.executorAddress ?? ""}>
+                {status?.email ? shortEmail(status.email) : shortAddr(status?.executorAddress ?? "")}
               </span>
               <span className="payer-dot on" />
             </>
