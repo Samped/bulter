@@ -11,7 +11,6 @@ import {
   circleCliLoggedIn,
   circleGatewayBalance,
   circleListAgentWallets,
-  circleLoginVerifyAsync as circleCliLoginVerify,
   circleLogout,
   circleVersion,
   ensureCircleExecutor,
@@ -62,44 +61,6 @@ export function loadCoreRoutes(app: Express): void {
       });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : "Circle status failed" });
-    }
-  });
-
-  app.post("/api/circle/login/verify", async (req, res) => {
-    try {
-      const requestId = String(req.body?.requestId ?? "").trim();
-      const otp = String(req.body?.otp ?? "").trim();
-      if (!requestId || !otp) {
-        res.status(400).json({ error: "requestId and otp required" });
-        return;
-      }
-      const emailHint = String(req.body?.email ?? "").trim();
-      const result = await circleCliLoginVerify(requestId, otp, req.body?.testnet !== false);
-      if (!result || !result.ok) {
-        res.status(401).json({ error: result?.error ?? "Login failed", needsNewCode: result?.needsNewCode ?? false });
-        return;
-      }
-      const savedEmail = result.email ?? (emailHint.includes("@") ? emailHint : undefined);
-      if (savedEmail) saveCircleConfig({ email: savedEmail });
-      const chain = resolveCircleChain();
-      const wallets = circleListAgentWallets(chain);
-      const first = wallets[0]?.address as `0x${string}` | undefined;
-      if (first && !resolveCircleExecutorAddress()) {
-        saveCircleConfig({ executorAddress: first, chain });
-      }
-      ensureCircleExecutor();
-      res.json({
-        ok: true,
-        email: savedEmail ?? result.email,
-        message: result.message,
-        wallets,
-        executorAddress: ensureCircleExecutor() ?? resolveCircleExecutorAddress(),
-      });
-    } catch (error) {
-      res.status(500).json({
-        error: error instanceof Error ? error.message : "Login verify failed",
-        needsNewCode: true,
-      });
     }
   });
 

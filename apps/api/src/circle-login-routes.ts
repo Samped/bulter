@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { getCircleLoginInitJob, startCircleLoginInitJob } from "./circle-login-jobs.ts";
 
-/** Minimal login routes — no circle-cli import so POST /init returns instantly. */
+/** Minimal login routes — registered before heavy imports so init/verify respond immediately. */
 export function registerCircleLoginRoutes(app: Express): void {
   app.post("/api/circle/login/init", (req, res) => {
     try {
@@ -49,4 +49,63 @@ export function registerCircleLoginRoutes(app: Express): void {
       elapsedMs,
     });
   });
+
+  app.post("/api/circle/login/verify", (req, res) => {
+    void handleLoginVerify(req, res);
+  });
+}
+
+async function handleLoginVerify(
+  req: { body?: Record<string, unknown> },
+  res: {
+    status: (code: number) => { json: (body: unknown) => void };
+    json: (body: unknown) => void;
+  }
+): Promise<void> {
+  try {
+    const requestId = String(req.body?.requestId ?? "").trim();
+    const otp = String(req.body?.otp ?? "").trim();
+    if (!requestId || !otp) {
+      res.status(400).json({ error: "requestId and otp required" });
+      return;
+    }
+    const emailHint = String(req.body?.email ?? "").trim();
+    const testnet = req.body?.testnet !== false;
+    const { circleLoginVerifyAsync, circleListAgentWallets, ensureCircleExecutor } = await import(
+      "./circle-cli.ts"
+    );
+    const { saveCircleConfig, resolveCircleExecutorAddress, resolveCircleChain } = await import(
+      "./circle-config.ts"
+    );
+    const verifyTimeout = process.env.RENDER || process.env.BUTLER_LITE_API ? 120_000 : 60_000;
+    const result = await circleLoginVerifyAsync(requestId, otp, testnet, verifyTimeout);
+    if (!result?.ok) {
+      res.status(401).json({
+        error: result?.error ?? "Login failed",
+        needsNewCode: result?.needsNewCode ?? false,
+      });
+      return;
+    }
+    const savedEmail = result.email ?? (emailHint.includes("@") ? emailHint : undefined);
+    if (savedEmail) saveCircleConfig({ email: savedEmail });
+    const chain = resolveCircleChain();
+    const wallets = circleListAgentWallets(chain);
+    const first = wallets[0]?.address as `0x${string}` | undefined;
+    if (first && !resolveCircleExecutorAddress()) {
+      saveCircleConfig({ executorAddress: first, chain });
+    }
+    ensureCircleExecutor();
+    res.json({
+      ok: true,
+      email: savedEmail ?? result.email,
+      message: result.message,
+      wallets,
+      executorAddress: ensureCircleExecutor() ?? resolveCircleExecutorAddress(),
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Login verify failed",
+      needsNewCode: true,
+    });
+  }
 }

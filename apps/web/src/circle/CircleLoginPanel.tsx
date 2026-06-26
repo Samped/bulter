@@ -60,6 +60,10 @@ function shortEmail(value: string): string {
   return `${local.slice(0, 8)}…${domain}`;
 }
 
+function otpDigits(value: string): number {
+  return value.replace(/\D/g, "").length;
+}
+
 export function CircleLoginPanel({
   onReady,
   variant = "toolbar",
@@ -172,6 +176,7 @@ export function CircleLoginPanel({
     setBusy(true);
     setError(null);
     try {
+      await wakeApiForLogin(45_000);
       const res = await circleLoginVerify(requestId, otp, email);
       const loggedInEmail = res.email ?? email;
       setWallets(res.wallets ?? []);
@@ -334,14 +339,14 @@ export function CircleLoginPanel({
                   inputMode="text"
                   autoFocus
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") void handleVerify();
+                    if (e.key === "Enter" && otpDigits(otp) >= 6) void handleVerify();
                   }}
                 />
                 <div className="payer-actions">
                   <button
                     type="button"
                     className="btn primary sm"
-                    disabled={busy || otp.replace(/\D/g, "").length < 6}
+                    disabled={busy || otpDigits(otp) < 6}
                     onClick={handleVerify}
                   >
                     {busy ? "Verifying…" : "Verify"}
