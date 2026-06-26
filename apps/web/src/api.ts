@@ -131,8 +131,12 @@ function responseOk(res: Response): boolean {
   return false;
 }
 
+function isRetryableHttp(status: number): boolean {
+  return status === 404 || status === 502 || status === 503 || status === 504;
+}
+
 async function request<T>(path: string, init?: RequestInit, timeoutMs = defaultTimeoutMs()): Promise<T> {
-  const retries = IS_LOCAL_API ? 1 : 3;
+  const retries = IS_LOCAL_API ? 2 : 8;
   let lastErr: Error | null = null;
 
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -157,6 +161,11 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs = defaultT
         throw new Error(`Cannot reach API at ${API} — unexpected response from ${path}`);
       }
       if (!responseOk(res)) {
+        if (isRetryableHttp(res.status) && attempt < retries) {
+          lastErr = new Error(`${res.status} ${path}`);
+          await new Promise((r) => setTimeout(r, Math.min(attempt * 2_500, 12_000)));
+          continue;
+        }
         let detail = `${res.status} ${path}`;
         try {
           const body = (await res.json()) as { error?: string; ok?: boolean };
@@ -173,15 +182,35 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs = defaultT
         attempt < retries &&
         (lastErr.message.includes("Cannot reach API") ||
           lastErr.message.includes("timed out") ||
-          lastErr.message.includes("waking up"));
+          lastErr.message.includes("waking up") ||
+          isRetryableHttp(Number(lastErr.message.split(" ")[0])));
       if (!retryable) throw lastErr;
-      await new Promise((r) => setTimeout(r, attempt * 4_000));
+      await new Promise((r) => setTimeout(r, Math.min(attempt * 2_500, 12_000)));
     } finally {
       clearTimeout(timer);
     }
   }
 
   throw lastErr ?? new Error(apiUnreachableMessage());
+}
+
+export const getHealth = () => request<Health>("/api/health");
+
+/** Poll until API health reports live (Render cold start / route bootstrap). */
+export async function waitForApiReady(maxWaitMs = IS_LOCAL_API ? 15_000 : 180_000): Promise<Health> {
+  const started = Date.now();
+  let delay = 2_000;
+  while (Date.now() - started < maxWaitMs) {
+    try {
+      const h = await getHealth();
+      if (h.ok && h.mode !== "starting") return h;
+    } catch {
+      /* retry */
+    }
+    await new Promise((r) => setTimeout(r, delay));
+    delay = Math.min(delay + 1_000, 8_000);
+  }
+  return getHealth();
 }
 
 export interface AppConfig {
@@ -194,7 +223,6 @@ export interface AppConfig {
 }
 
 export const getConfig = () => request<AppConfig>("/api/config");
-export const getHealth = () => request<Health>("/api/health");
 export const getPolicy = () => request<Policy>("/api/policy");
 export const getLedger = (scope?: "all" | "mine") =>
   request<{ remainingDailyUsdc: string; records: SpendRecord[]; totalCount?: number; activityPayerAddresses?: string[] }>(
