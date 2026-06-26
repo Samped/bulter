@@ -279,6 +279,9 @@ export function App() {
               Connecting to Butler…
             </p>
           )}
+          <div className="splash-login">
+            <CircleLoginPanel variant="toolbar" onReady={refresh} />
+          </div>
         </div>
       </div>
     );
