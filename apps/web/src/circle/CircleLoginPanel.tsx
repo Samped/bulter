@@ -185,7 +185,7 @@ export function CircleLoginPanel({
     setSendElapsed(0);
     const tick = window.setInterval(() => setSendElapsed((s) => s + 1), 1_000);
     try {
-      const res = await sendLoginCode(email, (sec) => setSendElapsed(sec));
+      const res = await sendLoginCode(email);
       setRequestId(res.requestId);
       setOtpPrefix(res.otpPrefix ?? null);
       setHint(res.hint ?? null);
@@ -196,7 +196,12 @@ export function CircleLoginPanel({
         hint: res.hint,
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to send code");
+      const msg = e instanceof Error ? e.message : "Failed to send code";
+      setError(
+        /API is down|Bad Gateway|Cannot reach API|unavailable/i.test(msg)
+          ? `${msg} The backend on Render may be redeploying — try again in 2–3 minutes.`
+          : msg
+      );
     } finally {
       window.clearInterval(tick);
       setBusy(false);
