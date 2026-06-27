@@ -178,17 +178,9 @@ export function CircleLoginPanel({
     refresh();
   }, [refresh]);
 
-  /** Keep OTP popover open whenever user is waiting for a code. */
-  useEffect(() => {
-    if (step !== "otp" || connected || showFundModal) return;
-    setOpen(true);
-    const pos = measurePopoverPos(chipRef.current, true) ?? fallbackPopoverPos(true);
-    setPopoverPos(pos);
-  }, [step, connected, showFundModal]);
-
   useEffect(() => {
     if (!open) {
-      if (step !== "otp" || connected) setPopoverPos(null);
+      setPopoverPos(null);
       return;
     }
     const update = () => setPopoverPos(measurePopoverPos(chipRef.current, step === "otp"));
@@ -260,9 +252,6 @@ export function CircleLoginPanel({
     setSendElapsed(0);
     setRequestId(null);
     setOtp("");
-    setStep("otp");
-    setOpen(true);
-    setPopoverPos(measurePopoverPos(chipRef.current, true) ?? fallbackPopoverPos(true));
     skipResumePoll.current = true;
     let startedJobId: string | null = null;
     const tick = window.setInterval(() => setSendElapsed((s) => s + 1), 1_000);
@@ -442,20 +431,16 @@ export function CircleLoginPanel({
   };
 
   const fundModal =
-    showFundModal && (loggedInAddress || status?.email) ? (
+    showFundModal && loggedInAddress ? (
       <div className="payer-fund-backdrop" role="presentation">
         <div className="payer-fund-modal" role="dialog" aria-label="Get testnet tokens">
           <p className="payer-fund-title">You&apos;re logged in</p>
           <p className="payer-fund-copy">
             Get free testnet USDC on Arc so you can run agents and pay x402 merchants.
           </p>
-          {loggedInAddress ? (
-            <p className="payer-fund-wallet">
-              Your wallet: <code>{shortAddr(loggedInAddress)}</code>
-            </p>
-          ) : (
-            <p className="payer-fund-wallet muted small">Wallet loading… open Payer to see your address.</p>
-          )}
+          <p className="payer-fund-wallet">
+            Your wallet: <code>{shortAddr(loggedInAddress)}</code>
+          </p>
           <button
             type="button"
             className="btn primary payer-fund-btn"
@@ -480,70 +465,6 @@ export function CircleLoginPanel({
     ) : null;
 
   const showOtpStep = step === "otp" && !connected;
-
-  useEffect(() => {
-    if (showOtpStep) {
-      document.body.classList.add("butler-otp-pending");
-      return () => document.body.classList.remove("butler-otp-pending");
-    }
-    document.body.classList.remove("butler-otp-pending");
-  }, [showOtpStep]);
-
-  const otpBanner =
-    showOtpStep
-      ? createPortal(
-          <div className="payer-otp-banner" role="region" aria-label="Email verification">
-            <div className="payer-otp-banner-inner">
-              <p className="payer-otp-banner-title">
-                {sending && !requestId ? (
-                  <>Sending code to <strong>{email}</strong>… check your inbox.</>
-                ) : (
-                  <>
-                    Code sent to <strong>{email}</strong>
-                    {otpPrefix ? (
-                      <> — enter <strong>{otpPrefix}-######</strong></>
-                    ) : (
-                      <> — enter the 6-digit code</>
-                    )}
-                  </>
-                )}
-              </p>
-              <div className="payer-otp-banner-row">
-                <input
-                  id="butler-otp-banner-input"
-                  className="field-input payer-otp-input"
-                  placeholder={otpPrefix ? `${otpPrefix}-123456` : "ABC-123456"}
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value)}
-                  autoComplete="one-time-code"
-                  inputMode="text"
-                  autoFocus
-                  disabled={busy}
-                  aria-label="Email verification code"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && otpDigits(otp) >= 6 && !busy) void handleVerify();
-                  }}
-                />
-                <button
-                  type="button"
-                  className="btn primary sm"
-                  disabled={busy || otpDigits(otp) < 6}
-                  onClick={() => void handleVerify()}
-                >
-                  {busy ? verifyHint ?? "Verifying…" : "Verify & log in"}
-                </button>
-                <button type="button" className="btn ghost sm" disabled={busy || sending} onClick={goToEmail}>
-                  Cancel
-                </button>
-              </div>
-              {verifyHint && busy && <p className="muted small payer-send-status">{verifyHint}</p>}
-              {error && <p className="payer-error">{error}</p>}
-            </div>
-          </div>,
-          document.body
-        )
-      : null;
-
   const popoverLayout =
     popoverPos ?? measurePopoverPos(chipRef.current, showOtpStep) ?? fallbackPopoverPos(showOtpStep);
 
@@ -562,8 +483,8 @@ export function CircleLoginPanel({
             <>
               <div className="payer-popover-session">
                 <span className="muted small">{status?.email ?? "Logged in"}</span>
-                {(status?.executorAddress || wallets[0]?.address) && (
-                  <code className="payer-address">{shortAddr(status?.executorAddress ?? wallets[0]!.address)}</code>
+                {status?.executorAddress && (
+                  <code className="payer-address">{shortAddr(status.executorAddress)}</code>
                 )}
               </div>
             {status?.gatewayBalanceUsdc != null && (
@@ -721,14 +642,13 @@ export function CircleLoginPanel({
           ) : (
             <>
               <span className="payer-toolbar-label">Payer</span>
-              <span className="payer-toolbar-value warn">{step === "otp" ? (busy ? "Verifying…" : "Enter code") : "Log in"}</span>
+              <span className="payer-toolbar-value warn">{step === "otp" ? "Enter code" : "Log in"}</span>
             </>
           )}
           <IconChevronDown size={12} className={open ? "open" : ""} />
         </button>
 
         {popover && createPortal(popover, document.body)}
-        {otpBanner}
         {fundModal && createPortal(fundModal, document.body)}
       </div>
     );
