@@ -1,13 +1,22 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getUserSessionPaths } from "./user-session.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "../../..");
-const BACKUP_DIR = resolve(ROOT, ".data/circle-login-sessions");
+const LEGACY_BACKUP_DIR = resolve(ROOT, ".data/circle-login-sessions");
 
 function circleHomeDir(): string {
+  const sessionHome = getUserSessionPaths()?.circleHome;
+  if (sessionHome) return sessionHome;
   return process.env.CIRCLE_HOME?.trim() || resolve(ROOT, ".data", "circle-home");
+}
+
+function backupDir(): string {
+  const session = getUserSessionPaths();
+  if (session) return join(dirname(session.circleHome), "login-request-backups");
+  return LEGACY_BACKUP_DIR;
 }
 
 export function loginRequestPath(requestId: string): string {
@@ -15,14 +24,14 @@ export function loginRequestPath(requestId: string): string {
 }
 
 function backupPath(requestId: string): string {
-  return join(BACKUP_DIR, `${requestId}.json`);
+  return join(backupDir(), `${requestId}.json`);
 }
 
-/** Copy Circle CLI login-request file so verify survives Render restarts. */
+/** Copy Circle CLI login-request file so verify survives restarts. */
 export function backupLoginRequestSession(requestId: string): boolean {
   const src = loginRequestPath(requestId);
   if (!existsSync(src)) return false;
-  mkdirSync(BACKUP_DIR, { recursive: true });
+  mkdirSync(backupDir(), { recursive: true });
   copyFileSync(src, backupPath(requestId));
   return true;
 }

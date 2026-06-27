@@ -38,6 +38,9 @@ export function agentRunReadiness(): { canRun: boolean; reason?: string; mode?: 
   if (cfg.email && circleAddr && useCircleCliPayments()) {
     return { canRun: true, mode: "circle-cli" };
   }
+  if (cfg.email?.includes("@") && circleAddr && circleSession) {
+    return { canRun: true, mode: "circle-cli" };
+  }
   if (pk) return { canRun: true, mode: "x402" };
 
   if (!circleCliRunnable()) {
