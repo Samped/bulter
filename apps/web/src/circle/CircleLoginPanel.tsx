@@ -480,6 +480,70 @@ export function CircleLoginPanel({
     ) : null;
 
   const showOtpStep = step === "otp" && !connected;
+
+  useEffect(() => {
+    if (showOtpStep) {
+      document.body.classList.add("butler-otp-pending");
+      return () => document.body.classList.remove("butler-otp-pending");
+    }
+    document.body.classList.remove("butler-otp-pending");
+  }, [showOtpStep]);
+
+  const otpBanner =
+    showOtpStep
+      ? createPortal(
+          <div className="payer-otp-banner" role="region" aria-label="Email verification">
+            <div className="payer-otp-banner-inner">
+              <p className="payer-otp-banner-title">
+                {sending && !requestId ? (
+                  <>Sending code to <strong>{email}</strong>… check your inbox.</>
+                ) : (
+                  <>
+                    Code sent to <strong>{email}</strong>
+                    {otpPrefix ? (
+                      <> — enter <strong>{otpPrefix}-######</strong></>
+                    ) : (
+                      <> — enter the 6-digit code</>
+                    )}
+                  </>
+                )}
+              </p>
+              <div className="payer-otp-banner-row">
+                <input
+                  id="butler-otp-banner-input"
+                  className="field-input payer-otp-input"
+                  placeholder={otpPrefix ? `${otpPrefix}-123456` : "ABC-123456"}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  autoComplete="one-time-code"
+                  inputMode="text"
+                  autoFocus
+                  disabled={busy}
+                  aria-label="Email verification code"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && otpDigits(otp) >= 6 && !busy) void handleVerify();
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn primary sm"
+                  disabled={busy || otpDigits(otp) < 6}
+                  onClick={() => void handleVerify()}
+                >
+                  {busy ? verifyHint ?? "Verifying…" : "Verify & log in"}
+                </button>
+                <button type="button" className="btn ghost sm" disabled={busy || sending} onClick={goToEmail}>
+                  Cancel
+                </button>
+              </div>
+              {verifyHint && busy && <p className="muted small payer-send-status">{verifyHint}</p>}
+              {error && <p className="payer-error">{error}</p>}
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
   const popoverLayout =
     popoverPos ?? measurePopoverPos(chipRef.current, showOtpStep) ?? fallbackPopoverPos(showOtpStep);
 
@@ -664,6 +728,7 @@ export function CircleLoginPanel({
         </button>
 
         {popover && createPortal(popover, document.body)}
+        {otpBanner}
         {fundModal && createPortal(fundModal, document.body)}
       </div>
     );

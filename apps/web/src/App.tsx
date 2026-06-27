@@ -4,6 +4,7 @@ import {
   getAgentStatus,
   getCircleStatus,
   getHealth,
+  getHealthQuick,
   getLedger,
   getPolicy,
   resetPolicy,
@@ -11,7 +12,6 @@ import {
   shortAddr,
   toggleAgent,
   toggleMerchant,
-  waitForApiReady,
   IS_LOCAL_API,
   type AgentStatus,
   type CircleStatus,
@@ -167,29 +167,33 @@ export function App() {
     let cancelled = false;
     const slowTimer = window.setTimeout(() => {
       if (!cancelled) setConnectSlow(true);
-    }, 18_000);
-
-    void (async () => {
-      await refresh({ quiet: true });
+    }, 2_500);
+    const forceShowTimer = window.setTimeout(() => {
       if (!cancelled) {
         setLoading(false);
         setConnectSlow(false);
       }
+    }, 4_000);
+
+    void (async () => {
       try {
-        await waitForApiReady(IS_LOCAL_API ? 15_000 : 12_000);
+        const h = await getHealthQuick();
+        if (!cancelled) setHealth(h);
       } catch {
-        /* API may still be waking — app is already visible */
+        /* backend may be waking — show app anyway */
+      }
+      if (!cancelled) {
+        setLoading(false);
+        setConnectSlow(false);
+        window.clearTimeout(forceShowTimer);
       }
       if (!cancelled) void refresh({ quiet: true });
-      while (!cancelled) {
-        await refresh({ quiet: true });
-        await new Promise((r) => setTimeout(r, 3_000));
-      }
     })();
 
     return () => {
       cancelled = true;
       window.clearTimeout(slowTimer);
+      window.clearTimeout(forceShowTimer);
     };
   }, [refresh]);
 

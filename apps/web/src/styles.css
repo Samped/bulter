@@ -2901,6 +2901,46 @@ select.field-input {
   width: 100%;
 }
 
+.payer-otp-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 15000;
+  background: linear-gradient(180deg, var(--surface-raised) 0%, var(--surface) 100%);
+  border-bottom: 2px solid var(--accent);
+  padding: 0.75rem 1rem;
+  box-shadow: var(--shadow-md);
+}
+
+.payer-otp-banner-inner {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.payer-otp-banner-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.payer-otp-banner-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.payer-otp-banner-row .payer-otp-input {
+  flex: 1 1 12rem;
+  margin-bottom: 0;
+  min-width: 10rem;
+}
+
+body.butler-otp-pending .main {
+  padding-top: 5.75rem;
+}
+
 .payer-otp-input {
   width: 100%;
   font-size: 1rem;
