@@ -114,6 +114,14 @@ function measurePopoverPos(chip: HTMLButtonElement | null, wide = false) {
   };
 }
 
+function fallbackPopoverPos(wide = false) {
+  return {
+    top: 72,
+    right: 12,
+    width: Math.min(wide ? 340 : 300, typeof window !== "undefined" ? window.innerWidth - 24 : 300),
+  };
+}
+
 export function CircleLoginPanel({
   onReady,
   onLoginSuccess,
@@ -170,9 +178,17 @@ export function CircleLoginPanel({
     refresh();
   }, [refresh]);
 
+  /** Keep OTP popover open whenever user is waiting for a code. */
+  useEffect(() => {
+    if (step !== "otp" || connected || showFundModal) return;
+    setOpen(true);
+    const pos = measurePopoverPos(chipRef.current, true) ?? fallbackPopoverPos(true);
+    setPopoverPos(pos);
+  }, [step, connected, showFundModal]);
+
   useEffect(() => {
     if (!open) {
-      setPopoverPos(null);
+      if (step !== "otp" || connected) setPopoverPos(null);
       return;
     }
     const update = () => setPopoverPos(measurePopoverPos(chipRef.current, step === "otp"));
@@ -244,6 +260,9 @@ export function CircleLoginPanel({
     setSendElapsed(0);
     setRequestId(null);
     setOtp("");
+    setStep("otp");
+    setOpen(true);
+    setPopoverPos(measurePopoverPos(chipRef.current, true) ?? fallbackPopoverPos(true));
     skipResumePoll.current = true;
     let startedJobId: string | null = null;
     const tick = window.setInterval(() => setSendElapsed((s) => s + 1), 1_000);
@@ -460,18 +479,22 @@ export function CircleLoginPanel({
       </div>
     ) : null;
 
+  const showOtpStep = step === "otp" && !connected;
+  const popoverLayout =
+    popoverPos ?? measurePopoverPos(chipRef.current, showOtpStep) ?? fallbackPopoverPos(showOtpStep);
+
   const popover =
-    open && popoverPos ? (
+    open ? (
       <div
         ref={popoverRef}
         className="payer-popover payer-popover-fixed"
         role="dialog"
         aria-label="Circle payer"
-        style={{ top: popoverPos.top, right: popoverPos.right, width: popoverPos.width }}
+        style={{ top: popoverLayout.top, right: popoverLayout.right, width: popoverLayout.width }}
       >
         <p className="payer-popover-title">Circle payer · x402</p>
 
-          {connected ? (
+          {connected && !showOtpStep ? (
             <>
               <div className="payer-popover-session">
                 <span className="muted small">{status?.email ?? "Logged in"}</span>
@@ -503,7 +526,7 @@ export function CircleLoginPanel({
               Sign out
             </button>
           </>
-        ) : step === "otp" ? (
+        ) : showOtpStep ? (
           <>
             <p className="payer-otp-hint">
               {sending && !requestId ? (
@@ -611,7 +634,11 @@ export function CircleLoginPanel({
           onClick={() => {
             setOpen((v) => {
               const next = !v;
-              if (next) setPopoverPos(measurePopoverPos(chipRef.current, step === "otp"));
+              if (next) {
+                setPopoverPos(
+                  measurePopoverPos(chipRef.current, step === "otp") ?? fallbackPopoverPos(step === "otp")
+                );
+              }
               return next;
             });
           }}
