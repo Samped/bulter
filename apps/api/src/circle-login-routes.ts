@@ -33,7 +33,7 @@ export function registerCircleLoginRoutes(app: Express): void {
     }
     const result = job.result;
     if (!result?.ok) {
-      res.status(500).json({ status: "error", error: result?.error ?? "Failed to send OTP", elapsedMs });
+      res.json({ status: "error", error: result?.error ?? "Failed to send OTP", elapsedMs });
       return;
     }
     res.json({
@@ -87,9 +87,11 @@ async function handleLoginVerify(
       otpPrefixHint || undefined
     );
     if (!result?.ok) {
-      res.status(401).json({
-        error: result?.error ?? "Login failed",
-        needsNewCode: result?.needsNewCode ?? false,
+      const errMsg = result?.error ?? "Login failed";
+      const rateLimited = /429|rate.?limit|too many requests|<!doctype/i.test(errMsg);
+      res.status(rateLimited ? 429 : 401).json({
+        error: errMsg,
+        needsNewCode: result?.needsNewCode ?? rateLimited,
       });
       return;
     }

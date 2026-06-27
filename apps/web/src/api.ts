@@ -540,7 +540,8 @@ export async function circleLoginVerify(
   opts?: { onProgress?: (message: string) => void }
 ) {
   const timeout = IS_LOCAL_API ? 90_000 : 180_000;
-  const perRequestRetries = IS_LOCAL_API ? 4 : 12;
+  /** One Circle verify per button tap — retries burn OTP attempts and trigger 429. */
+  const perRequestRetries = 1;
   const init: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -550,9 +551,9 @@ export async function circleLoginVerify(
 
   await tryWakeApiForLogin(IS_LOCAL_API ? 12_000 : 20_000);
 
-  for (let attempt = 1; attempt <= 6; attempt++) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      opts?.onProgress?.(attempt === 1 ? "Verifying code…" : `Retrying verify (${attempt}/6)…`);
+      opts?.onProgress?.(attempt === 1 ? "Verifying code…" : "Retrying once…");
       const body = await request<{
         ok?: boolean;
         email?: string;
@@ -571,16 +572,14 @@ export async function circleLoginVerify(
     } catch (err) {
       lastErr = err instanceof Error ? err : new Error(String(err));
       const needsNewCode = !!(lastErr as Error & { needsNewCode?: boolean }).needsNewCode;
+      const rateLimited = /429|rate.?limit|too many requests|<!doctype/i.test(lastErr.message);
+      if (rateLimited || needsNewCode) throw lastErr;
       const retryable =
-        attempt < 6 &&
-        !needsNewCode &&
-        /404|502|503|504|waking up|Cannot reach API|timed out|Bad Gateway|unavailable/i.test(
-          lastErr.message
-        );
+        attempt < 2 &&
+        /502|503|504|waking up|Cannot reach API|timed out|Bad Gateway|unavailable/i.test(lastErr.message);
       if (!retryable) throw lastErr;
-      opts?.onProgress?.("Server busy — retrying…");
-      await tryWakeApiForLogin(15_000);
-      await new Promise((r) => setTimeout(r, Math.min(attempt * 2_500, 10_000)));
+      opts?.onProgress?.("Server busy — retrying once…");
+      await new Promise((r) => setTimeout(r, 3_000));
     }
   }
   throw (
