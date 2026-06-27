@@ -186,12 +186,21 @@ async function request<T>(
         let detail =
           res.status === 502 || res.status === 503 || res.status === 504
             ? `API is waking up (${res.status}). Wait 30s and try again.`
-            : `${res.status} ${path}`;
-        let needsNewCode = false;
+            : res.status === 429
+              ? "Circle is rate-limiting logins. Wait 10–15 minutes, request a new code, then verify once."
+              : `${res.status} ${path}`;
+        let needsNewCode = res.status === 429;
         try {
           const body = (await res.json()) as { error?: string; ok?: boolean; needsNewCode?: boolean };
-          if (body.error) detail = body.error;
-          needsNewCode = !!body.needsNewCode;
+          if (body.error) {
+            detail =
+              /429|rate.?limit|too many requests|<!doctype/i.test(body.error)
+                ? "Circle is rate-limiting logins. Wait 10–15 minutes, request a new code, then verify once."
+                : body.error.length > 240
+                  ? `${body.error.slice(0, 240)}…`
+                  : body.error;
+          }
+          needsNewCode = needsNewCode || !!body.needsNewCode;
         } catch {
           /* ignore non-JSON error bodies */
         }
