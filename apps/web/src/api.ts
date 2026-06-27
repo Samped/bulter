@@ -169,6 +169,9 @@ function apiUnreachableMessage(): string {
   if (IS_LOCAL_API) {
     return `Cannot reach API at ${apiDisplayUrl()} — is npm run dev:api running?`;
   }
+  if (!API && typeof window !== "undefined") {
+    return `Cannot reach API at ${window.location.origin}/api — the backend server may be offline. Wait a moment and try again, or open /api/health in a new tab.`;
+  }
   return `Cannot reach API at ${apiDisplayUrl()} — wait a moment and try again, or open /api/health in a new tab.`;
 }
 
@@ -179,7 +182,7 @@ function responseOk(res: Response): boolean {
 }
 
 function isRetryableHttp(status: number): boolean {
-  return status === 404 || status === 502 || status === 503 || status === 504;
+  return status === 502 || status === 503 || status === 504;
 }
 
 async function request<T>(
@@ -270,7 +273,11 @@ async function request<T>(
 }
 
 export const getHealth = () =>
-  request<Health>("/api/health", undefined, IS_LOCAL_API ? 15_000 : 60_000, IS_LOCAL_API ? 3 : 8);
+  request<Health>("/api/health", undefined, IS_LOCAL_API ? 15_000 : 25_000, IS_LOCAL_API ? 3 : 4);
+
+/** Fast health for splash — don't block the UI on cold backend. */
+export const getHealthQuick = () =>
+  request<Health>("/api/health", undefined, IS_LOCAL_API ? 6_000 : 8_000, 2);
 
 /** Best-effort wake; returns false instead of throwing so verify can still try. */
 export async function tryWakeApiForLogin(maxWaitMs = IS_LOCAL_API ? 12_000 : 30_000): Promise<boolean> {
@@ -459,7 +466,7 @@ export async function beginLoginCodeSend(
   for (let attempt = 1; attempt <= 4; attempt++) {
     if (budget() < 8_000) break;
     try {
-      await wakeApiForLogin(Math.min(IS_LOCAL_API ? 20_000 : 90_000, budget()));
+      await tryWakeApiForLogin(IS_LOCAL_API ? 8_000 : 15_000);
       const started = await startCircleLoginJob(email);
       opts?.onJobStarted?.(started);
       const result = await pollCircleLoginJob(started.jobId, {

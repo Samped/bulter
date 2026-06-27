@@ -21,7 +21,7 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
   const [
     { agentRunReadiness },
     { runButler },
-    { loadState },
+    { loadState, remainingDailyUsdc },
     { getExecutorWalletAddress, resolveActivityPayerAddresses },
     circleCli,
     circleConfig,
@@ -33,6 +33,24 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
     import("./circle-cli.ts"),
     import("./circle-config.ts"),
   ]);
+
+  app.get("/api/policy", (_req, res) => {
+    const state = loadState(STATE_PATH);
+    res.json(state.policy);
+  });
+
+  app.get("/api/ledger", (req, res) => {
+    const state = loadState(STATE_PATH);
+    const scope = String(req.query.scope ?? "all");
+    const records = state.records.slice().reverse();
+    const activityPayerAddresses = resolveActivityPayerAddresses(state.records);
+    res.json({
+      remainingDailyUsdc: remainingDailyUsdc(state.policy, state.records),
+      records: scope === "mine" ? records : records,
+      totalCount: records.length,
+      activityPayerAddresses,
+    });
+  });
 
   app.get("/api/agent/status", async (_req, res) => {
     try {
@@ -111,5 +129,5 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
   app.get("/api/payer-agent/readiness", butlerReadiness);
   app.post("/api/payer-agent/run", butlerRun);
 
-  console.log("  task routes: agent/status · butler/run (lite mode)");
+  console.log("  task routes: policy · ledger · agent/status · butler/run (lite mode)");
 }
