@@ -210,9 +210,26 @@ export function App() {
     }
   }, [ledger, tab, activityScope]);
 
+  const payerReady =
+    agentStatus?.canRun === true ||
+    (!!circleStatus?.loggedIn &&
+      !!circleStatus.executorAddress &&
+      (circleStatus.gatewayBalanceUsdc == null || Number(circleStatus.gatewayBalanceUsdc) > 0));
+
+  const payerBlockReason =
+    agentStatus?.canRun === false && agentStatus.reason
+      ? agentStatus.reason
+      : !circleStatus?.loggedIn
+        ? "Log in with Circle (Payer) to pay agents via x402."
+        : !circleStatus?.executorAddress
+          ? "No Circle agent wallet found. Open Payer and select a wallet on ARC-TESTNET."
+          : circleStatus.gatewayBalanceUsdc != null && Number(circleStatus.gatewayBalanceUsdc) <= 0
+            ? "Fund Gateway USDC in Payer before running tasks."
+            : "Log in with Circle (Payer) and fund Gateway USDC before running tasks.";
+
   const handleRunWorkflow = async (etfId: string, brief?: string) => {
-    if (agentStatus && !agentStatus.canRun) {
-      setWorkflowMessage(agentStatus.reason ?? "Configure a Circle payer wallet first");
+    if (!payerReady) {
+      setWorkflowMessage(payerBlockReason);
       return;
     }
     setWorkflowRunning(true);
@@ -257,7 +274,7 @@ export function App() {
     activityPayerAddresses.length > 0 ||
     !!agentStatus?.circleExecutorAddress ||
     !!agentStatus?.executorAddress ||
-    !!agentStatus?.canRun;
+    payerReady;
 
   const activityCountLabel =
     activityScope === "mine"
@@ -417,13 +434,15 @@ export function App() {
             </div>
           )}
 
-          {agentStatus && !agentStatus.canRun && (tab === "agent" || tab === "marketplace") && agentStatus.reason && (
+          {!payerReady && (tab === "agent" || tab === "marketplace") && (
             <div className="inline-alert info">
-              <strong>Payer required</strong> — {agentStatus.reason}
+              <strong>Payer required</strong> — {payerBlockReason}
             </div>
           )}
 
-          {agentStatus?.gatewayBalanceUsdc === "0" && (tab === "agent" || tab === "marketplace") && (
+          {payerReady &&
+            (agentStatus?.gatewayBalanceUsdc === "0" || circleStatus?.gatewayBalanceUsdc === "0") &&
+            (tab === "agent" || tab === "marketplace") && (
             <div className="inline-alert info">
               <strong>Fund payer</strong> — Gateway USDC balance is zero. Add testnet USDC at{" "}
               <a href="https://faucet.circle.com" target="_blank" rel="noreferrer">
@@ -443,8 +462,8 @@ export function App() {
 
           {tab === "agent" && (
             <AgentChatView
-              canRun={agentStatus?.canRun ?? false}
-              payerReason={agentStatus?.reason}
+              canRun={payerReady}
+              payerReason={payerBlockReason}
               onTaskComplete={refresh}
               onButlerBusyChange={setButlerBusy}
               onViewDeliverable={(jobId) => {

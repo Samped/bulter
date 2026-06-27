@@ -86,7 +86,14 @@ app.get("/api/health", (_req, res) => {
 
   setImmediate(() => {
     if (process.env.BUTLER_LITE_API === "true") {
-      console.log("Butler API lite mode — x402/marketplace routes skipped (set BUTLER_LITE_API=false for full API)");
+      void import("./load-task-routes.ts")
+        .then(({ loadTaskRoutes }) => loadTaskRoutes(app))
+        .then(() => {
+          console.log("Butler API lite mode — task routes loaded (full marketplace: BUTLER_LITE_API=false)");
+        })
+        .catch((error) => {
+          console.error("Butler API failed to load task routes:", error);
+        });
       return;
     }
     void import("./load-routes.ts")
