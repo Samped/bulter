@@ -101,6 +101,13 @@ function normalizeOtp(otp: string, requestId?: string, prefixHint?: string): str
 
 function formatLoginVerifyError(errText: string): { error: string; needsNewCode: boolean } {
   const text = errText.replace(/^Error:\s*/i, "").trim();
+  if (/429|too many requests|rate.?limit/i.test(text) || /<!doctype html/i.test(text)) {
+    return {
+      error:
+        "Circle is temporarily rate-limiting logins (too many attempts). Wait 10–15 minutes, tap Send code for a fresh OTP, then verify once with the new code.",
+      needsNewCode: true,
+    };
+  }
   if (/invalid or expired request id/i.test(text)) {
     return {
       error: "Code session expired (each verify attempt is one-time). Tap Resend code and use the new email OTP.",
