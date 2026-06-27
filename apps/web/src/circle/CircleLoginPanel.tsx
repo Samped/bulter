@@ -323,7 +323,7 @@ export function CircleLoginPanel({
         onProgress: (msg) => setVerifyHint(msg),
       });
       const loggedInEmail = res.email ?? email;
-      const address = res.executorAddress ?? null;
+      const address = res.executorAddress ?? res.wallets?.[0]?.address ?? null;
       setWallets(res.wallets ?? []);
       setStatus((prev) => ({
         installed: prev?.installed ?? true,
@@ -331,7 +331,7 @@ export function CircleLoginPanel({
         loggedIn: true,
         testnet: prev?.testnet ?? true,
         version: prev?.version ?? null,
-        chain: prev?.chain ?? "ARC",
+        chain: prev?.chain ?? "ARC-TESTNET",
         email: loggedInEmail,
         executorAddress: address,
       }));
@@ -342,7 +342,22 @@ export function CircleLoginPanel({
       setLoggedInAddress(address);
       setShowFundModal(true);
       setFundMessage(null);
-      await refresh();
+      setError(null);
+      try {
+        const s = await getCircleStatus();
+        setStatus((prev) => ({
+          ...s,
+          loggedIn: s.loggedIn || true,
+          email: s.email ?? loggedInEmail,
+          executorAddress: s.executorAddress ?? address,
+        }));
+        if (s.loggedIn) {
+          const w = await getCircleWallets().catch(() => null);
+          if (w?.wallets?.length) setWallets(w.wallets);
+        }
+      } catch {
+        /* keep optimistic login from verify response */
+      }
       onLoginSuccess?.({ executorAddress: address });
       onReady?.();
     } catch (e) {
@@ -408,16 +423,20 @@ export function CircleLoginPanel({
   };
 
   const fundModal =
-    showFundModal && loggedInAddress ? (
+    showFundModal && (loggedInAddress || status?.email) ? (
       <div className="payer-fund-backdrop" role="presentation">
         <div className="payer-fund-modal" role="dialog" aria-label="Get testnet tokens">
           <p className="payer-fund-title">You&apos;re logged in</p>
           <p className="payer-fund-copy">
             Get free testnet USDC on Arc so you can run agents and pay x402 merchants.
           </p>
-          <p className="payer-fund-wallet">
-            Your wallet: <code>{shortAddr(loggedInAddress)}</code>
-          </p>
+          {loggedInAddress ? (
+            <p className="payer-fund-wallet">
+              Your wallet: <code>{shortAddr(loggedInAddress)}</code>
+            </p>
+          ) : (
+            <p className="payer-fund-wallet muted small">Wallet loading… open Payer to see your address.</p>
+          )}
           <button
             type="button"
             className="btn primary payer-fund-btn"
@@ -452,14 +471,14 @@ export function CircleLoginPanel({
       >
         <p className="payer-popover-title">Circle payer · x402</p>
 
-        {connected ? (
-          <>
-            <div className="payer-popover-session">
-              <span className="muted small">{status?.email ?? "Logged in"}</span>
-              {status?.executorAddress && (
-                <code className="payer-address">{shortAddr(status.executorAddress)}</code>
-              )}
-            </div>
+          {connected ? (
+            <>
+              <div className="payer-popover-session">
+                <span className="muted small">{status?.email ?? "Logged in"}</span>
+                {(status?.executorAddress || wallets[0]?.address) && (
+                  <code className="payer-address">{shortAddr(status?.executorAddress ?? wallets[0]!.address)}</code>
+                )}
+              </div>
             {status?.gatewayBalanceUsdc != null && (
               <p className={`payer-balance${Number(status.gatewayBalanceUsdc) === 0 ? " low" : ""}`}>
                 Gateway: {status.gatewayBalanceUsdc} USDC
@@ -611,7 +630,7 @@ export function CircleLoginPanel({
           ) : (
             <>
               <span className="payer-toolbar-label">Payer</span>
-              <span className="payer-toolbar-value warn">{step === "otp" ? "Enter code" : "Log in"}</span>
+              <span className="payer-toolbar-value warn">{step === "otp" ? (busy ? "Verifying…" : "Enter code") : "Log in"}</span>
             </>
           )}
           <IconChevronDown size={12} className={open ? "open" : ""} />

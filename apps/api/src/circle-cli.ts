@@ -184,9 +184,7 @@ export interface CircleProbeResult {
 function sessionFromStoredConfig(): { loggedIn: boolean; email?: string } {
   if (!hasActiveUserSession()) return { loggedIn: false };
   const cfg = loadCircleConfig();
-  if (!cfg.executorAddress?.startsWith("0x") || !cfg.email?.includes("@")) {
-    return { loggedIn: false };
-  }
+  if (!cfg.email?.includes("@")) return { loggedIn: false };
   const updated = cfg.updatedAt ?? cfg.gatewayBalanceAt ?? 0;
   const ageSec = Math.floor(Date.now() / 1000) - updated;
   if (ageSec > 30 * 24 * 3600) return { loggedIn: false };

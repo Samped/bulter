@@ -102,10 +102,12 @@ async function handleLoginVerify(
     const chain = resolveCircleChain();
     const wallets = circleListAgentWallets(chain);
     const first = wallets[0]?.address as `0x${string}` | undefined;
-    if (first && !resolveCircleExecutorAddress()) {
+    if (first) {
       saveCircleConfig({ executorAddress: first, chain });
+    } else {
+      ensureCircleExecutor();
     }
-    const executor = ensureCircleExecutor() ?? resolveCircleExecutorAddress();
+    const executor = resolveCircleExecutorAddress() ?? ensureCircleExecutor();
     res.json({
       ok: true,
       email: savedEmail ?? result.email,
