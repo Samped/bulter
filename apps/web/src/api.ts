@@ -111,18 +111,27 @@ export interface AgentRunResult {
   remainingDailyUsdc: string;
 }
 
-const API = (import.meta.env.VITE_API_URL as string | undefined)?.trim() || "http://localhost:3001";
-export const IS_LOCAL_API = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(API.replace(/\/$/, ""));
+const rawApi = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+/** Prod on Vercel: empty → same-origin /api/* (proxied in vercel.json). Dev: localhost:3001. */
+const API = rawApi || (import.meta.env.DEV ? "http://localhost:3001" : "");
+export const IS_LOCAL_API =
+  !API || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(API.replace(/\/$/, ""));
 
 function defaultTimeoutMs(): number {
   return IS_LOCAL_API ? 20_000 : 90_000;
 }
 
+function apiDisplayUrl(): string {
+  if (API) return API;
+  if (typeof window !== "undefined") return window.location.origin;
+  return "the API";
+}
+
 function apiUnreachableMessage(): string {
   if (IS_LOCAL_API) {
-    return `Cannot reach API at ${API} — is npm run dev:api running?`;
+    return `Cannot reach API at ${apiDisplayUrl()} — is npm run dev:api running?`;
   }
-  return `Cannot reach API at ${API} — the server may be waking up (Render free tier can take up to 60s). Wait and refresh, or open the API URL in a new tab first.`;
+  return `Cannot reach API at ${apiDisplayUrl()} — wait a moment and try again, or open /api/health in a new tab.`;
 }
 
 function responseOk(res: Response): boolean {
@@ -235,8 +244,8 @@ export async function wakeApiForLogin(maxWaitMs = IS_LOCAL_API ? 15_000 : 120_00
   if (ok) return;
   throw new Error(
     IS_LOCAL_API
-      ? `Cannot reach API at ${API} — is npm run dev:api running?`
-      : `Cannot reach API at ${API} yet. If /api/health works in your browser, tap Verify & log in again.`
+      ? `Cannot reach API at ${apiDisplayUrl()} — is npm run dev:api running?`
+      : `Cannot reach API at ${apiDisplayUrl()} yet. If /api/health works in your browser, tap Verify & log in again.`
   );
 }
 
