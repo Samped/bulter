@@ -5,8 +5,8 @@ import {
   buildAgentTasks,
   type Merchant,
 } from "@butler/core";
-import { circleCliLoggedIn, circleCliRunnable, circleCliInstalled, circleServicesPay, ensureCircleExecutor } from "./circle-cli.ts";
-import { resolveCircleExecutorAddress, useCircleCliPayments } from "./circle-config.ts";
+import { circleCliLoggedIn, circleCliRunnable, circleCliInstalled, circleServicesPay, ensureCircleExecutor, circleCliQuickRunnable } from "./circle-cli.ts";
+import { loadCircleConfig, resolveCircleExecutorAddress, useCircleCliPayments } from "./circle-config.ts";
 import { formatPaymentError } from "./payment-errors.ts";
 import { privateKeyToAccount } from "viem/accounts";
 
@@ -29,9 +29,13 @@ export function agentRunReadiness(): { canRun: boolean; reason?: string; mode?: 
   const pk = getValidExecutorKey();
   const circleAddr = resolveCircleExecutorAddress();
   const circleSession = circleCliLoggedIn();
+  const cfg = loadCircleConfig();
 
   if (circleSession && circleAddr) return { canRun: true, mode: "circle-cli" };
-  if (useCircleCliPayments() && circleAddr && circleCliRunnable()) {
+  if (circleAddr && useCircleCliPayments() && (circleCliRunnable() || circleCliQuickRunnable())) {
+    return { canRun: true, mode: "circle-cli" };
+  }
+  if (cfg.email && circleAddr && useCircleCliPayments()) {
     return { canRun: true, mode: "circle-cli" };
   }
   if (pk) return { canRun: true, mode: "x402" };
