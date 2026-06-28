@@ -157,6 +157,7 @@ export function CircleLoginPanel({
   const chipRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const skipResumePoll = useRef(false);
+  const sendInFlightRef = useRef(false);
 
   const connected = status?.loggedIn ?? false;
 
@@ -238,7 +239,7 @@ export function CircleLoginPanel({
   };
 
   const handleSendCode = async () => {
-    if (!email.includes("@") || busy || sending) return;
+    if (!email.includes("@") || busy || sending || sendInFlightRef.current) return;
     const { email: sendTo, corrected } = fixEmailTypos(email);
     if (corrected) {
       setEmail(sendTo);
@@ -246,6 +247,11 @@ export function CircleLoginPanel({
     } else {
       setEmailHint(null);
     }
+
+    sendInFlightRef.current = true;
+    setStep("otp");
+    setOpen(true);
+    setPopoverPos(measurePopoverPos(chipRef.current, true) ?? fallbackPopoverPos(true));
     setBusy(true);
     setSending(true);
     setError(null);
@@ -253,6 +259,7 @@ export function CircleLoginPanel({
     setRequestId(null);
     setOtp("");
     skipResumePoll.current = true;
+    saveSession({ email: sendTo });
     let startedJobId: string | null = null;
     const tick = window.setInterval(() => setSendElapsed((s) => s + 1), 1_000);
     try {
@@ -260,9 +267,6 @@ export function CircleLoginPanel({
         onJobStarted: ({ jobId: id }) => {
           startedJobId = id;
           setJobId(id);
-          setStep("otp");
-          setOpen(true);
-          setPopoverPos(measurePopoverPos(chipRef.current, true));
           saveSession({ jobId: id, email: sendTo });
         },
         onProgress: (sec) => setSendElapsed(Math.max(sec, 1)),
@@ -286,6 +290,7 @@ export function CircleLoginPanel({
       window.clearInterval(tick);
       setSending(false);
       setBusy(false);
+      sendInFlightRef.current = false;
       skipResumePoll.current = false;
     }
   };

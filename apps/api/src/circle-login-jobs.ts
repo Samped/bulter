@@ -146,8 +146,52 @@ export function resumePendingLoginJobs(): void {
   }
 }
 
+const PENDING_REUSE_MS = 3 * 60 * 1000;
+
+function normalizeLoginEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/** Reuse an in-flight send for the same browser session — avoids duplicate OTP emails. */
+function findPendingLoginJob(email: string, sessionId?: string): string | null {
+  const normalized = normalizeLoginEmail(email);
+  const cutoff = Date.now() - PENDING_REUSE_MS;
+
+  const match = (id: string, job: LoginInitJob): string | null => {
+    if (job.status !== "pending") return null;
+    if (normalizeLoginEmail(job.email) !== normalized) return null;
+    if ((job.sessionId ?? undefined) !== (sessionId ?? undefined)) return null;
+    if (job.startedAt < cutoff) return null;
+    return id;
+  };
+
+  for (const [id, job] of jobs) {
+    const hit = match(id, job);
+    if (hit) return hit;
+  }
+
+  try {
+    for (const name of readdirSync(JOBS_DIR)) {
+      if (!name.endsWith(".json")) continue;
+      const id = name.replace(/\.json$/, "");
+      if (jobs.has(id)) continue;
+      const job = loadJobFromDisk(id);
+      if (!job) continue;
+      const hit = match(id, job);
+      if (hit) return hit;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return null;
+}
+
 export function startCircleLoginInitJob(email: string, testnet = true, sessionId?: string): string {
   pruneJobs();
+  const existing = findPendingLoginJob(email, sessionId);
+  if (existing) return existing;
+
   const jobId = randomUUID();
   saveJob(jobId, { status: "pending", email, testnet, sessionId, startedAt: Date.now() });
   runLoginJob(jobId, email, testnet, sessionId);
