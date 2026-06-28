@@ -169,6 +169,12 @@ export function CircleLoginPanel({
       setStatus(s);
       if (s.loggedIn) {
         clearSession();
+        setError(null);
+        setStep("email");
+        setJobId(null);
+        setRequestId(null);
+        setSending(false);
+        sendInFlightRef.current = false;
         const w = await getCircleWallets().catch(() => null);
         if (w) setWallets(w.wallets);
       }
@@ -176,6 +182,17 @@ export function CircleLoginPanel({
       setStatus(null);
     }
   }, []);
+
+  useEffect(() => {
+    if (!connected) return;
+    clearSession();
+    setError(null);
+    setStep("email");
+    setJobId(null);
+    setRequestId(null);
+    setSending(false);
+    sendInFlightRef.current = false;
+  }, [connected]);
 
   useEffect(() => {
     refresh();
@@ -247,7 +264,7 @@ export function CircleLoginPanel({
   };
 
   const handleSendCode = () => {
-    if (!email.includes("@") || verifying || sendInFlightRef.current) return;
+    if (!email.includes("@") || verifying || sendInFlightRef.current || connected) return;
     const { email: sendTo, corrected } = fixEmailTypos(email);
     if (corrected) {
       setEmail(sendTo);
@@ -628,7 +645,7 @@ export function CircleLoginPanel({
           </>
         )}
 
-        {error && <p className="payer-error">{error}</p>}
+        {error && !connected && <p className="payer-error">{error}</p>}
       </div>
     ) : null;
 
