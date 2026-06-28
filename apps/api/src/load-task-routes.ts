@@ -156,7 +156,8 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
   registerRegistryRoutes(app, { apiBase, statePath: STATE_PATH, sellerAddress: SELLER });
 
   try {
-    const gateway = await createMarketplaceGateway(SELLER);
+    const useLiteGate = process.env.BUTLER_LITE_API === "true";
+    const gateway = useLiteGate ? null : await createMarketplaceGateway(SELLER);
     registerAgentExecuteRoutes(app, gateway, {
       statePath: STATE_PATH,
       policyStatePath: STATE_PATH,

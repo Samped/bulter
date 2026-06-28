@@ -384,12 +384,43 @@ function gatewayRequireWithTimeout(gateway: Gateway, price: string): RequestHand
   };
 }
 
+/** Instant 402 for lite API — avoids Circle facilitator hangs on small VMs. Butler uses in-process pay. */
+function litePaymentGate(price: string, sellerAddress: string): RequestHandler {
+  const amountUsdc = price.replace("$", "");
+  return (req, res, next) => {
+    const paid = (req as PaidRequest).payment;
+    if (paid?.verified) {
+      next();
+      return;
+    }
+    res.status(402).json({
+      error: "payment_required",
+      price,
+      amount_usdc: amountUsdc,
+      x402: true,
+      seller: sellerAddress,
+      mode: "lite",
+    });
+  };
+}
+
+function resolvePaymentGate(gateway: Gateway | null, price: string, sellerAddress: string): RequestHandler {
+  if (process.env.BUTLER_LITE_API === "true" || !gateway) {
+    return litePaymentGate(price, sellerAddress);
+  }
+  return gatewayRequireWithTimeout(gateway, price);
+}
+
 export function registerAgentExecuteRoutes(
   app: Express,
-  gateway: Gateway,
+  gateway: Gateway | null,
   opts: { statePath: string; policyStatePath: string; sellerAddress: string }
 ): void {
   const { statePath, policyStatePath, sellerAddress } = opts;
+
+  app.get("/api/marketplace/agents/ping", (_req, res) => {
+    res.json({ ok: true, agents: Object.keys(AGENT_SERVICES).length, mode: process.env.BUTLER_LITE_API === "true" ? "lite" : "full" });
+  });
 
   function loadMp() {
     return loadMarketplaceState(statePath, sellerAddress);
@@ -492,7 +523,7 @@ export function registerAgentExecuteRoutes(
   for (const [agentId, svc] of Object.entries(AGENT_SERVICES)) {
     app.get(
       `/marketplace/agents/${agentId}/execute`,
-      gatewayRequireWithTimeout(gateway, svc.price),
+      resolvePaymentGate(gateway, svc.price, sellerAddress),
       marketplacePaidHandler(agentId, svc)
     );
   }
