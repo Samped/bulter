@@ -16,14 +16,32 @@ if [[ ! -d "$ROOT" ]]; then
 fi
 cd "$ROOT"
 
+# Hung Node still binds :3001 but never sends HTTP — kill before restart
+if command -v fuser >/dev/null 2>&1; then
+  sudo fuser -k 3001/tcp 2>/dev/null || true
+elif command -v lsof >/dev/null 2>&1; then
+  pid=$(sudo lsof -t -i:3001 2>/dev/null || true)
+  [[ -n "$pid" ]] && sudo kill -9 $pid 2>/dev/null || true
+fi
+sleep 1
+
 echo "Pulling latest…"
 git pull origin main
 
 echo "Installing / building API…"
 npm run install:render
 
+UNIT_SRC="$ROOT/scripts/butler-api.service"
+UNIT_DST="/etc/systemd/system/butler-api.service"
+if [[ -f "$UNIT_SRC" ]] && [[ ! -f "$UNIT_DST" || "$UNIT_SRC" -nt "$UNIT_DST" ]]; then
+  echo "Installing systemd unit…"
+  sudo cp "$UNIT_SRC" "$UNIT_DST"
+  sudo systemctl daemon-reload
+  sudo systemctl enable butler-api 2>/dev/null || true
+fi
+
 echo "Restarting butler-api…"
-if systemctl is-active --quiet butler-api 2>/dev/null; then
+if systemctl list-unit-files butler-api.service 2>/dev/null | grep -q butler-api; then
   sudo systemctl restart butler-api
 else
   echo "No butler-api systemd unit — starting manually (Ctrl+C to stop)"
@@ -34,7 +52,7 @@ else
 fi
 
 echo "Waiting for health…"
-for i in 1 2 3 4 5 6 7 8 9 10; do
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
   if curl -sf --max-time 3 http://127.0.0.1:3001/api/health | grep -q '"ok":true'; then
     echo "OK — API is responding locally"
     curl -s http://127.0.0.1:3001/api/health
@@ -45,6 +63,8 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
     else
       echo "WARN — research-agent execute returned HTTP $code (expected 402). Pull latest and rebuild."
     fi
+    echo ""
+    echo "Public check: https://getbutler.xyz/api/health"
     exit 0
   fi
   sleep 2
