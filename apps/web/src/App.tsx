@@ -74,7 +74,6 @@ export function App() {
   const [circleStatus, setCircleStatus] = useState<CircleStatus | null>(null);
   const [workflowRunning, setWorkflowRunning] = useState(false);
   const [workflowMessage, setWorkflowMessage] = useState<string | null>(null);
-  const [loginNotice, setLoginNotice] = useState<string | null>(null);
   const [traceSettlementId, setTraceSettlementId] = useState("");
   const [libraryJobId, setLibraryJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -358,9 +357,7 @@ export function App() {
               <span className="topbar-meta">
                 Wallet <code title={userWallet}>{shortAddr(userWallet)}</code>
               </span>
-            ) : (
-              <span className="topbar-meta muted">Log in to connect your wallet</span>
-            )}
+            ) : null}
           </div>
 
           <div className="topbar-right">
@@ -382,12 +379,7 @@ export function App() {
               <CircleLoginPanel
                 variant="toolbar"
                 onReady={refresh}
-                onLoginSuccess={(info) => {
-                  setLoginNotice(
-                    info.executorAddress
-                      ? `Logged in · wallet ${shortAddr(info.executorAddress)}`
-                      : "Logged in with Circle"
-                  );
+                onLoginSuccess={() => {
                   void refresh();
                 }}
               />
@@ -424,12 +416,6 @@ export function App() {
         </header>
 
         <div className="main-inner">
-          {loginNotice && (
-            <div className="inline-alert success">
-              {loginNotice}
-            </div>
-          )}
-
           {workflowMessage && tab === "marketplace" && (
             <div
               className={`inline-alert ${
@@ -437,12 +423,6 @@ export function App() {
               }`}
             >
               {workflowMessage}
-            </div>
-          )}
-
-          {!payerReady && (tab === "agent" || tab === "marketplace") && (
-            <div className="inline-alert info">
-              <strong>Payer required</strong> — {payerBlockReason}
             </div>
           )}
 
