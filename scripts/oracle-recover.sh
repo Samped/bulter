@@ -67,11 +67,19 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
     echo "OK — API is responding locally"
     curl -s http://127.0.0.1:3001/api/health
     echo ""
-    code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://127.0.0.1:3001/marketplace/agents/research-agent/execute || echo "000")
-    if [[ "$code" == "402" ]]; then
-      echo "OK — x402 agent execute routes live (HTTP 402)"
+    loader=$(curl -sf --max-time 8 http://127.0.0.1:3001/api/marketplace/loader-status 2>/dev/null || echo "")
+    if echo "$loader" | grep -q '"executeRoutes":15'; then
+      echo "OK — 15 agent execute routes registered"
     else
-      echo "WARN — research-agent execute returned HTTP $code (expected 402). Pull latest and rebuild."
+      echo "WARN — loader-status: ${loader:-unavailable}"
+    fi
+    code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 12 http://127.0.0.1:3001/marketplace/agents/research-agent/execute || echo "000")
+    if [[ "$code" == "402" ]]; then
+      echo "OK — x402 agent execute responds (HTTP 402)"
+    elif [[ "$code" == "000" ]]; then
+      echo "WARN — execute URL timed out (Butler uses in-process agent pay — tasks may still work)"
+    else
+      echo "WARN — research-agent execute returned HTTP $code (expected 402)"
     fi
     echo ""
     echo "Public check: https://getbutler.xyz/api/health"

@@ -155,11 +155,23 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
   const apiBase = resolveApiBase();
   registerRegistryRoutes(app, { apiBase, statePath: STATE_PATH, sellerAddress: SELLER });
 
-  const gateway = await createMarketplaceGateway(SELLER);
-  registerAgentExecuteRoutes(app, gateway, {
-    statePath: STATE_PATH,
-    policyStatePath: STATE_PATH,
-    sellerAddress: SELLER,
+  try {
+    const gateway = await createMarketplaceGateway(SELLER);
+    registerAgentExecuteRoutes(app, gateway, {
+      statePath: STATE_PATH,
+      policyStatePath: STATE_PATH,
+      sellerAddress: SELLER,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Execute routes failed to load";
+    const { setExecuteLoadError } = await import("./route-loader-status.ts");
+    setExecuteLoadError(message);
+    console.error("Butler API execute routes failed:", message);
+  }
+
+  const { getRouteLoaderStatus } = await import("./route-loader-status.ts");
+  app.get("/api/marketplace/loader-status", (_req, res) => {
+    res.json(getRouteLoaderStatus());
   });
 
   function loadMp() {
