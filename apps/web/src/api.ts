@@ -280,18 +280,18 @@ export const getHealthQuick = () =>
   request<Health>("/api/health", undefined, IS_LOCAL_API ? 6_000 : 8_000, 2);
 
 /** Best-effort wake; returns false instead of throwing so verify can still try. */
-export async function tryWakeApiForLogin(maxWaitMs = IS_LOCAL_API ? 12_000 : 30_000): Promise<boolean> {
+export async function tryWakeApiForLogin(maxWaitMs = IS_LOCAL_API ? 8_000 : 12_000): Promise<boolean> {
   const started = Date.now();
-  let delay = 1_500;
+  let delay = 800;
   while (Date.now() - started < maxWaitMs) {
     try {
-      const h = await getHealth();
+      const h = await getHealthQuick();
       if (h.ok && h.mode !== "starting") return true;
     } catch {
       /* retry */
     }
     await new Promise((r) => setTimeout(r, delay));
-    delay = Math.min(delay + 1_000, 6_000);
+    delay = Math.min(delay + 500, 2_500);
   }
   return false;
 }
@@ -371,8 +371,9 @@ export async function startCircleLoginJob(email: string) {
 
 const LOGIN_POLL_TIMEOUT = IS_LOCAL_API ? 15_000 : 25_000;
 const LOGIN_POLL_RETRIES = IS_LOCAL_API ? 3 : 12;
+const LOGIN_JOB_QUICK_TIMEOUT = IS_LOCAL_API ? 6_000 : 8_000;
 
-export async function fetchCircleLoginJobOnce(jobId: string) {
+export async function fetchCircleLoginJobOnce(jobId: string, quick = false) {
   return request<{
     status: string;
     requestId?: string;
@@ -382,7 +383,12 @@ export async function fetchCircleLoginJobOnce(jobId: string) {
     otpPrefix?: string;
     error?: string;
     elapsedMs?: number;
-  }>(`/api/circle/login/init/${jobId}`, undefined, LOGIN_POLL_TIMEOUT, LOGIN_POLL_RETRIES);
+  }>(
+    `/api/circle/login/init/${jobId}`,
+    undefined,
+    quick ? LOGIN_JOB_QUICK_TIMEOUT : LOGIN_POLL_TIMEOUT,
+    quick ? 1 : LOGIN_POLL_RETRIES
+  );
 }
 
 export async function pollCircleLoginJob(
@@ -547,21 +553,27 @@ export async function waitForLoginRequestId(
   throw new Error("Still connecting to server. Tap Verify again in a few seconds.");
 }
 
-/** Resolve Circle requestId from job poll (used before verify). */
+/** Resolve Circle requestId — fast path when verify is tapped. */
 export async function resolveLoginRequestId(
   jobId?: string | null,
   existing?: string | null
 ): Promise<string> {
   if (existing) return existing;
   if (!jobId) throw new Error("Missing login session. Tap Send code again.");
-  await tryWakeApiForLogin(IS_LOCAL_API ? 12_000 : 25_000);
-  const status = await fetchCircleLoginJobOnce(jobId);
-  if (status.requestId) return status.requestId;
-  if (status.status === "pending") {
-    const res = await waitForLoginRequestId(jobId, IS_LOCAL_API ? 60_000 : 90_000);
-    return res.requestId;
+
+  const deadline = Date.now() + (IS_LOCAL_API ? 12_000 : 18_000);
+  let delay = 600;
+  while (Date.now() < deadline) {
+    const status = await fetchCircleLoginJobOnce(jobId, true);
+    if (status.requestId) return status.requestId;
+    if (status.status === "error" || status.error) {
+      throw new Error(status.error ?? "Failed to send OTP");
+    }
+    if (status.status !== "pending") break;
+    await new Promise((r) => setTimeout(r, delay));
+    delay = Math.min(delay + 400, 1_500);
   }
-  throw new Error(status.error ?? "Login session expired. Send a new code.");
+  throw new Error("Code session not ready yet. Wait 5 seconds and tap Verify & log in again.");
 }
 
 export async function circleLoginInit(email: string) {
@@ -576,53 +588,42 @@ export async function circleLoginVerify(
   otpPrefix?: string,
   opts?: { onProgress?: (message: string) => void }
 ) {
-  const timeout = IS_LOCAL_API ? 90_000 : 180_000;
-  /** One Circle verify per button tap — retries burn OTP attempts and trigger 429. */
-  const perRequestRetries = 1;
+  const timeout = IS_LOCAL_API ? 45_000 : 60_000;
   const init: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ requestId, otp, testnet: true, email, otpPrefix }),
   };
-  let lastErr: Error | null = null;
 
-  await tryWakeApiForLogin(IS_LOCAL_API ? 12_000 : 20_000);
-
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      opts?.onProgress?.(attempt === 1 ? "Verifying code…" : "Retrying once…");
-      const body = await request<{
-        ok?: boolean;
-        email?: string;
-        message?: string;
-        wallets?: CircleAgentWallet[];
-        executorAddress?: string | null;
-        needsNewCode?: boolean;
-      }>("/api/circle/login/verify", init, timeout, perRequestRetries);
-      return {
-        ok: true as const,
-        email: body.email,
-        message: body.message,
-        wallets: body.wallets ?? [],
-        executorAddress: body.executorAddress ?? null,
-      };
-    } catch (err) {
-      lastErr = err instanceof Error ? err : new Error(String(err));
-      const needsNewCode = !!(lastErr as Error & { needsNewCode?: boolean }).needsNewCode;
-      const rateLimited = /429|rate.?limit|too many requests|<!doctype/i.test(lastErr.message);
-      if (rateLimited || needsNewCode) throw lastErr;
-      const retryable =
-        attempt < 2 &&
-        /502|503|504|waking up|Cannot reach API|timed out|Bad Gateway|unavailable/i.test(lastErr.message);
-      if (!retryable) throw lastErr;
-      opts?.onProgress?.("Server busy — retrying once…");
-      await new Promise((r) => setTimeout(r, 3_000));
+  opts?.onProgress?.("Verifying code…");
+  try {
+    const body = await request<{
+      ok?: boolean;
+      email?: string;
+      message?: string;
+      wallets?: CircleAgentWallet[];
+      executorAddress?: string | null;
+      needsNewCode?: boolean;
+    }>("/api/circle/login/verify", init, timeout, 1);
+    return {
+      ok: true as const,
+      email: body.email,
+      message: body.message,
+      wallets: body.wallets ?? [],
+      executorAddress: body.executorAddress ?? null,
+    };
+  } catch (err) {
+    const lastErr = err instanceof Error ? err : new Error(String(err));
+    const needsNewCode = !!(lastErr as Error & { needsNewCode?: boolean }).needsNewCode;
+    const rateLimited = /429|rate.?limit|too many requests|<!doctype/i.test(lastErr.message);
+    if (rateLimited || needsNewCode) throw lastErr;
+    if (/timed out|Request timed out/i.test(lastErr.message)) {
+      throw new Error(
+        "Verify timed out. Check /api/health, then tap Verify once more with the same code (codes expire quickly)."
+      );
     }
+    throw lastErr;
   }
-  throw (
-    lastErr ??
-    new Error("Verify timed out. If /api/health works, tap Verify & log in again (Circle can take up to 2 minutes).")
-  );
 }
 
 export function fundCircleWallet() {
