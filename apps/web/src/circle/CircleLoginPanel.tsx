@@ -347,9 +347,6 @@ export function CircleLoginPanel({
       setStep("email");
       setOtp("");
       setOpen(false);
-      setLoggedInAddress(address);
-      setShowFundModal(true);
-      setFundMessage(null);
       setError(null);
       try {
         const s = await getCircleStatus();
@@ -491,6 +488,19 @@ export function CircleLoginPanel({
               <p className={`payer-balance${Number(status.gatewayBalanceUsdc) === 0 ? " low" : ""}`}>
                 Gateway: {status.gatewayBalanceUsdc} USDC
               </p>
+            )}
+            {Number(status?.gatewayBalanceUsdc ?? 0) === 0 && status?.executorAddress && (
+              <button
+                type="button"
+                className="btn ghost sm payer-popover-btn"
+                disabled={fundBusy}
+                onClick={() => {
+                  setLoggedInAddress(status.executorAddress);
+                  setShowFundModal(true);
+                }}
+              >
+                Get testnet USDC
+              </button>
             )}
             {wallets.length > 1 && (
               <div className="circle-wallet-list">
