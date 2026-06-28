@@ -80,7 +80,7 @@ async function handleLoginVerify(
     const { saveCircleConfig, resolveCircleExecutorAddress, resolveCircleChain } = await import(
       "./circle-config.ts"
     );
-    const verifyTimeout = process.env.RENDER || process.env.BUTLER_LITE_API ? 120_000 : 60_000;
+    const verifyTimeout = 55_000;
     const result = await circleLoginVerifyAsync(
       requestId,
       otp,

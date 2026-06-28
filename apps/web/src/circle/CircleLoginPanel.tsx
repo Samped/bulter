@@ -326,9 +326,9 @@ export function CircleLoginPanel({
     if (otpDigits(otp) < 6 || verifying) return;
     setVerifying(true);
     setError(null);
-    setVerifyHint("Connecting…");
+    setVerifyHint("Verifying code…");
     try {
-      const rid = await resolveLoginRequestId(jobId, requestId);
+      const rid = requestId ?? (await resolveLoginRequestId(jobId, requestId));
       if (rid !== requestId) {
         applyLoginJobResult(
           { requestId: rid, otpPrefix: otpPrefix ?? undefined, hint: hint ?? undefined },
@@ -357,23 +357,25 @@ export function CircleLoginPanel({
       setOtp("");
       setOpen(false);
       setError(null);
-      try {
-        const s = await getCircleStatus();
-        setStatus((prev) => ({
-          ...s,
-          loggedIn: s.loggedIn || true,
-          email: s.email ?? loggedInEmail,
-          executorAddress: s.executorAddress ?? address,
-        }));
-        if (s.loggedIn) {
-          const w = await getCircleWallets().catch(() => null);
-          if (w?.wallets?.length) setWallets(w.wallets);
-        }
-      } catch {
-        /* keep optimistic login from verify response */
-      }
       onLoginSuccess?.({ executorAddress: address });
       onReady?.();
+      void (async () => {
+        try {
+          const s = await getCircleStatus();
+          setStatus((prev) => ({
+            ...s,
+            loggedIn: s.loggedIn || true,
+            email: s.email ?? loggedInEmail,
+            executorAddress: s.executorAddress ?? address,
+          }));
+          if (s.loggedIn) {
+            const w = await getCircleWallets().catch(() => null);
+            if (w?.wallets?.length) setWallets(w.wallets);
+          }
+        } catch {
+          /* optimistic login from verify response */
+        }
+      })();
     } catch (e) {
       const err = e as Error & { needsNewCode?: boolean };
       const msg = err.message;
@@ -578,9 +580,11 @@ export function CircleLoginPanel({
               disabled={verifying || otpDigits(otp) < 6}
               onClick={() => void handleVerify()}
             >
-              {verifying ? verifyHint ?? "Logging in…" : "Verify & log in"}
+              {verifying ? "Verifying…" : "Verify & log in"}
             </button>
-            {verifyHint && verifying && <p className="muted small payer-send-status">{verifyHint}</p>}
+            {verifyHint && verifying && verifyHint !== "Verifying code…" && (
+              <p className="muted small payer-send-status">{verifyHint}</p>
+            )}
             <button type="button" className="btn ghost sm payer-link-btn" disabled={verifying} onClick={goToEmail}>
               Use a different email
             </button>
