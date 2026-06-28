@@ -384,33 +384,6 @@ function gatewayRequireWithTimeout(gateway: Gateway, price: string): RequestHand
   };
 }
 
-/** Instant 402 for lite API — avoids Circle facilitator hangs on small VMs. Butler uses in-process pay. */
-function litePaymentGate(price: string, sellerAddress: string): RequestHandler {
-  const amountUsdc = price.replace("$", "");
-  return (req, res, next) => {
-    const paid = (req as PaidRequest).payment;
-    if (paid?.verified) {
-      next();
-      return;
-    }
-    res.status(402).json({
-      error: "payment_required",
-      price,
-      amount_usdc: amountUsdc,
-      x402: true,
-      seller: sellerAddress,
-      mode: "lite",
-    });
-  };
-}
-
-function resolvePaymentGate(gateway: Gateway | null, price: string, sellerAddress: string): RequestHandler {
-  if (process.env.BUTLER_LITE_API === "true" || !gateway) {
-    return litePaymentGate(price, sellerAddress);
-  }
-  return gatewayRequireWithTimeout(gateway, price);
-}
-
 export function registerAgentExecuteRoutes(
   app: Express,
   gateway: Gateway | null,
@@ -520,14 +493,38 @@ export function registerAgentExecuteRoutes(
     };
   }
 
-  for (const [agentId, svc] of Object.entries(AGENT_SERVICES)) {
-    const handlers = [
-      resolvePaymentGate(gateway, svc.price, sellerAddress),
-      marketplacePaidHandler(agentId, svc),
-    ];
-    // Lite/nginx setups proxy /api/* only — register both paths.
-    app.get(`/api/marketplace/agents/${agentId}/execute`, ...handlers);
-    app.get(`/marketplace/agents/${agentId}/execute`, ...handlers);
+  const useLiteGate = process.env.BUTLER_LITE_API === "true" || !gateway;
+
+  if (useLiteGate) {
+    const handleLiteExecute = (req: PaidRequest, res: Response): void => {
+      const agentId = String(req.params.agentId ?? "");
+      const svc = AGENT_SERVICES[agentId];
+      if (!svc) {
+        res.status(404).json({ error: "Unknown agent", agentId });
+        return;
+      }
+      if (!req.payment?.verified) {
+        res.status(402).json({
+          error: "payment_required",
+          price: svc.price,
+          amount_usdc: svc.price.replace("$", ""),
+          x402: true,
+          seller: sellerAddress,
+          mode: "lite",
+          agentId,
+        });
+        return;
+      }
+      void marketplacePaidHandler(agentId, svc)(req, res);
+    };
+    app.get("/api/marketplace/agents/:agentId/execute", handleLiteExecute);
+    app.get("/marketplace/agents/:agentId/execute", handleLiteExecute);
+  } else {
+    for (const [agentId, svc] of Object.entries(AGENT_SERVICES)) {
+      const handlers = [gatewayRequireWithTimeout(gateway!, svc.price), marketplacePaidHandler(agentId, svc)];
+      app.get(`/api/marketplace/agents/${agentId}/execute`, ...handlers);
+      app.get(`/marketplace/agents/${agentId}/execute`, ...handlers);
+    }
   }
 
   const count = Object.keys(AGENT_SERVICES).length;

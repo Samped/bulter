@@ -153,11 +153,11 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
   ]);
 
   const apiBase = resolveApiBase();
-  registerRegistryRoutes(app, { apiBase, statePath: STATE_PATH, sellerAddress: SELLER });
 
   try {
     const useLiteGate = process.env.BUTLER_LITE_API === "true";
     const gateway = useLiteGate ? null : await createMarketplaceGateway(SELLER);
+    // Register execute routes before registry so /agents/:agentId/execute is not shadowed.
     registerAgentExecuteRoutes(app, gateway, {
       statePath: STATE_PATH,
       policyStatePath: STATE_PATH,
@@ -169,6 +169,8 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
     setExecuteLoadError(message);
     console.error("Butler API execute routes failed:", message);
   }
+
+  registerRegistryRoutes(app, { apiBase, statePath: STATE_PATH, sellerAddress: SELLER });
 
   const { getRouteLoaderStatus } = await import("./route-loader-status.ts");
   app.get("/api/marketplace/loader-status", (_req, res) => {
@@ -208,4 +210,23 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
   console.log(
     "  task routes: policy · ledger · agent/status · butler/run · registry · x402 execute · deliverables (lite mode)"
   );
+
+  setImmediate(() => {
+    import("node:http").then((http) => {
+      const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);
+      const req = http.get(
+        `http://127.0.0.1:${port}/api/marketplace/agents/research-agent/execute`,
+        { timeout: 4000 },
+        (res) => {
+          console.log(`  self-test research-agent execute: HTTP ${res.statusCode}`);
+          res.resume();
+        }
+      );
+      req.on("timeout", () => {
+        req.destroy();
+        console.error("  self-test research-agent execute: timeout (check routes)");
+      });
+      req.on("error", (e) => console.error("  self-test research-agent execute:", e.message));
+    });
+  });
 }

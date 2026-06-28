@@ -53,6 +53,7 @@ fi
 echo "Restarting butler-api…"
 if systemctl list-unit-files butler-api.service 2>/dev/null | grep -q butler-api; then
   sudo systemctl restart butler-api
+  sleep 8
 else
   echo "No butler-api systemd unit — starting manually (Ctrl+C to stop)"
   export BUTLER_LITE_API=true
@@ -77,11 +78,13 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
     if echo "$ping" | grep -q '"agents":15'; then
       echo "OK — agent ping route live"
     fi
-    code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://127.0.0.1:3001/api/marketplace/agents/research-agent/execute || echo "000")
+    code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://127.0.0.1:3001/api/marketplace/agents/research-agent/execute || echo "000")
     if [[ "$code" == "402" ]]; then
       echo "OK — x402 agent execute responds (HTTP 402)"
     elif [[ "$code" == "000" ]]; then
-      echo "WARN — execute URL timed out (try /api/marketplace/... path after restart)"
+      echo "FAIL — execute still times out. Logs:"
+      sudo journalctl -u butler-api -n 25 --no-pager 2>/dev/null || true
+      echo "  (Butler tasks use in-process pay — try a task on getbutler.xyz anyway)"
     else
       echo "WARN — research-agent execute returned HTTP $code (expected 402)"
     fi
