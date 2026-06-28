@@ -271,7 +271,7 @@ export async function executeLocalAgentPay(
     return next;
   }
 
-  const policyState = loadState(policyStatePath);
+  const policyState = loadState(policyStatePath, sellerAddress);
   const decision = evaluateSpend(
     policyState.policy,
     { agent: svc.policyAgent, merchantId: svc.merchantId, amountUsdc, category: svc.category },
@@ -418,7 +418,7 @@ export function registerAgentExecuteRoutes(
 
   function marketplacePaidHandler(agentId: string, svc: AgentServiceDef) {
     return async (req: PaidRequest, res: Response) => {
-      const policyState = loadState(policyStatePath);
+      const policyState = loadState(policyStatePath, sellerAddress);
       const amountUsdc = req.payment ? formatUnits(BigInt(req.payment.amount), 6) : svc.price.replace("$", "");
 
       const decision = evaluateSpend(

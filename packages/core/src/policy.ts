@@ -108,6 +108,10 @@ export function evaluateSpend(
   records: SpendRecord[],
   now = Math.floor(Date.now() / 1000)
 ): PolicyDecision {
+  if (!policy || typeof policy.validUntil !== "number") {
+    return { allowed: false, reason: "Policy not configured" };
+  }
+
   if (now > policy.validUntil) {
     return { allowed: false, reason: "Policy expired" };
   }
