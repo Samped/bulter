@@ -77,11 +77,11 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
     if echo "$ping" | grep -q '"agents":15'; then
       echo "OK — agent ping route live"
     fi
-    code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://127.0.0.1:3001/marketplace/agents/research-agent/execute || echo "000")
+    code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://127.0.0.1:3001/api/marketplace/agents/research-agent/execute || echo "000")
     if [[ "$code" == "402" ]]; then
       echo "OK — x402 agent execute responds (HTTP 402)"
     elif [[ "$code" == "000" ]]; then
-      echo "WARN — execute URL timed out (Butler uses in-process agent pay — tasks may still work)"
+      echo "WARN — execute URL timed out (try /api/marketplace/... path after restart)"
     else
       echo "WARN — research-agent execute returned HTTP $code (expected 402)"
     fi

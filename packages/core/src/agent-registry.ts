@@ -90,7 +90,10 @@ export function isExternalAgent(agent: Pick<RegistryAgent, "origin" | "serviceUr
 export function resolveAgentServiceUrl(agent: RegistryAgent, apiBase: string): string {
   if (agent.serviceUrl?.startsWith("http")) return agent.serviceUrl;
   const base = apiBase.replace(/\/$/, "");
-  const path = agent.servicePath.startsWith("/") ? agent.servicePath : `/${agent.servicePath}`;
+  let path = agent.servicePath.startsWith("/") ? agent.servicePath : `/${agent.servicePath}`;
+  if (typeof process !== "undefined" && process.env?.BUTLER_LITE_API === "true" && path.startsWith("/marketplace/")) {
+    path = `/api${path}`;
+  }
   return `${base}${path}`;
 }
 

@@ -208,7 +208,7 @@ export type LocalAgentExecuteOpts = {
 export function parseInternalAgentExecuteUrl(url: string): { agentId: string; query: Record<string, string> } | null {
   try {
     const u = new URL(url);
-    const match = u.pathname.match(/^\/marketplace\/agents\/([a-z0-9-]+)\/execute$/);
+    const match = u.pathname.match(/^\/(?:api\/)?marketplace\/agents\/([a-z0-9-]+)\/execute$/);
     if (!match?.[1]) return null;
     const query: Record<string, string> = {};
     u.searchParams.forEach((v, k) => {
@@ -224,7 +224,7 @@ export function isInternalAgentPayUrl(url: string): boolean {
   if (process.env.BUTLER_INTERNAL_AGENT_PAY === "false") return false;
   try {
     const u = new URL(url);
-    if (!/\/marketplace\/agents\/[a-z0-9-]+\/execute$/.test(u.pathname)) return false;
+    if (!/^\/(?:api\/)?marketplace\/agents\/[a-z0-9-]+\/execute$/.test(u.pathname)) return false;
     return (
       u.hostname === "127.0.0.1" ||
       u.hostname === "localhost" ||
@@ -521,11 +521,13 @@ export function registerAgentExecuteRoutes(
   }
 
   for (const [agentId, svc] of Object.entries(AGENT_SERVICES)) {
-    app.get(
-      `/marketplace/agents/${agentId}/execute`,
+    const handlers = [
       resolvePaymentGate(gateway, svc.price, sellerAddress),
-      marketplacePaidHandler(agentId, svc)
-    );
+      marketplacePaidHandler(agentId, svc),
+    ];
+    // Lite/nginx setups proxy /api/* only — register both paths.
+    app.get(`/api/marketplace/agents/${agentId}/execute`, ...handlers);
+    app.get(`/marketplace/agents/${agentId}/execute`, ...handlers);
   }
 
   const count = Object.keys(AGENT_SERVICES).length;
