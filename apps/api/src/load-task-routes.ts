@@ -41,13 +41,15 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
     import("./circle-config.ts"),
   ]);
 
+  loadState(STATE_PATH, SELLER);
+
   app.get("/api/policy", (_req, res) => {
-    const state = loadState(STATE_PATH);
+    const state = loadState(STATE_PATH, SELLER);
     res.json(state.policy);
   });
 
   app.get("/api/ledger", (req, res) => {
-    const state = loadState(STATE_PATH);
+    const state = loadState(STATE_PATH, SELLER);
     const scope = String(req.query.scope ?? "all");
     const records = state.records.slice().reverse();
     const activityPayerAddresses = resolveActivityPayerAddresses(state.records);
@@ -61,7 +63,7 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
 
   app.get("/api/agent/status", async (_req, res) => {
     try {
-      const state = loadState(STATE_PATH);
+      const state = loadState(STATE_PATH, SELLER);
       const executorAddress = getExecutorWalletAddress();
       const readiness = agentRunReadiness();
       const circleExecutor = circleConfig.resolveCircleExecutorAddress();

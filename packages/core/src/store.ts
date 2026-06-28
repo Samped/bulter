@@ -11,11 +11,31 @@ export interface ButlerState {
 const DEFAULT_PATH = resolve(process.cwd(), ".data/butler-state.json");
 
 export function loadState(path = DEFAULT_PATH, owner: `0x${string}` = "0x0000000000000000000000000000000000000001"): ButlerState {
-  if (!existsSync(path)) {
-    return { policy: createDefaultPolicy(owner), records: [] };
+  const fallback = { policy: createDefaultPolicy(owner), records: [] as SpendRecord[] };
+
+  function isValidPolicy(p: unknown): p is ButlerPolicy {
+    if (!p || typeof p !== "object") return false;
+    const row = p as ButlerPolicy;
+    return typeof row.validUntil === "number" && typeof row.dailyLimitUsdc === "string";
   }
-  const raw = readFileSync(path, "utf8");
-  return JSON.parse(raw) as ButlerState;
+
+  if (!existsSync(path)) {
+    saveState(fallback, path);
+    return fallback;
+  }
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<ButlerState>;
+    const records = Array.isArray(raw.records) ? raw.records : [];
+    const policy = isValidPolicy(raw.policy) ? raw.policy : createDefaultPolicy(owner);
+    const state = { policy, records };
+    if (!isValidPolicy(raw.policy)) {
+      saveState(state, path);
+    }
+    return state;
+  } catch {
+    saveState(fallback, path);
+    return fallback;
+  }
 }
 
 export function saveState(state: ButlerState, path = DEFAULT_PATH): void {
