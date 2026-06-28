@@ -8,6 +8,7 @@ import { ARC_EIP155 } from "@butler/arc";
 import { registerCircleLoginRoutes } from "./circle-login-routes.ts";
 import { resumePendingLoginJobs } from "./circle-login-jobs.ts";
 import { userSessionMiddleware } from "./user-session.ts";
+import { getRouteLoaderStatus } from "./route-loader-status.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../../../.env") });
@@ -34,11 +35,15 @@ const routesReady = new Promise<void>((resolve) => {
 
 /** Liveness probe — registered first; no RPC calls that can hang. */
 app.get("/api/health", (_req, res) => {
+  const loader = getRouteLoaderStatus();
   res.json({
     ok: ready && taskRoutesReady,
     mode: !ready ? "starting" : !taskRoutesReady ? "loading" : "live",
     chain: ARC_EIP155,
     seller: SELLER,
+    executeRoutes: loader.executeRoutes,
+    internalAgentPay: loader.internalAgentPay,
+    ...(loader.executeLoadError ? { executeLoadError: loader.executeLoadError } : {}),
   });
 });
 

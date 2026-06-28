@@ -1,7 +1,7 @@
 /**
  * x402 agent execute endpoints — required for Butler to pay agents in lite API mode.
  */
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, RequestHandler } from "express";
 import { formatUnits } from "viem";
 import type { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import {
@@ -38,6 +38,7 @@ import {
   buildSubscriptionPayload,
   buildThesisPayload,
 } from "./agent-services.ts";
+import { setExecuteLoadError, setExecuteRouteCount } from "./route-loader-status.ts";
 
 type PaidRequest = Request & {
   payment?: {
@@ -346,6 +347,43 @@ export async function executeLocalAgentPay(
   };
 }
 
+/** Circle facilitator can hang on small VMs — cap wait and return 402 for unpaid requests. */
+function gatewayRequireWithTimeout(gateway: Gateway, price: string): RequestHandler {
+  const gate = gateway.require(price);
+  const amountUsdc = price.replace("$", "");
+  const timeoutMs = Number(process.env.BUTLER_X402_GATEWAY_TIMEOUT_MS ?? 8_000);
+
+  return (req, res, next) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled || res.headersSent) return;
+      settled = true;
+      res.status(402).json({
+        error: "payment_required",
+        price,
+        amount_usdc: amountUsdc,
+        x402: true,
+      });
+    }, timeoutMs);
+
+    try {
+      gate(req, res, (err?: unknown) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (err) next(err as Error);
+        else next();
+      });
+    } catch (err) {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        next(err as Error);
+      }
+    }
+  };
+}
+
 export function registerAgentExecuteRoutes(
   app: Express,
   gateway: Gateway,
@@ -454,10 +492,15 @@ export function registerAgentExecuteRoutes(
   for (const [agentId, svc] of Object.entries(AGENT_SERVICES)) {
     app.get(
       `/marketplace/agents/${agentId}/execute`,
-      gateway.require(svc.price),
+      gatewayRequireWithTimeout(gateway, svc.price),
       marketplacePaidHandler(agentId, svc)
     );
   }
+
+  const count = Object.keys(AGENT_SERVICES).length;
+  setExecuteRouteCount(count);
+  setExecuteLoadError(null);
+  console.log(`  x402 execute routes: ${count} agents`);
 }
 
 export async function createMarketplaceGateway(sellerAddress: string): Promise<Gateway> {
