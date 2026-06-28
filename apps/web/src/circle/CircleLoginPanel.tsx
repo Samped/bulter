@@ -381,7 +381,7 @@ export function CircleLoginPanel({
       const msg = err.message;
       setError(
         /Cannot reach API|waking up|502|503|504|Bad Gateway|timed out/i.test(msg) && !err.needsNewCode
-          ? `${msg} If /api/health shows ok:true, tap Verify & log in again and wait up to 2 minutes.`
+          ? `API server is not responding. SSH to your Oracle VM and run: bash scripts/oracle-recover.sh — then tap Verify again with a fresh code.`
           : msg
       );
       if (err.needsNewCode) {

@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import cors from "cors";
 import express from "express";
-import { ARC_EIP155, resolveArcRpc } from "@butler/arc";
+import { ARC_EIP155 } from "@butler/arc";
 import { registerCircleLoginRoutes } from "./circle-login-routes.ts";
 import { resumePendingLoginJobs } from "./circle-login-jobs.ts";
 import { userSessionMiddleware } from "./user-session.ts";
@@ -24,6 +24,23 @@ const SELLER = (process.env.BUTLER_SELLER_ADDRESS ?? "0x933a2405f84c224be1ef373b
 mkdirSync(resolve(__dirname, "../../../.data/circle-home"), { recursive: true });
 
 const app = express();
+
+let ready = false;
+let resolveRoutesReady!: () => void;
+const routesReady = new Promise<void>((resolve) => {
+  resolveRoutesReady = resolve;
+});
+
+/** Liveness probe — registered first; no RPC calls that can hang. */
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok: ready,
+    mode: ready ? "live" : "starting",
+    chain: ARC_EIP155,
+    seller: SELLER,
+  });
+});
+
 app.use(
   cors({
     allowedHeaders: ["Content-Type", "Authorization", "X-Butler-Session"],
@@ -32,13 +49,7 @@ app.use(
 app.use(express.json());
 app.use(userSessionMiddleware);
 
-let ready = false;
-let resolveRoutesReady!: () => void;
-const routesReady = new Promise<void>((resolve) => {
-  resolveRoutesReady = resolve;
-});
-
-/** Login routes register first — never blocked by heavy route imports. */
+/** Login routes — never blocked by heavy route imports. */
 registerCircleLoginRoutes(app);
 
 app.get("/", (_req, res) => {
@@ -60,21 +71,17 @@ ul{padding-left:1.2rem}</style></head>
 });
 
 app.use((req, res, next) => {
-  if (req.path === "/api/health" || req.path === "/") return next();
+  if (
+    req.path === "/api/health" ||
+    req.path === "/" ||
+    req.path.startsWith("/api/circle/login")
+  ) {
+    return next();
+  }
   void routesReady.then(() => next());
 });
 
-app.get("/api/health", (_req, res) => {
-  res.json({
-    ok: ready,
-    mode: ready ? "live" : "starting",
-    chain: ARC_EIP155,
-    seller: SELLER,
-    ...(ready ? { rpc: resolveArcRpc().replace(/\/\/[^@]+@/, "//***@") } : {}),
-  });
-});
-
-  app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Butler API http://localhost:${PORT} (booting…)`);
   ready = true;
   resolveRoutesReady();
