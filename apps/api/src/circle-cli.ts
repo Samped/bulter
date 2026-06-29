@@ -227,18 +227,31 @@ function parseWalletSession(
 }
 
 /** CLI works when installed and `circle --version` succeeds (not logged-in is OK). */
+let runnableCheckInflight = false;
+
+function scheduleRunnableCheck(): void {
+  if (runnableCheckInflight || !circleCliInstalled()) return;
+  runnableCheckInflight = true;
+  void runCircleAsync(["--version"], 15_000)
+    .then(({ ok, stdout, stderr }) => {
+      const text = `${stdout}\n${stderr}`.trim();
+      const broken =
+        text.includes("ERR_MODULE_NOT_FOUND") ||
+        text.includes("Cannot find module") ||
+        text.includes("Circle CLI not installed");
+      runnableCache = { at: Date.now(), ok: ok && !broken };
+    })
+    .finally(() => {
+      runnableCheckInflight = false;
+    });
+}
+
 export function circleCliQuickRunnable(): boolean {
   if (!circleCliInstalled()) return false;
-  const r = runCircle(["--version"], { timeout: 15_000 });
-  const text = `${r.stdout ?? ""}\n${r.stderr ?? ""}`;
-  if (
-    text.includes("ERR_MODULE_NOT_FOUND") ||
-    text.includes("Cannot find module") ||
-    text.includes("Circle CLI not installed")
-  ) {
-    return false;
-  }
-  return r.status === 0;
+  const now = Date.now();
+  if (runnableCache && now - runnableCache.at < 300_000) return runnableCache.ok;
+  scheduleRunnableCheck();
+  return runnableCache?.ok ?? true;
 }
 
 function quickCircleRunnable(): boolean {
@@ -349,7 +362,15 @@ export function probeCircleCli(preferTestnet = true): CircleProbeResult {
     scheduleProbeRefresh(preferTestnet);
     return probe;
   }
-  return refreshProbeFromCli(preferTestnet);
+  scheduleProbeRefresh(preferTestnet);
+  scheduleRunnableCheck();
+  const fallback: CircleProbeResult = {
+    runnable: runnableCache?.ok ?? circleCliInstalled(),
+    loggedIn: false,
+    testnet: preferTestnet,
+  };
+  probeCache = { at: now, sessionId: cacheKey, probe: fallback };
+  return fallback;
 }
 
 export function invalidateCircleCache(): void {
@@ -362,6 +383,7 @@ export function invalidateCircleCache(): void {
 
 const CACHE_MS = 60_000;
 let versionCache: { at: number; v: string | null } | null = null;
+let versionCheckInflight = false;
 let arcRpcCache: { at: number; url: string | null } | null = null;
 let arcAvailCache: { at: number; ok: boolean } | null = null;
 let gatewayBalCache: { at: number; address: string; balance: string | null } | null = null;
@@ -699,10 +721,18 @@ export function circleVersion(): string | null {
     versionCache = { at: now, v: null };
     return null;
   }
-  const r = runCircle(["--version"], { timeout: 5_000 });
-  const v = (r.stdout ?? r.stderr ?? "").trim() || null;
-  versionCache = { at: now, v };
-  return v;
+  if (!versionCheckInflight) {
+    versionCheckInflight = true;
+    void runCircleAsync(["--version"], 5_000)
+      .then(({ ok, stdout, stderr }) => {
+        const v = ok ? (stdout.trim() || stderr.trim() || null) : null;
+        versionCache = { at: Date.now(), v };
+      })
+      .finally(() => {
+        versionCheckInflight = false;
+      });
+  }
+  return versionCache?.v ?? null;
 }
 
 export function arcCanteenAvailable(): boolean {
