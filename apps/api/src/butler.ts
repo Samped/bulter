@@ -440,6 +440,8 @@ export async function runButler(opts: {
         mode: "auto",
         forceX402: opts.forceX402,
         credits,
+        statePath: opts.statePath,
+        sellerAddress: opts.sellerAddress,
       });
       const steps = result.orchestration?.steps ?? [];
       const settled = steps.length > 0 && steps.every((s) => s?.ok);

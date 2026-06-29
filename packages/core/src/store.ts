@@ -10,6 +10,15 @@ export interface ButlerState {
 
 const DEFAULT_PATH = resolve(process.cwd(), ".data/butler-state.json");
 
+function readRawStateFile(path: string): Record<string, unknown> {
+  if (!existsSync(path)) return {};
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
 export function loadState(path = DEFAULT_PATH, owner: `0x${string}` = "0x0000000000000000000000000000000000000001"): ButlerState {
   const fallback = { policy: createDefaultPolicy(owner), records: [] as SpendRecord[] };
 
@@ -40,7 +49,8 @@ export function loadState(path = DEFAULT_PATH, owner: `0x${string}` = "0x0000000
 
 export function saveState(state: ButlerState, path = DEFAULT_PATH): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(state, null, 2));
+  const raw = readRawStateFile(path);
+  writeFileSync(path, JSON.stringify({ ...raw, policy: state.policy, records: state.records }, null, 2));
 }
 
 export function appendRecord(state: ButlerState, record: SpendRecord): ButlerState {

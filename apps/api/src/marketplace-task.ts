@@ -1,8 +1,11 @@
 import {
   getMarketplaceAgent,
   getMarketplaceEtf,
+  patchMarketplaceState,
   planTaskExecution,
+  recordAgentSuccess,
   resolveExpressBrief,
+  treasuryCredit,
   type AgentCreditScore,
   type MarketplaceJob,
   type TaskPlan,
@@ -399,6 +402,8 @@ export async function runMarketplaceTask(params: {
   etfId?: string | null;
   forceX402?: boolean;
   credits?: AgentCreditScore[];
+  statePath?: string;
+  sellerAddress?: string;
 }): Promise<{
   plan: TaskPlan;
   job: MarketplaceJob;
@@ -422,6 +427,9 @@ export async function runMarketplaceTask(params: {
     job,
     forceX402: params.forceX402,
     initiator: "user",
+    statePath: params.statePath,
+    policyStatePath: params.statePath,
+    sellerAddress: params.sellerAddress,
   });
 
   const failed = (orchestration?.steps ?? []).find((s) => s && !s.ok);
@@ -431,5 +439,22 @@ export async function runMarketplaceTask(params: {
 
   const finalized = finalizeCompletedJob({ ...job, plan: planToJobPlan(plan) }, orchestration);
   const summary = finalized.summary ?? buildJobSummary(finalized);
+
+  if (params.statePath && params.sellerAddress) {
+    patchMarketplaceState(params.statePath, params.sellerAddress, (latest) => {
+      let stats = latest.agentStats;
+      let treasury = latest.treasury;
+      for (const step of orchestration.steps ?? []) {
+        if (!step?.ok) continue;
+        const agent = getMarketplaceAgent(step.agentId);
+        if (!agent) continue;
+        const row = recordAgentSuccess({ ...latest, agentStats: stats, treasury }, step.agentId, agent.priceUsdc, agent.etaSeconds);
+        stats = row.agentStats;
+        treasury = treasuryCredit(row, agent.priceUsdc).treasury;
+      }
+      return { jobs: [finalized], agentStats: stats, treasury };
+    });
+  }
+
   return { plan, job: finalized, orchestration, summary };
 }

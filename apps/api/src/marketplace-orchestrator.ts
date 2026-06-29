@@ -62,67 +62,76 @@ async function payAndFetch(
     dryRun?: boolean;
     forceX402?: boolean;
     internalPay?: LocalAgentExecuteOpts;
+    initiator?: SpendInitiator;
   }
 ): Promise<{ ok: boolean; status: number; body?: unknown; error?: string }> {
   try {
-    if (!options.forceX402 && options.internalPay && isInternalAgentPayUrl(payUrl)) {
-      return executeLocalAgentPay(payUrl, options.internalPay);
+    const pk = process.env.BUTLER_EXECUTOR_PRIVATE_KEY ?? process.env.PRIVATE_KEY;
+    const circleAddr = ensureCircleExecutor() ?? resolveCircleExecutorAddress();
+    const circleReady =
+      !options.forceX402 &&
+      (process.env.BUTLER_USE_CIRCLE_CLI === "true" || (circleCliLoggedIn() && !!circleAddr));
+    const userPaysReal = options.initiator === "user" && circleReady;
+    const useCircle = circleReady;
+    const allowInternal =
+      !options.forceX402 &&
+      !userPaysReal &&
+      !!options.internalPay &&
+      isInternalAgentPayUrl(payUrl) &&
+      process.env.BUTLER_INTERNAL_AGENT_PAY === "true";
+
+    if (allowInternal) {
+      return executeLocalAgentPay(payUrl, options.internalPay!);
     }
 
-  const url = payUrl;
-  if (options.dryRun) {
-    return { ok: false, status: 400, error: "dryRun is disabled — all workflows execute real x402 payments" };
-  }
-
-  const pk = process.env.BUTLER_EXECUTOR_PRIVATE_KEY ?? process.env.PRIVATE_KEY;
-  const circleAddr = ensureCircleExecutor() ?? resolveCircleExecutorAddress();
-  const useCircle =
-    !options.forceX402 &&
-    (process.env.BUTLER_USE_CIRCLE_CLI === "true" || (circleCliLoggedIn() && !!circleAddr));
-
-  if (useCircle && circleAddr) {
-    const balance = getGatewayBalanceForApi(circleAddr);
-    if (balance === "0" || balance === "0.0" || balance === "0.00") {
-      return {
-        ok: false,
-        status: 0,
-        error:
-          "Insufficient Gateway USDC. Fund your payer wallet at faucet.circle.com (Arc testnet), then deposit to Gateway.",
-      };
+    const url = payUrl;
+    if (options.dryRun) {
+      return { ok: false, status: 400, error: "dryRun is disabled — all workflows execute real x402 payments" };
     }
-    const pay = await circleServicesPay({ url, address: circleAddr });
-    if (!pay?.ok) {
-      return { ok: false, status: 0, error: pay?.error ?? formatPaymentError(`${pay?.stderr ?? ""}\n${pay?.stdout ?? ""}`) };
-    }
-    try {
-      const body = JSON.parse(pay.stdout || "{}");
-      return { ok: true, status: 200, body };
-    } catch {
-      const res = await fetch(url, { headers: { Accept: "application/json" } });
-      const body = await res.json().catch(() => ({}));
-      return { ok: res.ok, status: res.status, body };
-    }
-  }
 
-  if (!pk || !pk.startsWith("0x") || pk.length < 66) {
-    return { ok: false, status: 0, error: "Configure Circle login or BUTLER_EXECUTOR_PRIVATE_KEY" };
-  }
-
-  const client = new GatewayClient({ chain: "arcTestnet", privateKey: pk as `0x${string}` });
-  const payResult = await client.pay(url);
-  if (!payResult || typeof payResult !== "object") {
-    return { ok: false, status: 0, error: "Gateway payment returned no result" };
-  }
-  const { status, data } = payResult;
-  let body: unknown = data;
-  if (typeof data === "string") {
-    try {
-      body = JSON.parse(data);
-    } catch {
-      body = { raw: data };
+    if (useCircle && circleAddr) {
+      const balance = getGatewayBalanceForApi(circleAddr);
+      if (balance === "0" || balance === "0.0" || balance === "0.00") {
+        return {
+          ok: false,
+          status: 0,
+          error:
+            "Insufficient Gateway USDC. Fund your payer wallet at faucet.circle.com (Arc testnet), then deposit to Gateway.",
+        };
+      }
+      const pay = await circleServicesPay({ url, address: circleAddr });
+      if (!pay?.ok) {
+        return { ok: false, status: 0, error: pay?.error ?? formatPaymentError(`${pay?.stderr ?? ""}\n${pay?.stdout ?? ""}`) };
+      }
+      try {
+        const body = JSON.parse(pay.stdout || "{}");
+        return { ok: true, status: 200, body };
+      } catch {
+        const res = await fetch(url, { headers: { Accept: "application/json" } });
+        const body = await res.json().catch(() => ({}));
+        return { ok: res.ok, status: res.status, body };
+      }
     }
-  }
-  return { ok: status >= 200 && status < 300, status, body };
+
+    if (!pk || !pk.startsWith("0x") || pk.length < 66) {
+      return { ok: false, status: 0, error: "Configure Circle login or BUTLER_EXECUTOR_PRIVATE_KEY" };
+    }
+
+    const client = new GatewayClient({ chain: "arcTestnet", privateKey: pk as `0x${string}` });
+    const payResult = await client.pay(url);
+    if (!payResult || typeof payResult !== "object") {
+      return { ok: false, status: 0, error: "Gateway payment returned no result" };
+    }
+    const { status, data } = payResult;
+    let body: unknown = data;
+    if (typeof data === "string") {
+      try {
+        body = JSON.parse(data);
+      } catch {
+        body = { raw: data };
+      }
+    }
+    return { ok: status >= 200 && status < 300, status, body };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Payment failed";
     return { ok: false, status: 0, error: formatPaymentError(message) };
@@ -184,6 +193,7 @@ async function runOneStep(params: {
     dryRun: params.dryRun,
     forceX402: params.forceX402,
     internalPay: params.internalPay,
+    initiator: params.initiator,
   });
   for (let attempt = 0; attempt < 1 && !finalRes?.ok && /timeout|aborted|rejected|endpoint/i.test(finalRes?.error ?? ""); attempt++) {
     await new Promise((r) => setTimeout(r, 1_500));
@@ -191,6 +201,7 @@ async function runOneStep(params: {
       dryRun: params.dryRun,
       forceX402: params.forceX402,
       internalPay: params.internalPay,
+      initiator: params.initiator,
     });
   }
 
