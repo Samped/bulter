@@ -71,7 +71,29 @@ export function loadMarketplaceState(path: string, depositAddress?: string): Mar
 
 export function saveMarketplaceState(state: MarketplaceState, path: string): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(state, null, 2));
+  let raw: Record<string, unknown> = {};
+  if (existsSync(path)) {
+    try {
+      raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    } catch {
+      raw = {};
+    }
+  }
+  writeFileSync(
+    path,
+    JSON.stringify(
+      {
+        ...raw,
+        version: state.version,
+        agentStats: state.agentStats,
+        jobs: state.jobs,
+        auctions: state.auctions,
+        treasury: state.treasury,
+      },
+      null,
+      2
+    )
+  );
 }
 
 /** Merge job lists by id — never drop newer jobs when concurrent writers save. */
