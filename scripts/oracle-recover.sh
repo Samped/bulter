@@ -25,6 +25,9 @@ elif command -v lsof >/dev/null 2>&1; then
 fi
 sleep 1
 
+echo "Clearing stale Circle login jobs (avoid blocking boot with hung OTP sends)…"
+rm -f "$ROOT/.data/circle-login-jobs"/*.json 2>/dev/null || true
+
 echo "Syncing repo to origin/main…"
 if [[ -d .git ]]; then
   if ! git diff --quiet || ! git diff --cached --quiet; then
