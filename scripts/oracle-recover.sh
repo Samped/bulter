@@ -67,10 +67,20 @@ else
   sleep 3
 fi
 
-echo "Waiting for health (new process must load dist/server.mjs)…"
+PUBLIC_IP="${BUTLER_PUBLIC_IP:-129.151.164.101}"
+
+echo "Waiting for health (local + public — Vercel uses $PUBLIC_IP:3001)…"
 for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  local_ok=false
+  public_ok=false
   if curl -sf --max-time 3 http://127.0.0.1:3001/api/health | grep -q '"ok":true'; then
-    echo "OK — API is responding locally"
+    local_ok=true
+  fi
+  if curl -sf --max-time 6 "http://${PUBLIC_IP}:3001/api/health" | grep -q '"ok":true'; then
+    public_ok=true
+  fi
+  if [[ "$local_ok" == true && "$public_ok" == true ]]; then
+    echo "OK — API responds locally and on public IP"
     curl -s http://127.0.0.1:3001/api/health
     echo ""
     loader=$(curl -sf --max-time 8 http://127.0.0.1:3001/api/marketplace/loader-status 2>/dev/null || echo "")
@@ -108,9 +118,15 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
     fi
     exit 0
   fi
+  if [[ "$local_ok" == true && "$public_ok" != true ]]; then
+    echo "WARN — local health OK but public IP not responding (Vercel will 502). Opening firewall…"
+    if command -v iptables >/dev/null 2>&1; then
+      sudo iptables -I INPUT -p tcp --dport 3001 -j ACCEPT 2>/dev/null || true
+    fi
+  fi
   sleep 2
 done
 
-echo "FAIL — API still not responding. Check logs:"
+echo "FAIL — API still not responding on public IP. Run: bash scripts/oracle-diagnose.sh"
 echo "  sudo journalctl -u butler-api -n 80 --no-pager"
 exit 1
