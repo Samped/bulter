@@ -1,18 +1,29 @@
 import type { MarketplaceJob, ReverseAuction } from "@butler/core";
 import type { Request } from "express";
-import { resolveCircleExecutorAddress } from "./circle-config.ts";
+import { loadCircleConfig, resolveCircleExecutorAddress } from "./circle-config.ts";
 import { sessionIdFromRequest } from "./user-session.ts";
 
 export type JobOwner = {
   sessionId?: string;
   payerAddress?: string;
+  gatewayPayerAddress?: string;
 };
 
 export function resolveJobOwnerFromRequest(req: Request): JobOwner {
+  const cfg = loadCircleConfig();
   return {
     sessionId: sessionIdFromRequest(req) ?? undefined,
     payerAddress: resolveCircleExecutorAddress() ?? undefined,
+    gatewayPayerAddress: cfg.gatewayPayerAddress,
   };
+}
+
+/** Wallet + Gateway payer addresses for the connected session. */
+export function resolveOwnerPayerAddresses(owner: JobOwner): string[] {
+  const set = new Set<string>();
+  if (owner.payerAddress) set.add(owner.payerAddress.toLowerCase());
+  if (owner.gatewayPayerAddress) set.add(owner.gatewayPayerAddress.toLowerCase());
+  return [...set];
 }
 
 export function stampJobOwner(job: MarketplaceJob, owner?: JobOwner): MarketplaceJob {

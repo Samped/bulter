@@ -88,7 +88,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [connectSlow, setConnectSlow] = useState(false);
-  const [activityScope, setActivityScope] = useState<ActivityScope>("all");
+  const [activityScope, setActivityScope] = useState<ActivityScope>("mine");
   const [activityRecords, setActivityRecords] = useState<SpendRecord[]>([]);
   const [ledgerTotalCount, setLedgerTotalCount] = useState(0);
   const [activityPayerAddresses, setActivityPayerAddresses] = useState<string[]>([]);
@@ -110,6 +110,9 @@ export function App() {
           setActivityPayerAddresses(ledgerRes.value.activityPayerAddresses);
         }
         if (scope === "all") setLedger(ledgerRes.value.records);
+      } else if (ledgerRes.status === "rejected") {
+        const msg = ledgerRes.reason instanceof Error ? ledgerRes.reason.message : "Ledger unavailable";
+        setError(msg);
       }
       if (statusRes.status === "fulfilled") {
         setAgentStatus(statusRes.value);
@@ -850,6 +853,13 @@ export function App() {
             <PaymentTrace
               initialId={traceSettlementId || ledger.find((r) => r.settlementId)?.settlementId || ""}
               sellerAddress={health?.seller ?? agentStatus?.sellerAddress}
+              recentSettlements={[
+                ...new Set(
+                  activityRecords
+                    .map((r) => r.settlementId)
+                    .filter((id): id is string => !!id)
+                ),
+              ]}
             />
           )}
         </div>

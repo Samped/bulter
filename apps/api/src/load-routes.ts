@@ -3,6 +3,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Express, Request, Response } from "express";
 import type { SpendRecord } from "@butler/core";
+import { handleGetLedger } from "./ledger-handlers.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../../../.env") });
@@ -325,34 +326,7 @@ app.post("/api/policy/reset", (req, res) => {
 });
 
 app.get("/api/ledger", (req, res) => {
-  const state = loadState(STATE_PATH);
-  const mp = loadMarketplaceState(MARKETPLACE_PATH, SELLER);
-  const scope = String(req.query.scope ?? "all");
-  const attributed = applyJobAttribution(
-    attributeLedgerRecords(state.records),
-    mp.jobs,
-    mp.auctions
-  );
-  const activityPayerAddresses = resolveActivityPayerAddresses(state.records);
-  const allRecords = attributed.slice().reverse();
-
-  if (scope === "mine") {
-    const records = filterMineRecords(attributed, activityPayerAddresses).reverse();
-    res.json({
-      remainingDailyUsdc: remainingDailyUsdc(state.policy, state.records),
-      records,
-      totalCount: allRecords.length,
-      activityPayerAddresses,
-    });
-    return;
-  }
-
-  res.json({
-    remainingDailyUsdc: remainingDailyUsdc(state.policy, state.records),
-    records: allRecords,
-    totalCount: allRecords.length,
-    activityPayerAddresses,
-  });
+  handleGetLedger(req, res, STATE_PATH, SELLER, MARKETPLACE_PATH);
 });
 
 app.get("/api/merchants", (_req, res) => {

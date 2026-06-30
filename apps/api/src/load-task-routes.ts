@@ -7,10 +7,13 @@ import { fileURLToPath } from "node:url";
 import type { Express, Request, Response } from "express";
 import { sessionIdFromRequest } from "./user-session.ts";
 import { filterJobsForOwner, jobVisibleToOwner, resolveJobOwnerFromRequest } from "./job-owner.ts";
+import { handleGetLedger } from "./ledger-handlers.ts";
 import { registerAuctionRoutes } from "./auction-routes.ts";
+import { registerTraceRoutes } from "./trace-routes.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_PATH = resolve(__dirname, "../../../.data/butler-state.json");
+const MARKETPLACE_PATH = resolve(__dirname, "../../../.data/marketplace-state.json");
 const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);
 const SELLER = (process.env.BUTLER_SELLER_ADDRESS ?? "0x933a2405f84c224be1ef373ba16e992e1f459682") as `0x${string}`;
 
@@ -31,7 +34,7 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
   const [
     { agentRunReadiness },
     { loadState, remainingDailyUsdc },
-    { getExecutorWalletAddress, resolveActivityPayerAddresses },
+    { getExecutorWalletAddress, resolveSessionActivityPayerAddresses },
     circleCli,
     circleConfig,
   ] = await Promise.all([
@@ -50,27 +53,10 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
   });
 
   app.get("/api/ledger", (req, res) => {
-    const state = loadState(STATE_PATH, SELLER);
-    const owner = resolveJobOwnerFromRequest(req);
-    let records = state.records.slice().reverse();
-    if (owner.payerAddress) {
-      const addr = owner.payerAddress.toLowerCase();
-      records = records.filter(
-        (r) =>
-          r.payerAddress?.toLowerCase() === addr ||
-          r.executorAddress?.toLowerCase() === addr
-      );
-    } else if (owner.sessionId) {
-      records = [];
-    }
-    const activityPayerAddresses = resolveActivityPayerAddresses(state.records);
-    res.json({
-      remainingDailyUsdc: remainingDailyUsdc(state.policy, state.records),
-      records,
-      totalCount: records.length,
-      activityPayerAddresses,
-    });
+    handleGetLedger(req, res, STATE_PATH, SELLER, MARKETPLACE_PATH);
   });
+
+  await registerTraceRoutes(app);
 
   app.get("/api/agent/status", async (_req, res) => {
     try {
@@ -82,7 +68,7 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
         void Promise.resolve().then(() => circleCli.ensureCircleExecutor());
       }
       const gatewayBalanceUsdc = circleCli.getGatewayBalanceForApi(circleExecutor);
-      const activityPayerAddresses = resolveActivityPayerAddresses(state.records);
+      const activityPayerAddresses = resolveSessionActivityPayerAddresses(state.records);
       res.json({
         executorAddress: executorAddress ?? circleExecutor,
         executorReady: readiness.canRun,
@@ -246,7 +232,7 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
   });
 
   console.log(
-    "  task routes: policy · ledger · agent/status · butler/run · auctions · registry · x402 execute · deliverables (lite mode)"
+    "  task routes: policy · ledger · trace · agent/status · butler/run · auctions · registry · x402 execute · deliverables (lite mode)"
   );
 
   setImmediate(() => {
