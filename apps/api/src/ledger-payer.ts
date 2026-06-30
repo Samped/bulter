@@ -1,6 +1,7 @@
 import { privateKeyToAccount } from "viem/accounts";
 import { getMarketplaceAgent, type MarketplaceJob, type ReverseAuction, type SpendRecord, type SpendInitiator } from "@butler/core";
 import { loadCircleConfig, resolveCircleExecutorAddress, saveCircleConfig } from "./circle-config.ts";
+import { filterJobsForOwner, resolveOwnerPayerAddresses, type JobOwner } from "./job-owner.ts";
 
 export function getExecutorWalletAddress(): `0x${string}` | null {
   const fromCircle = resolveCircleExecutorAddress();
@@ -178,9 +179,58 @@ export function filterMineRecords(records: SpendRecord[], payerAddresses: string
   if (payerAddresses.length === 0) return [];
   const mine = new Set(payerAddresses.map((a) => a.toLowerCase()));
   return records.filter((r) => {
-    if (r.initiator !== "user") return false;
     const payer = r.payerAddress?.toLowerCase();
     const executor = r.executorAddress?.toLowerCase();
     return (payer && mine.has(payer)) || (executor && mine.has(executor));
   });
+}
+
+/** Settlement IDs from jobs this user owns (backfill when ledger rows lack payer fields). */
+export function collectOwnerSettlementIds(jobs: MarketplaceJob[], owner: JobOwner): Set<string> {
+  const ids = new Set<string>();
+  for (const job of filterJobsForOwner(jobs, owner)) {
+    for (const step of job.steps) {
+      if (step.settlementId) ids.add(step.settlementId);
+    }
+  }
+  return ids;
+}
+
+export function filterRecordsForOwner(
+  records: SpendRecord[],
+  owner: JobOwner,
+  jobs: MarketplaceJob[] = [],
+  auctions: ReverseAuction[] = []
+): SpendRecord[] {
+  if (!owner.sessionId && !owner.payerAddress && !owner.gatewayPayerAddress) {
+    return records;
+  }
+  const addrs = new Set(resolveOwnerPayerAddresses(owner));
+  const jobSettlements = collectOwnerSettlementIds(jobs, owner);
+  const attributed = applyJobAttribution(attributeLedgerRecords(records), jobs, auctions);
+
+  return attributed.filter((r) => {
+    if (r.settlementId && jobSettlements.has(r.settlementId)) return true;
+    const payer = r.payerAddress?.toLowerCase();
+    const executor = r.executorAddress?.toLowerCase();
+    if (addrs.size > 0) {
+      if (payer && addrs.has(payer)) return true;
+      if (executor && addrs.has(executor)) return true;
+    }
+    if (owner.sessionId && r.initiator === "user" && addrs.size > 0) {
+      return (payer && addrs.has(payer)) || (executor && addrs.has(executor));
+    }
+    return false;
+  });
+}
+
+/** Activity payer chips for the current browser session (executor + Gateway account). */
+export function resolveSessionActivityPayerAddresses(records?: SpendRecord[]): string[] {
+  inferGatewayPayerFromLedger(records ?? []);
+  const set = new Set<string>();
+  const cfg = loadCircleConfig();
+  const executor = resolveCircleExecutorAddress();
+  if (executor) set.add(executor.toLowerCase());
+  if (cfg.gatewayPayerAddress) set.add(cfg.gatewayPayerAddress.toLowerCase());
+  return [...set];
 }

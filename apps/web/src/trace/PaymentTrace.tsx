@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { decodeBatch, getBatchTx, getSettlement, type BatchDecode, type BatchTxResult } from "../api.ts";
+import { decodeBatch, getBatchTx, getSettlement, shortAddr, type BatchDecode, type BatchTxResult } from "../api.ts";
 import { Panel } from "../components.tsx";
 
 const STEPS = [
@@ -11,7 +11,15 @@ const STEPS = [
   { id: 6, title: "On-chain proof", desc: "Explorer link + block number" },
 ] as const;
 
-export function PaymentTrace({ initialId = "", sellerAddress }: { initialId?: string; sellerAddress?: string }) {
+export function PaymentTrace({
+  initialId = "",
+  sellerAddress,
+  recentSettlements = [],
+}: {
+  initialId?: string;
+  sellerAddress?: string;
+  recentSettlements?: string[];
+}) {
   const [settlementId, setSettlementId] = useState(initialId);
   const [step, setStep] = useState(0);
   const [settlement, setSettlement] = useState<unknown>(null);
@@ -20,13 +28,10 @@ export function PaymentTrace({ initialId = "", sellerAddress }: { initialId?: st
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (initialId) setSettlementId(initialId);
-  }, [initialId]);
-
-  const runTrace = useCallback(async () => {
-    const id = settlementId.trim();
+  const runTrace = useCallback(async (idOverride?: string) => {
+    const id = (idOverride ?? settlementId).trim();
     if (!id) return;
+    if (idOverride) setSettlementId(id);
     setLoading(true);
     setError(null);
     setStep(1);
@@ -34,7 +39,6 @@ export function PaymentTrace({ initialId = "", sellerAddress }: { initialId?: st
     setBatch(null);
     setDecoded(null);
     try {
-      // Direct on-chain tx hashes (0x…) skip Gateway settlement lookup.
       if (id.startsWith("0x") && id.length >= 66) {
         const d = await decodeBatch(id);
         setDecoded(d);
@@ -66,6 +70,11 @@ export function PaymentTrace({ initialId = "", sellerAddress }: { initialId?: st
     }
   }, [settlementId]);
 
+  useEffect(() => {
+    if (!initialId.trim()) return;
+    void runTrace(initialId);
+  }, [initialId, runTrace]);
+
   const sellerDelta = decoded?.entries.find(
     (e) => sellerAddress && e.address.toLowerCase() === sellerAddress.toLowerCase()
   );
@@ -82,6 +91,25 @@ export function PaymentTrace({ initialId = "", sellerAddress }: { initialId?: st
           Arc 101 companion.
         </p>
 
+        {recentSettlements.length > 0 && (
+          <div className="trace-recent">
+            <span className="trace-recent-label">Recent from Activity</span>
+            <div className="trace-recent-list">
+              {recentSettlements.slice(0, 8).map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  className="trace-recent-chip"
+                  onClick={() => void runTrace(id)}
+                  disabled={loading}
+                >
+                  {shortAddr(id)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="trace-input-row">
           <input
             type="text"
@@ -90,7 +118,12 @@ export function PaymentTrace({ initialId = "", sellerAddress }: { initialId?: st
             value={settlementId}
             onChange={(e) => setSettlementId(e.target.value)}
           />
-          <button type="button" className="btn primary" disabled={loading || !settlementId.trim()} onClick={runTrace}>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={loading || !settlementId.trim()}
+            onClick={() => void runTrace()}
+          >
             {loading ? "Tracing…" : "Trace payment"}
           </button>
         </div>

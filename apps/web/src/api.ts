@@ -139,9 +139,9 @@ export function resetBrowserSessionId(): string {
   return id;
 }
 
-function sessionHeaders(init?: RequestInit): Headers {
+function sessionHeaders(init?: RequestInit, withSession = true): Headers {
   const headers = new Headers(init?.headers as HeadersInit | undefined);
-  if (typeof window !== "undefined") {
+  if (withSession && typeof window !== "undefined") {
     headers.set("X-Butler-Session", getBrowserSessionId());
   }
   return headers;
@@ -189,7 +189,8 @@ async function request<T>(
   path: string,
   init?: RequestInit,
   timeoutMs = defaultTimeoutMs(),
-  maxRetries = IS_LOCAL_API ? 2 : 8
+  maxRetries = IS_LOCAL_API ? 2 : 8,
+  withSession = true
 ): Promise<T> {
   const retries = maxRetries;
   let lastErr: Error | null = null;
@@ -202,7 +203,7 @@ async function request<T>(
       try {
         res = await fetch(`${API}${path}`, {
           ...init,
-          headers: sessionHeaders(init),
+          headers: sessionHeaders(init, withSession),
           signal: controller.signal,
         });
       } catch (err) {
@@ -354,7 +355,11 @@ export const getConfig = () => request<AppConfig>("/api/config");
 export const getPolicy = () => request<Policy>("/api/policy");
 export const getLedger = (scope?: "all" | "mine") =>
   request<{ remainingDailyUsdc: string; records: SpendRecord[]; totalCount?: number; activityPayerAddresses?: string[] }>(
-    scope === "mine" ? "/api/ledger?scope=mine" : "/api/ledger"
+    scope === "mine" ? "/api/ledger?scope=mine" : "/api/ledger",
+    undefined,
+    undefined,
+    undefined,
+    scope === "mine"
   );
 export const getAgentStatus = () => request<AgentStatus>("/api/agent/status");
 export const getStackStatus = () => request<StackStatus>("/api/stack/status", undefined, IS_LOCAL_API ? 45_000 : 120_000);
@@ -1165,21 +1170,15 @@ export function runMarketplaceTask(body: {
 }
 
 export async function getSettlement(id: string): Promise<unknown> {
-  const res = await fetch(`${API}/api/settlement/${encodeURIComponent(id)}`);
-  if (!res.ok) throw new Error(`${res.status} settlement`);
-  return res.json();
+  return request(`/api/settlement/${encodeURIComponent(id)}`);
 }
 
 export async function getBatchTx(id: string): Promise<BatchTxResult> {
-  const res = await fetch(`${API}/api/batch-tx/${encodeURIComponent(id)}`);
-  if (!res.ok) throw new Error(`${res.status} batch-tx`);
-  return res.json() as Promise<BatchTxResult>;
+  return request<BatchTxResult>(`/api/batch-tx/${encodeURIComponent(id)}`);
 }
 
 export async function decodeBatch(hash: string): Promise<BatchDecode> {
-  const res = await fetch(`${API}/api/decode-batch/${encodeURIComponent(hash)}`);
-  if (!res.ok) throw new Error(`${res.status} decode-batch`);
-  return res.json() as Promise<BatchDecode>;
+  return request<BatchDecode>(`/api/decode-batch/${encodeURIComponent(hash)}`);
 }
 
 export async function updatePolicyOwner(ownerAddress: string): Promise<Policy> {
