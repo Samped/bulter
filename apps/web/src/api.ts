@@ -141,6 +141,57 @@ export function resetBrowserSessionId(): string {
   return id;
 }
 
+const PAYER_DISPLAY_KEY = "butler.payerDisplay";
+
+export type PayerDisplayCache = {
+  loggedIn: boolean;
+  email?: string;
+  executorAddress?: string | null;
+  gatewayBalanceUsdc?: string | null;
+};
+
+export function loadPayerDisplayCache(): PayerDisplayCache | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(PAYER_DISPLAY_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as PayerDisplayCache;
+    return data?.loggedIn ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+export function savePayerDisplayCache(status: CircleStatus): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (status.loggedIn) {
+      sessionStorage.setItem(
+        PAYER_DISPLAY_KEY,
+        JSON.stringify({
+          loggedIn: true,
+          email: status.email,
+          executorAddress: status.executorAddress,
+          gatewayBalanceUsdc: status.gatewayBalanceUsdc,
+        } satisfies PayerDisplayCache)
+      );
+    } else {
+      sessionStorage.removeItem(PAYER_DISPLAY_KEY);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearPayerDisplayCache(): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.removeItem(PAYER_DISPLAY_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 function sessionHeaders(init?: RequestInit, withSession = true): Headers {
   const headers = new Headers(init?.headers as HeadersInit | undefined);
   if (withSession && typeof window !== "undefined") {
@@ -368,6 +419,11 @@ export const getStackStatus = () => request<StackStatus>("/api/stack/status", un
 
 export function getCircleStatus() {
   return request<CircleStatus>("/api/circle/status", undefined, IS_LOCAL_API ? 25_000 : 90_000);
+}
+
+/** Fast payer probe for toolbar — uses server-side stored session when CLI is slow. */
+export function getCircleStatusQuick() {
+  return request<CircleStatus>("/api/circle/status", undefined, IS_LOCAL_API ? 8_000 : 12_000, 2);
 }
 
 export type CircleLoginInitResult = {
@@ -675,11 +731,16 @@ export function fundCircleWallet() {
 }
 
 export function circleLogout() {
-  return request<{ ok: boolean }>("/api/circle/logout", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: "{}",
-  });
+  return request<{ ok: boolean }>(
+    "/api/circle/logout",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    },
+    IS_LOCAL_API ? 20_000 : 45_000,
+    2
+  );
 }
 
 export function getCircleWallets() {

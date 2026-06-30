@@ -16,9 +16,12 @@ import { billPaperTitle, isBillDeliverable } from "./bill.ts";
 export function DeliverablesView({
   selectedId,
   onSelectId,
+  refreshKey = 0,
 }: {
   selectedId?: string | null;
   onSelectId?: (id: string | null) => void;
+  /** Increment from App refresh to reload the list. */
+  refreshKey?: number;
 }) {
   const [items, setItems] = useState<MarketplaceDeliverable[]>([]);
   const [selected, setSelected] = useState<MarketplaceDeliverable | null>(null);
@@ -48,7 +51,7 @@ export function DeliverablesView({
 
   useEffect(() => {
     void loadList();
-  }, [loadList]);
+  }, [loadList, refreshKey]);
 
   useEffect(() => {
     if (!selectedId) return;

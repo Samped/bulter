@@ -4,12 +4,16 @@ import {
   beginLoginCodeSend,
   circleLoginVerify,
   circleLogout,
+  clearPayerDisplayCache,
   fundCircleWallet,
   getCircleStatus,
+  getCircleStatusQuick,
   getCircleWallets,
   pollCircleLoginJob,
+  loadPayerDisplayCache,
   resetBrowserSessionId,
   resolveLoginRequestId,
+  savePayerDisplayCache,
   setCircleExecutor,
   shortAddr,
   type CircleAgentWallet,
@@ -137,7 +141,20 @@ export function CircleLoginPanel({
   onOpenChange?: (open: boolean) => void;
 }) {
   const saved = loadSession();
-  const [status, setStatus] = useState<CircleStatus | null>(null);
+  const [status, setStatus] = useState<CircleStatus | null>(() => {
+    const cached = loadPayerDisplayCache();
+    if (!cached?.loggedIn) return null;
+    return {
+      installed: true,
+      runnable: true,
+      loggedIn: true,
+      version: null,
+      executorAddress: cached.executorAddress ?? null,
+      email: cached.email,
+      gatewayBalanceUsdc: cached.gatewayBalanceUsdc ?? null,
+      chain: "ARC-TESTNET",
+    };
+  });
   const [email, setEmail] = useState(saved?.email ?? "");
   const [jobId, setJobId] = useState<string | null>(saved?.jobId ?? null);
   const [requestId, setRequestId] = useState<string | null>(saved?.requestId ?? null);
@@ -195,10 +212,11 @@ export function CircleLoginPanel({
     };
   }, [variant, isOpen]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (opts?: { quick?: boolean }) => {
     try {
-      const s = await getCircleStatus();
+      const s = opts?.quick ? await getCircleStatusQuick() : await getCircleStatus();
       setStatus(s);
+      savePayerDisplayCache(s);
       if (s.loggedIn) {
         clearSession();
         setError(null);
@@ -209,9 +227,11 @@ export function CircleLoginPanel({
         sendInFlightRef.current = false;
         const w = await getCircleWallets().catch(() => null);
         if (w) setWallets(w.wallets);
+      } else {
+        setWallets([]);
       }
     } catch {
-      setStatus(null);
+      if (!opts?.quick) setStatus(null);
     }
   }, []);
 
@@ -227,7 +247,8 @@ export function CircleLoginPanel({
   }, [connected]);
 
   useEffect(() => {
-    refresh();
+    void refresh({ quick: true });
+    void refresh();
   }, [refresh]);
 
   useEffect(() => {
@@ -478,16 +499,20 @@ export function CircleLoginPanel({
 
   const handleLogout = async () => {
     setBusy(true);
+    setStatus((prev) => (prev ? { ...prev, loggedIn: false, executorAddress: null, email: undefined } : null));
+    setWallets([]);
+    clearPayerDisplayCache();
     try {
       await circleLogout();
       resetBrowserSessionId();
       goToEmail();
       setOpen(false);
       setShowFundModal(false);
-      await refresh();
+      await refresh({ quick: true });
       onReady?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Logout failed");
+      await refresh({ quick: true });
     } finally {
       setBusy(false);
     }
@@ -578,7 +603,13 @@ export function CircleLoginPanel({
               ))}
             </div>
           )}
-          <button type="button" className="btn ghost sm payer-popover-btn" disabled={busy} onClick={handleLogout}>
+          <button
+            type="button"
+            className="btn ghost sm payer-popover-btn"
+            disabled={busy}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => void handleLogout()}
+          >
             Sign out
           </button>
         </>

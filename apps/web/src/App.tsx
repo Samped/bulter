@@ -3,12 +3,15 @@ import {
   formatUsdc,
   getAgentStatus,
   getCircleStatus,
+  getCircleStatusQuick,
   getHealth,
   getHealthQuick,
   getLedger,
   getPolicy,
+  loadPayerDisplayCache,
   resetPolicy,
   runMarketplaceWorkflow as apiRunMarketplaceWorkflow,
+  savePayerDisplayCache,
   shortAddr,
   toggleAgent,
   toggleMerchant,
@@ -74,6 +77,21 @@ function shortEmail(email: string): string {
   return local.length > 14 ? `${local.slice(0, 13)}…` : local;
 }
 
+function circleStatusFromCache(): CircleStatus | null {
+  const cached = loadPayerDisplayCache();
+  if (!cached?.loggedIn) return null;
+  return {
+    installed: true,
+    runnable: true,
+    loggedIn: true,
+    version: null,
+    executorAddress: cached.executorAddress ?? null,
+    email: cached.email,
+    gatewayBalanceUsdc: cached.gatewayBalanceUsdc ?? null,
+    chain: "ARC-TESTNET",
+  };
+}
+
 export function App() {
   const [tab, setTab] = useState<Tab>("agent");
   const [policy, setPolicy] = useState<Policy | null>(null);
@@ -81,7 +99,7 @@ export function App() {
   const [remaining, setRemaining] = useState("0");
   const [health, setHealth] = useState<Health | null>(null);
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
-  const [circleStatus, setCircleStatus] = useState<CircleStatus | null>(null);
+  const [circleStatus, setCircleStatus] = useState<CircleStatus | null>(() => circleStatusFromCache());
   const [workflowRunning, setWorkflowRunning] = useState(false);
   const [workflowMessage, setWorkflowMessage] = useState<string | null>(null);
   const [traceSettlementId, setTraceSettlementId] = useState("");
@@ -96,6 +114,8 @@ export function App() {
   const [activityLoading, setActivityLoading] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<SpendRecord | null>(null);
   const [butlerBusy, setButlerBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileLoginOpen, setMobileLoginOpen] = useState(false);
   const isMobile = useIsMobile();
@@ -129,6 +149,7 @@ export function App() {
 
   const refresh = useCallback(async (opts?: { quiet?: boolean }) => {
     const silent = opts?.quiet ?? false;
+    if (!silent) setRefreshing(true);
     const failed: string[] = [];
     const pick = <T,>(r: PromiseSettledResult<T>, label: string): T | null => {
       if (r.status === "fulfilled") return r.value;
@@ -138,45 +159,75 @@ export function App() {
       return null;
     };
 
-    const [h, p] = await Promise.allSettled([getHealth(), getPolicy()]);
-    const healthRes = pick(h, "health");
-    const policyRes = pick(p, "policy");
+    try {
+      const [cs, as, h, p] = await Promise.allSettled([
+        getCircleStatusQuick(),
+        getAgentStatus(),
+        getHealth(),
+        getPolicy(),
+      ]);
 
-    if (healthRes) setHealth(healthRes);
-    if (policyRes) setPolicy(policyRes);
+      const csRes = pick(cs, "circle/status");
+      if (csRes) {
+        setCircleStatus(csRes);
+        savePayerDisplayCache(csRes);
+      }
+      const asRes = pick(as, "agent/status");
+      if (asRes) {
+        setAgentStatus(asRes);
+        if (asRes.activityPayerAddresses?.length) setActivityPayerAddresses(asRes.activityPayerAddresses);
+      }
 
-    if (!healthRes && !policyRes) {
+      const healthRes = pick(h, "health");
+      const policyRes = pick(p, "policy");
+      if (healthRes) setHealth(healthRes);
+      if (policyRes) setPolicy(policyRes);
+
+      if (!healthRes && !policyRes && !csRes && !asRes) {
+        if (!silent) {
+          setError(failed.join(" · ") || "Cannot reach API — run npm run dev:api");
+        }
+        return false;
+      }
+
+      if (!silent && failed.length > 0) {
+        setError(failed.join(" · "));
+      } else if (!silent) {
+        setError(null);
+      }
+
+      const [l] = await Promise.allSettled([getLedger()]);
+      const ledgerRes = pick(l, "ledger");
+      if (ledgerRes) {
+        setLedger(ledgerRes.records);
+        setRemaining(ledgerRes.remainingDailyUsdc);
+        setLedgerTotalCount(ledgerRes.totalCount ?? ledgerRes.records.length);
+        if (ledgerRes.activityPayerAddresses?.length) {
+          setActivityPayerAddresses(ledgerRes.activityPayerAddresses);
+        }
+      }
+
       if (!silent) {
-        setError(failed.join(" · ") || "Cannot reach API — run npm run dev:api");
+        setRefreshTick((t) => t + 1);
+        if (tab === "activity") {
+          await loadActivityLedger(activityScope);
+        }
       }
-      return false;
-    }
 
-    if (!silent && failed.length > 0) {
-      setError(failed.join(" · "));
-    } else if (!silent) {
-      setError(null);
-    }
-
-    const [l, as, cs] = await Promise.allSettled([getLedger(), getAgentStatus(), getCircleStatus()]);
-    const ledgerRes = pick(l, "ledger");
-    if (ledgerRes) {
-      setLedger(ledgerRes.records);
-      setRemaining(ledgerRes.remainingDailyUsdc);
-      setLedgerTotalCount(ledgerRes.totalCount ?? ledgerRes.records.length);
-      if (ledgerRes.activityPayerAddresses?.length) {
-        setActivityPayerAddresses(ledgerRes.activityPayerAddresses);
+      if (!silent && csRes && !csRes.loggedIn) {
+        void getCircleStatus()
+          .then((full) => {
+            setCircleStatus(full);
+            savePayerDisplayCache(full);
+          })
+          .catch(() => undefined);
       }
+
+      return !!(policyRes || healthRes || csRes || asRes);
+    } finally {
+      if (!silent) setRefreshing(false);
     }
-    const asRes = pick(as, "agent/status");
-    if (asRes) {
-      setAgentStatus(asRes);
-      if (asRes.activityPayerAddresses?.length) setActivityPayerAddresses(asRes.activityPayerAddresses);
-    }
-    const csRes = pick(cs, "circle/status");
-    if (csRes) setCircleStatus(csRes);
-    return !!policyRes || !!healthRes;
-  }, []);
+  }, [tab, activityScope, loadActivityLedger]);
 
   useEffect(() => {
     let cancelled = false;
@@ -192,8 +243,12 @@ export function App() {
 
     void (async () => {
       try {
-        const h = await getHealthQuick();
-        if (!cancelled) setHealth(h);
+        const [h, cs] = await Promise.allSettled([getHealthQuick(), getCircleStatusQuick()]);
+        if (!cancelled && h.status === "fulfilled") setHealth(h.value);
+        if (!cancelled && cs.status === "fulfilled") {
+          setCircleStatus(cs.value);
+          savePayerDisplayCache(cs.value);
+        }
       } catch {
         /* backend may be waking — show app anyway */
       }
@@ -315,10 +370,10 @@ export function App() {
   const merchantLabel = (merchantId: string) =>
     policy?.merchants.find((m) => m.id === merchantId)?.label ?? SERVICE_LABELS[merchantId] ?? merchantId;
 
-  const userWallet =
-    circleStatus?.loggedIn && circleStatus.executorAddress
-      ? circleStatus.executorAddress
-      : agentStatus?.circleExecutorAddress ?? null;
+  const payerLoggedIn = circleStatus?.loggedIn ?? !!loadPayerDisplayCache()?.loggedIn;
+  const userWallet = payerLoggedIn
+    ? circleStatus?.executorAddress ?? loadPayerDisplayCache()?.executorAddress ?? null
+    : agentStatus?.circleExecutorAddress ?? agentStatus?.executorAddress ?? null;
 
   const gatewayBalance =
     circleStatus?.gatewayBalanceUsdc ?? agentStatus?.gatewayBalanceUsdc ?? null;
@@ -541,11 +596,12 @@ export function App() {
                 <button
                   type="button"
                   className="btn ghost sm"
+                  disabled={refreshing}
                   onClick={() => {
                     void refresh();
                   }}
                 >
-                  <IconRefresh size={15} />
+                  <IconRefresh size={15} className={refreshing ? "spin" : undefined} />
                   Refresh
                 </button>
               </div>
@@ -606,11 +662,12 @@ export function App() {
               <button
                 type="button"
                 className="btn icon-btn"
-                onClick={() => refresh()}
+                disabled={refreshing}
+                onClick={() => void refresh()}
                 title="Refresh"
                 aria-label="Refresh"
               >
-                <IconRefresh size={15} />
+                <IconRefresh size={15} className={refreshing ? "spin" : undefined} />
               </button>
               {tab === "policy" && (
                 <button
@@ -675,7 +732,7 @@ export function App() {
           )}
 
           {tab === "library" && (
-            <DeliverablesView selectedId={libraryJobId} onSelectId={setLibraryJobId} />
+            <DeliverablesView selectedId={libraryJobId} onSelectId={setLibraryJobId} refreshKey={refreshTick} />
           )}
 
           {tab === "marketplace" && (
