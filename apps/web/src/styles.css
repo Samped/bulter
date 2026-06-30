@@ -2901,6 +2901,78 @@ select.field-input {
   width: 100%;
 }
 
+.payer-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  border: none;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(4px);
+  animation: mobile-fade-in 0.2s var(--ease);
+}
+
+.payer-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 410;
+  max-height: min(88vh, 560px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.5rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  background: var(--surface-raised);
+  border-top: 1px solid var(--border-hover);
+  border-radius: 16px 16px 0 0;
+  box-shadow: var(--shadow-lg);
+  animation: payer-sheet-up 0.28s var(--ease);
+}
+
+@keyframes payer-sheet-up {
+  from { transform: translateY(100%); opacity: 0.9; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.payer-sheet-handle {
+  width: 36px;
+  height: 4px;
+  margin: 0.25rem auto 0.875rem;
+  border-radius: 999px;
+  background: var(--border-hover);
+}
+
+.payer-sheet-close {
+  position: absolute;
+  top: 0.625rem;
+  right: 0.75rem;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.payer-sheet-lead {
+  margin: 0 0 0.875rem;
+  line-height: 1.45;
+}
+
+.payer-email-input {
+  width: 100%;
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.payer-sheet .payer-popover-btn.btn.primary {
+  width: 100%;
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+}
+
 .payer-otp-input {
   width: 100%;
   font-size: 1rem;

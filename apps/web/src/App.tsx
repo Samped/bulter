@@ -95,6 +95,7 @@ export function App() {
   const [activityLoading, setActivityLoading] = useState(false);
   const [butlerBusy, setButlerBusy] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileLoginOpen, setMobileLoginOpen] = useState(false);
   const isMobile = useIsMobile();
 
   const loadActivityLedger = useCallback(async (scope: ActivityScope) => {
@@ -224,7 +225,10 @@ export function App() {
   }, [ledger, tab, activityScope]);
 
   useEffect(() => {
-    if (!isMobile) setMobileMenuOpen(false);
+    if (!isMobile) {
+      setMobileMenuOpen(false);
+      setMobileLoginOpen(false);
+    }
   }, [isMobile]);
 
   useEffect(() => {
@@ -411,8 +415,14 @@ export function App() {
         <button
           type="button"
           className={`mobile-header-pill account ${circleStatus?.loggedIn ? "connected" : ""}`}
-          onClick={() => setMobileMenuOpen(true)}
-          aria-label="Account and menu"
+          onClick={() => {
+            if (circleStatus?.loggedIn) {
+              setMobileMenuOpen(true);
+            } else {
+              setMobileLoginOpen(true);
+            }
+          }}
+          aria-label={circleStatus?.loggedIn ? "Account and menu" : "Sign in with Circle"}
         >
           <IconWallet size={14} />
           <span className="mobile-header-pill-text">{accountLabel}</span>
@@ -438,6 +448,19 @@ export function App() {
           {mobileMenuOpen ? <IconClose size={20} /> : <IconMenu size={20} />}
         </button>
       </header>
+      )}
+
+      {isMobile && (
+        <CircleLoginPanel
+          variant="mobile-sheet"
+          open={mobileLoginOpen}
+          onOpenChange={setMobileLoginOpen}
+          onReady={refresh}
+          onLoginSuccess={() => {
+            void refresh();
+            setMobileLoginOpen(false);
+          }}
+        />
       )}
 
       {isMobile && mobileMenuOpen && (
