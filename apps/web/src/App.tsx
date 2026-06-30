@@ -315,13 +315,24 @@ export function App() {
   const merchantLabel = (merchantId: string) =>
     policy?.merchants.find((m) => m.id === merchantId)?.label ?? SERVICE_LABELS[merchantId] ?? merchantId;
 
-  const primaryPayerLabel =
-    agentStatus?.circleExecutorAddress ?? agentStatus?.executorAddress ?? activityPayerAddresses[0] ?? "";
+  const primaryPayerLabel = userWallet || agentStatus?.circleExecutorAddress || activityPayerAddresses[0] || "";
+
+  const activityWalletDesc =
+    activityScope === "mine" && primaryPayerLabel
+      ? (() => {
+          const gateway = activityPayerAddresses.find(
+            (a) => a.toLowerCase() !== primaryPayerLabel.toLowerCase()
+          );
+          return gateway
+            ? `Agent & Auctions · wallet ${shortAddr(primaryPayerLabel)} · Gateway ${shortAddr(gateway)} · ${activityCountLabel}`
+            : `Agent & Auctions only · wallet ${shortAddr(primaryPayerLabel)} · ${activityCountLabel}`;
+        })()
+      : null;
 
   const canFilterMine =
+    !!userWallet ||
     activityPayerAddresses.length > 0 ||
     !!agentStatus?.circleExecutorAddress ||
-    !!agentStatus?.executorAddress ||
     payerReady;
 
   const activityCountLabel =
@@ -750,9 +761,10 @@ export function App() {
               title={activityScope === "mine" ? "Your payments" : "Payment ledger"}
               desc={
                 activityScope === "mine"
-                  ? primaryPayerLabel
-                    ? `Agent & Auctions only · wallet ${shortAddr(primaryPayerLabel)} · ${activityCountLabel}`
-                    : `Agent & Auctions payments only · ${activityCountLabel}`
+                  ? activityWalletDesc ??
+                    (primaryPayerLabel
+                      ? `Agent & Auctions only · wallet ${shortAddr(primaryPayerLabel)} · ${activityCountLabel}`
+                      : `Agent & Auctions payments only · ${activityCountLabel}`)
                   : `All x402 settlements on this Butler instance · ${activityCountLabel}`
               }
               className={activityScope === "mine" ? "activity-panel-mine" : ""}

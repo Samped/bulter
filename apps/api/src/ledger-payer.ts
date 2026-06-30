@@ -133,16 +133,18 @@ export function enrichSpendPayer(paymentPayer?: string | null): {
   };
 }
 
-/** Learn Gateway smart-account payer from historical ledger rows (one-time per install). */
+/** Learn Gateway smart-account payer from this session's ledger rows only. */
 export function inferGatewayPayerFromLedger(records: SpendRecord[]): void {
   const cfg = loadCircleConfig();
   if (cfg.gatewayPayerAddress || !cfg.executorAddress) return;
   const executor = cfg.executorAddress.toLowerCase();
   const counts = new Map<string, number>();
   for (const r of records) {
-    const p = r.payerAddress?.toLowerCase();
-    if (!p || p === executor) continue;
-    counts.set(p, (counts.get(p) ?? 0) + 1);
+    const recordExecutor = r.executorAddress?.toLowerCase();
+    const payer = r.payerAddress?.toLowerCase();
+    if (!payer || payer === executor) continue;
+    if (recordExecutor && recordExecutor !== executor) continue;
+    counts.set(payer, (counts.get(payer) ?? 0) + 1);
   }
   const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
   if (top?.[0]) persistGatewayPayer(top[0]);
@@ -205,20 +207,26 @@ export function filterRecordsForOwner(
   if (!owner.sessionId && !owner.payerAddress && !owner.gatewayPayerAddress) {
     return records;
   }
-  const addrs = new Set(resolveOwnerPayerAddresses(owner));
   const jobSettlements = collectOwnerSettlementIds(jobs, owner);
   const attributed = applyJobAttribution(attributeLedgerRecords(records), jobs, auctions);
 
   return attributed.filter((r) => {
     if (r.settlementId && jobSettlements.has(r.settlementId)) return true;
+    if (owner.sessionId && r.initiator === "user") {
+      const payer = r.payerAddress?.toLowerCase();
+      const executor = r.executorAddress?.toLowerCase();
+      const addrs = new Set(resolveOwnerPayerAddresses(owner));
+      if (addrs.size > 0) {
+        if (payer && addrs.has(payer)) return true;
+        if (executor && addrs.has(executor)) return true;
+      }
+    }
     const payer = r.payerAddress?.toLowerCase();
     const executor = r.executorAddress?.toLowerCase();
+    const addrs = new Set(resolveOwnerPayerAddresses(owner));
     if (addrs.size > 0) {
       if (payer && addrs.has(payer)) return true;
       if (executor && addrs.has(executor)) return true;
-    }
-    if (owner.sessionId && r.initiator === "user" && addrs.size > 0) {
-      return (payer && addrs.has(payer)) || (executor && addrs.has(executor));
     }
     return false;
   });

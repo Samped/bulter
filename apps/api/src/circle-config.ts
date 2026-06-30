@@ -47,11 +47,12 @@ export function saveCircleConfig(patch: CircleConfig): CircleConfig {
 }
 
 export function resolveCircleExecutorAddress(): `0x${string}` | null {
+  if (getUserSessionPaths()) {
+    const cfg = loadCircleConfig();
+    if (cfg.executorAddress?.startsWith("0x")) return cfg.executorAddress;
+  }
   const fromEnv = process.env.CIRCLE_EXECUTOR_ADDRESS;
   if (fromEnv?.startsWith("0x")) return fromEnv as `0x${string}`;
-  if (!getUserSessionPaths()) return null;
-  const cfg = loadCircleConfig();
-  if (cfg.executorAddress?.startsWith("0x")) return cfg.executorAddress;
   return null;
 }
 
