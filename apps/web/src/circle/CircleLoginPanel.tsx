@@ -15,7 +15,7 @@ import {
   type CircleAgentWallet,
   type CircleStatus,
 } from "../api.ts";
-import { IconChevronDown, IconWallet } from "../icons.tsx";
+import { IconChevronDown, IconClose, IconWallet } from "../icons.tsx";
 
 type Step = "email" | "otp";
 
@@ -126,10 +126,15 @@ export function CircleLoginPanel({
   onReady,
   onLoginSuccess,
   variant = "toolbar",
+  open: openProp,
+  onOpenChange,
 }: {
   onReady?: () => void;
   onLoginSuccess?: (info: { executorAddress: string | null }) => void;
-  variant?: "sidebar" | "toolbar";
+  variant?: "sidebar" | "toolbar" | "mobile-sheet";
+  /** Controlled open (used by mobile sign-in sheet). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const saved = loadSession();
   const [status, setStatus] = useState<CircleStatus | null>(null);
@@ -147,7 +152,17 @@ export function CircleLoginPanel({
   const [verifying, setVerifying] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendElapsed, setSendElapsed] = useState(0);
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isOpen = openProp ?? internalOpen;
+  const setOpen = useCallback(
+    (value: boolean | ((prev: boolean) => boolean)) => {
+      const prev = openProp ?? internalOpen;
+      const next = typeof value === "function" ? value(prev) : value;
+      if (openProp === undefined) setInternalOpen(next);
+      onOpenChange?.(next);
+    },
+    [openProp, internalOpen, onOpenChange]
+  );
   const [showFundModal, setShowFundModal] = useState(false);
   const [fundBusy, setFundBusy] = useState(false);
   const [fundMessage, setFundMessage] = useState<string | null>(null);
@@ -158,10 +173,26 @@ export function CircleLoginPanel({
   const chipRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const otpInputRef = useRef<HTMLInputElement>(null);
+  const emailInputRef = useRef<HTMLInputElement>(null);
   const skipResumePoll = useRef(false);
   const sendInFlightRef = useRef(false);
 
   const connected = status?.loggedIn ?? false;
+
+  useEffect(() => {
+    if (variant !== "mobile-sheet" || !isOpen || step !== "email" || connected) return;
+    const t = window.setTimeout(() => emailInputRef.current?.focus(), 80);
+    return () => window.clearTimeout(t);
+  }, [variant, isOpen, step, connected]);
+
+  useEffect(() => {
+    if (variant !== "mobile-sheet" || !isOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [variant, isOpen]);
 
   const refresh = useCallback(async () => {
     try {
@@ -199,7 +230,7 @@ export function CircleLoginPanel({
   }, [refresh]);
 
   useEffect(() => {
-    if (!open) {
+    if (!isOpen) {
       setPopoverPos(null);
       return;
     }
@@ -211,10 +242,10 @@ export function CircleLoginPanel({
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [open, step]);
+  }, [isOpen, step]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!isOpen) return;
     const onDoc = (e: MouseEvent) => {
       if (step === "otp" || verifying || sending || showFundModal) return;
       const target = e.target as Node;
@@ -223,13 +254,13 @@ export function CircleLoginPanel({
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [open, step, verifying, sending, showFundModal]);
+  }, [isOpen, step, verifying, sending, showFundModal]);
 
   useEffect(() => {
-    if (step !== "otp" || !open) return;
+    if (step !== "otp" || !isOpen) return;
     const t = window.setTimeout(() => otpInputRef.current?.focus(), 0);
     return () => window.clearTimeout(t);
-  }, [step, open]);
+  }, [step, isOpen]);
 
   const goToEmail = () => {
     setStep("email");
@@ -493,8 +524,176 @@ export function CircleLoginPanel({
   const popoverLayout =
     popoverPos ?? measurePopoverPos(chipRef.current, showOtpStep) ?? fallbackPopoverPos(showOtpStep);
 
+  const loginPanelContent = (
+    <>
+      <p className="payer-popover-title">
+        {variant === "mobile-sheet" ? "Sign in with Circle" : "Circle payer · x402"}
+      </p>
+
+      {connected && !showOtpStep ? (
+        <>
+          <div className="payer-popover-session">
+            <span className="muted small">{status?.email ?? "Logged in"}</span>
+            {status?.executorAddress && (
+              <code className="payer-address">{shortAddr(status.executorAddress)}</code>
+            )}
+          </div>
+          {status?.gatewayBalanceUsdc != null && (
+            <p className={`payer-balance${Number(status.gatewayBalanceUsdc) === 0 ? " low" : ""}`}>
+              Gateway: {status.gatewayBalanceUsdc} USDC
+            </p>
+          )}
+          {Number(status?.gatewayBalanceUsdc ?? 0) === 0 && status?.executorAddress && (
+            <button
+              type="button"
+              className="btn ghost sm payer-popover-btn"
+              disabled={fundBusy}
+              onClick={() => {
+                setLoggedInAddress(status.executorAddress);
+                setShowFundModal(true);
+              }}
+            >
+              Get testnet USDC
+            </button>
+          )}
+          {wallets.length > 1 && (
+            <div className="circle-wallet-list">
+              {wallets.map((w) => (
+                <button
+                  key={w.address}
+                  type="button"
+                  className={`circle-wallet-pick ${status?.executorAddress === w.address ? "active" : ""}`}
+                  disabled={busy}
+                  onClick={() => handleSelectWallet(w.address)}
+                >
+                  {shortAddr(w.address)}
+                </button>
+              ))}
+            </div>
+          )}
+          <button type="button" className="btn ghost sm payer-popover-btn" disabled={busy} onClick={handleLogout}>
+            Sign out
+          </button>
+        </>
+      ) : showOtpStep ? (
+        <>
+          <p className="payer-otp-hint">
+            {sending && !requestId ? (
+              <>
+                Sending to <strong>{email}</strong>
+                {sendElapsed > 0 ? ` (${sendElapsed}s)` : ""}.
+                <br />
+                <span className="muted">Enter the code below as soon as it arrives — you can type while we connect.</span>
+                {sendElapsed > 120 ? (
+                  <>
+                    <br />
+                    <span className="muted">
+                      Server is slow or stuck — if verify fails, SSH to the Oracle VM and run{" "}
+                      <code>bash scripts/oracle-recover.sh</code>, then tap Resend for a fresh code.
+                    </span>
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <>
+                Code sent to <strong>{email}</strong>.
+                {otpPrefix ? (
+                  <>
+                    {" "}
+                    Enter <strong>{otpPrefix}-######</strong> from your email.
+                  </>
+                ) : (
+                  <> {hint ?? "Enter the code from your email."}</>
+                )}
+              </>
+            )}
+          </p>
+          <label className="payer-otp-label" htmlFor="butler-otp-input">
+            Verification code
+          </label>
+          <input
+            ref={otpInputRef}
+            id="butler-otp-input"
+            className="field-input payer-otp-input"
+            placeholder={otpPrefix ? `${otpPrefix}-123456` : "ABC-123456"}
+            value={otp}
+            onChange={(e) => setOtp(e.target.value)}
+            autoComplete="one-time-code"
+            inputMode="text"
+            disabled={verifying}
+            aria-label="Email verification code"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && otpDigits(otp) >= 6 && !verifying) void handleVerify();
+            }}
+          />
+          <button
+            type="button"
+            className="btn primary sm payer-popover-btn"
+            disabled={verifying || otpDigits(otp) < 6}
+            onClick={() => void handleVerify()}
+          >
+            {verifying ? "Verifying…" : "Verify & log in"}
+          </button>
+          {verifyHint && verifying && verifyHint !== "Verifying code…" && (
+            <p className="muted small payer-send-status">{verifyHint}</p>
+          )}
+          <button type="button" className="btn ghost sm payer-link-btn" disabled={verifying} onClick={goToEmail}>
+            Use a different email
+          </button>
+        </>
+      ) : (
+        <>
+          {variant === "mobile-sheet" && (
+            <p className="payer-sheet-lead muted small">
+              Enter your email. We&apos;ll send a one-time code so Butler can pay agents from your Circle wallet.
+            </p>
+          )}
+          <label className="payer-otp-label" htmlFor="butler-email-input">
+            Email
+          </label>
+          <input
+            ref={emailInputRef}
+            id="butler-email-input"
+            type="email"
+            className="field-input payer-email-input"
+            placeholder="you@gmail.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            inputMode="email"
+            autoFocus={variant !== "mobile-sheet"}
+            disabled={sending}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && email.includes("@") && !sending) void handleSendCode();
+            }}
+          />
+          <button
+            type="button"
+            className="btn primary payer-popover-btn"
+            disabled={sending || verifying || !email.includes("@")}
+            onClick={() => void handleSendCode()}
+          >
+            {sending ? `Sending code…${sendElapsed > 0 ? ` (${sendElapsed}s)` : ""}` : "Send code"}
+          </button>
+          {sending && (
+            <p className="muted small payer-send-status">
+              Waking server and emailing <strong>{email}</strong>. This can take up to a minute on free hosting.
+            </p>
+          )}
+          {emailHint && !sending && (
+            <p className="muted small" style={{ margin: "0.35rem 0 0" }}>
+              {emailHint}
+            </p>
+          )}
+        </>
+      )}
+
+      {error && !connected && <p className="payer-error">{error}</p>}
+    </>
+  );
+
   const popover =
-    open ? (
+    isOpen && variant !== "mobile-sheet" ? (
       <div
         ref={popoverRef}
         className="payer-popover payer-popover-fixed"
@@ -502,161 +701,42 @@ export function CircleLoginPanel({
         aria-label="Circle payer"
         style={{ top: popoverLayout.top, right: popoverLayout.right, width: popoverLayout.width }}
       >
-        <p className="payer-popover-title">Circle payer · x402</p>
-
-          {connected && !showOtpStep ? (
-            <>
-              <div className="payer-popover-session">
-                <span className="muted small">{status?.email ?? "Logged in"}</span>
-                {status?.executorAddress && (
-                  <code className="payer-address">{shortAddr(status.executorAddress)}</code>
-                )}
-              </div>
-            {status?.gatewayBalanceUsdc != null && (
-              <p className={`payer-balance${Number(status.gatewayBalanceUsdc) === 0 ? " low" : ""}`}>
-                Gateway: {status.gatewayBalanceUsdc} USDC
-              </p>
-            )}
-            {Number(status?.gatewayBalanceUsdc ?? 0) === 0 && status?.executorAddress && (
-              <button
-                type="button"
-                className="btn ghost sm payer-popover-btn"
-                disabled={fundBusy}
-                onClick={() => {
-                  setLoggedInAddress(status.executorAddress);
-                  setShowFundModal(true);
-                }}
-              >
-                Get testnet USDC
-              </button>
-            )}
-            {wallets.length > 1 && (
-              <div className="circle-wallet-list">
-                {wallets.map((w) => (
-                  <button
-                    key={w.address}
-                    type="button"
-                    className={`circle-wallet-pick ${status?.executorAddress === w.address ? "active" : ""}`}
-                    disabled={busy}
-                    onClick={() => handleSelectWallet(w.address)}
-                  >
-                    {shortAddr(w.address)}
-                  </button>
-                ))}
-              </div>
-            )}
-            <button type="button" className="btn ghost sm payer-popover-btn" disabled={busy} onClick={handleLogout}>
-              Sign out
-            </button>
-          </>
-        ) : showOtpStep ? (
-          <>
-            <p className="payer-otp-hint">
-              {sending && !requestId ? (
-                <>
-                  Sending to <strong>{email}</strong>
-                  {sendElapsed > 0 ? ` (${sendElapsed}s)` : ""}.
-                  <br />
-                  <span className="muted">Enter the code below as soon as it arrives — you can type while we connect.</span>
-                  {sendElapsed > 120 ? (
-                    <>
-                      <br />
-                      <span className="muted">
-                        Server is slow or stuck — if verify fails, SSH to the Oracle VM and run{" "}
-                        <code>bash scripts/oracle-recover.sh</code>, then tap Resend for a fresh code.
-                      </span>
-                    </>
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  Code sent to <strong>{email}</strong>.
-                  {otpPrefix ? (
-                    <>
-                      {" "}
-                      Enter <strong>{otpPrefix}-######</strong> from your email.
-                    </>
-                  ) : (
-                    <> {hint ?? "Enter the code from your email."}</>
-                  )}
-                </>
-              )}
-            </p>
-            <label className="payer-otp-label" htmlFor="butler-otp-input">
-              Verification code
-            </label>
-            <input
-              ref={otpInputRef}
-              id="butler-otp-input"
-              className="field-input payer-otp-input"
-              placeholder={otpPrefix ? `${otpPrefix}-123456` : "ABC-123456"}
-              value={otp}
-              onChange={(e) => setOtp(e.target.value)}
-              autoComplete="one-time-code"
-              inputMode="text"
-              disabled={verifying}
-              aria-label="Email verification code"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && otpDigits(otp) >= 6 && !verifying) void handleVerify();
-              }}
-            />
-            <button
-              type="button"
-              className="btn primary sm payer-popover-btn"
-              disabled={verifying || otpDigits(otp) < 6}
-              onClick={() => void handleVerify()}
-            >
-              {verifying ? "Verifying…" : "Verify & log in"}
-            </button>
-            {verifyHint && verifying && verifyHint !== "Verifying code…" && (
-              <p className="muted small payer-send-status">{verifyHint}</p>
-            )}
-            <button type="button" className="btn ghost sm payer-link-btn" disabled={verifying} onClick={goToEmail}>
-              Use a different email
-            </button>
-          </>
-        ) : (
-          <>
-            <label className="payer-otp-label" htmlFor="butler-email-input">
-              Email
-            </label>
-            <input
-              id="butler-email-input"
-              type="email"
-              className="field-input"
-              placeholder="you@gmail.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoFocus
-              disabled={sending}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && email.includes("@") && !sending) void handleSendCode();
-              }}
-            />
-            <button
-              type="button"
-              className="btn primary sm payer-popover-btn"
-              disabled={sending || verifying || !email.includes("@")}
-              onClick={() => void handleSendCode()}
-            >
-              {sending ? `Sending code…${sendElapsed > 0 ? ` (${sendElapsed}s)` : ""}` : "Send code"}
-            </button>
-            {sending && (
-              <p className="muted small payer-send-status">
-                Waking server and emailing <strong>{email}</strong>. This can take up to a minute on free hosting.
-              </p>
-            )}
-            {emailHint && !sending && (
-              <p className="muted small" style={{ margin: "0.35rem 0 0" }}>
-                {emailHint}
-              </p>
-            )}
-          </>
-        )}
-
-        {error && !connected && <p className="payer-error">{error}</p>}
+        {loginPanelContent}
       </div>
     ) : null;
+
+  const mobileSheet =
+    isOpen && variant === "mobile-sheet" ? (
+      <>
+        <button
+          type="button"
+          className="payer-sheet-backdrop"
+          aria-label="Close sign in"
+          onClick={() => setOpen(false)}
+        />
+        <div className="payer-sheet" role="dialog" aria-label="Sign in with Circle">
+          <button
+            type="button"
+            className="payer-sheet-close"
+            aria-label="Close"
+            onClick={() => setOpen(false)}
+          >
+            <IconClose size={18} />
+          </button>
+          <div className="payer-sheet-handle" aria-hidden />
+          {loginPanelContent}
+        </div>
+      </>
+    ) : null;
+
+  if (variant === "mobile-sheet") {
+    return (
+      <>
+        {mobileSheet && createPortal(mobileSheet, document.body)}
+        {fundModal && createPortal(fundModal, document.body)}
+      </>
+    );
+  }
 
   if (variant === "toolbar") {
     return (
@@ -676,7 +756,7 @@ export function CircleLoginPanel({
               return next;
             });
           }}
-          aria-expanded={open}
+          aria-expanded={isOpen}
           aria-haspopup="dialog"
         >
           <IconWallet size={14} />
@@ -694,7 +774,7 @@ export function CircleLoginPanel({
               <span className="payer-toolbar-value warn">{step === "otp" ? "Enter code" : "Log in"}</span>
             </>
           )}
-          <IconChevronDown size={12} className={open ? "open" : ""} />
+          <IconChevronDown size={12} className={isOpen ? "open" : ""} />
         </button>
 
         {popover && createPortal(popover, document.body)}
