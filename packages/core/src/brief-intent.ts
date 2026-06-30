@@ -27,18 +27,25 @@ function isLightLiteratureBrief(brief: string): boolean {
 }
 
 /** Force full-tier multi-agent ETF pipeline (not express single-agent). */
-export function resolveDeepWorkRouting(brief: string): { qualityTier: "full"; auctionMode: "etf" } | null {
+export function resolveDeepWorkRouting(brief: string): BtcPipelineRouting | null {
   if (wantsDeepBrief(brief)) return { qualityTier: "full", auctionMode: "etf" };
   return resolveBtcPipelineRouting(brief);
 }
 
-/** BTC on-chain + DeFi briefs need the multi-agent BTC ETF, not a single on-chain agent. */
-export function resolveBtcPipelineRouting(brief: string): { qualityTier: "full"; auctionMode: "etf" } | null {
+export type BtcPipelineRouting = {
+  qualityTier: "standard" | "full";
+  auctionMode: "etf";
+  etfId?: string;
+};
+
+/** BTC on-chain + DeFi briefs — single thesis agent unless user asked for a full multi-agent report. */
+export function resolveBtcPipelineRouting(brief: string): BtcPipelineRouting | null {
   const t = brief.toLowerCase();
   if (!/\b(btc|bitcoin)\b/.test(t)) return null;
   if (!/on[- ]?chain|onchain|whale|exchange flow|defi|decentralized finance/.test(t)) return null;
   if (isChartOnlyBrief(brief) || isMarketQuoteBrief(brief)) return null;
-  return { qualityTier: "full", auctionMode: "etf" };
+  if (wantsDeepBrief(brief)) return { qualityTier: "full", auctionMode: "etf" };
+  return { qualityTier: "standard", auctionMode: "etf", etfId: "btc-full-thesis-etf" };
 }
 
 /** Academic / industry literature review — Research Agent, not ETF or thesis. */

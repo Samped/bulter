@@ -5,6 +5,7 @@ import {
   getMarketplaceDeliverables,
   getButlerReadiness,
   getButlerRunStatus,
+  pollButlerRunUntilDone,
   getHealthQuick,
   runButler,
   ButlerRunTimeoutError,
@@ -280,13 +281,30 @@ export function AgentChatView({
       const errMsg = formatWorkflowError(e instanceof Error ? e.message : "Task failed");
       let recovered: { jobId?: string; summary?: string } | null = null;
       if (e instanceof ButlerRunTimeoutError) {
+        pushMessage({
+          role: "assistant",
+          content: "Still working — your task is running on the server. Waiting for payment and agents to finish…",
+          meta: "Background poll",
+        });
         try {
-          const status = await getButlerRunStatus(e.runId);
-          if (status.status === "ok" && status.result?.jobId) {
-            recovered = { jobId: status.result.jobId, summary: status.result.summary };
+          const late = await pollButlerRunUntilDone(e.runId, 900_000);
+          if (late?.ok && late.jobId) {
+            recovered = { jobId: late.jobId, summary: late.summary };
+          } else if (late && !late.ok) {
+            recovered = late.summary ? { jobId: late.jobId, summary: late.summary } : null;
           }
         } catch {
           /* ignore */
+        }
+        if (!recovered) {
+          try {
+            const status = await getButlerRunStatus(e.runId);
+            if (status.status === "ok" && status.result?.jobId) {
+              recovered = { jobId: status.result.jobId, summary: status.result.summary };
+            }
+          } catch {
+            /* ignore */
+          }
         }
       }
       if (!recovered?.summary && /timed out|aborted|cancelled|502|503|504|Cannot reach|Backend offline|busy with a Butler/i.test(errMsg)) {
@@ -307,14 +325,17 @@ export function AgentChatView({
           summary: recovered.summary,
         });
       }
+      const finishedAfterWait = !!recovered?.summary;
       pushMessage({
         role: "assistant",
-        content: recovered?.summary
-          ? `${errMsg}\n\nYour deliverable finished in the background:\n${recovered.summary}`
-          : errMsg,
-        error: !recovered,
+        content: finishedAfterWait
+          ? recovered!.summary!
+          : recovered?.summary
+            ? `${errMsg}\n\nYour deliverable finished in the background:\n${recovered.summary}`
+            : errMsg,
+        error: !finishedAfterWait && !recovered,
         deliverableId: recovered?.jobId,
-        success: !!recovered,
+        success: finishedAfterWait || !!recovered,
       });
     } finally {
       setBusy(false);
