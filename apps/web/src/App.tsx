@@ -365,7 +365,7 @@ export function App() {
 
   return (
     <div
-      className={`app-shell ${isMobile ? "is-mobile" : ""} ${tab === "agent" ? "app-shell--chat" : ""}`}
+      className={`app-shell ${isMobile ? "is-mobile" : ""} ${tab === "agent" ? "app-shell--chat" : ""} ${tab === "library" ? "app-shell--library" : ""}`}
     >
       {!isMobile && (
       <aside className="sidebar">

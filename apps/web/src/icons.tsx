@@ -99,6 +99,22 @@ export function IconChevronDown(props: IconProps) {
   );
 }
 
+export function IconChevronLeft(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <polyline points="15 18 9 12 15 6" />
+    </Icon>
+  );
+}
+
+export function IconChevronRight(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <polyline points="9 18 15 12 9 6" />
+    </Icon>
+  );
+}
+
 export function IconLibrary(props: IconProps) {
   return (
     <Icon {...props}>

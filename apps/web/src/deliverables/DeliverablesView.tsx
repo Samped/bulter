@@ -1,10 +1,12 @@
 /** Library — completed agent deliverables and exports. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatUsdc, getMarketplaceDeliverable, getMarketplaceDeliverables, type MarketplaceDeliverable } from "../api.ts";
-import { IconCheck, IconDownload, IconLibrary, IconRefresh, IconSearch } from "../icons.tsx";
+import { IconCheck, IconChevronLeft, IconChevronRight, IconDownload, IconLibrary, IconRefresh, IconSearch } from "../icons.tsx";
 import { DeliverableSummary, CombinedDeliverableBody } from "./DeliverableContent.tsx";
 import { combineWorkflowResult } from "./combine.ts";
+import { downloadText, slugify } from "./format.ts";
 import { formatWorkflowError } from "../format.ts";
+import { useIsMobile } from "../use-mobile.ts";
 import { PaperDocument, serializePaperForExport } from "./PaperDocument.tsx";
 import { exportPaperPdf } from "./pdfExport.ts";
 import { formatRelativeTime, strategyLabel } from "./utils.ts";
@@ -26,6 +28,8 @@ export function DeliverablesView({
   const [copied, setCopied] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const paperRef = useRef<HTMLElement>(null);
+  const isMobile = useIsMobile();
+  const mobileDetail = isMobile && !!selected;
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -81,6 +85,12 @@ export function DeliverablesView({
   const pick = (job: MarketplaceDeliverable) => {
     setSelected(job);
     onSelectId?.(job.id);
+    setCopied(false);
+  };
+
+  const clearSelection = () => {
+    setSelected(null);
+    onSelectId?.(null);
     setCopied(false);
   };
 
@@ -160,27 +170,56 @@ export function DeliverablesView({
     }
   };
 
+  const docActions = selected ? (
+    <>
+      <button
+        type="button"
+        className="btn primary sm library-action-primary"
+        onClick={handleDownloadPdf}
+        disabled={exportingPdf}
+      >
+        <IconDownload size={14} />
+        {exportingPdf ? "Preparing…" : "PDF"}
+      </button>
+      {displaySummary && (
+        <button type="button" className="btn ghost sm" onClick={() => void handleCopy()}>
+          {copied ? "Copied" : "Copy"}
+        </button>
+      )}
+      <button type="button" className="btn ghost sm" onClick={handleDownloadTxt}>
+        TXT
+      </button>
+      <button type="button" className="btn ghost sm" onClick={handleDownloadJson}>
+        JSON
+      </button>
+    </>
+  ) : null;
+
   return (
-    <div className="library-shell">
+    <div
+      className={`library-shell ${isMobile ? "library-shell--mobile" : ""} ${mobileDetail ? "library-shell--detail" : ""}`}
+    >
+      {!mobileDetail && (
       <header className="library-topbar">
         <div className="library-topbar-intro">
           <h1 className="library-title">Library</h1>
-          <p className="library-subtitle">Deliverables from paid agent work</p>
+          <p className="library-subtitle">Your completed agent deliverables</p>
         </div>
         <div className="library-topbar-stats">
-          <div className="library-stat">
+          <div className="library-stat-chip">
             <span className="library-stat-value">{items.length}</span>
-            <span className="library-stat-label">Documents</span>
+            <span className="library-stat-label">docs</span>
           </div>
-          <div className="library-stat">
+          <div className="library-stat-chip accent">
             <span className="library-stat-value">${formatUsdc(String(totalSpent))}</span>
-            <span className="library-stat-label">Total spent</span>
+            <span className="library-stat-label">spent</span>
           </div>
         </div>
       </header>
+      )}
 
       <div className="library-workspace">
-        <aside className="library-sidebar">
+        <aside className={`library-sidebar ${mobileDetail ? "library-pane--hidden" : ""}`}>
           <div className="library-sidebar-tools">
             <label className="library-search">
               <IconSearch size={15} />
@@ -246,6 +285,7 @@ export function DeliverablesView({
                           {job.steps.filter((s) => s.status === "done").length || job.steps.length} agent
                           {(job.steps.filter((s) => s.status === "done").length || job.steps.length) === 1 ? "" : "s"}
                         </span>
+                        {isMobile && <IconChevronRight size={16} className="library-list-chevron" aria-hidden />}
                       </div>
                     </button>
                   </li>
@@ -255,8 +295,12 @@ export function DeliverablesView({
           )}
         </aside>
 
-        <main className="library-document" aria-live="polite">
+        <main
+          className={`library-document ${isMobile && !selected ? "library-pane--hidden" : ""}`}
+          aria-live="polite"
+        >
           {!selected ? (
+            !isMobile ? (
             <div className="library-placeholder">
               <div className="library-placeholder-icon">
                 <IconLibrary size={32} />
@@ -264,10 +308,29 @@ export function DeliverablesView({
               <h2>Select a deliverable</h2>
               <p>Choose a completed task from the list to read the full report, research, or agent output.</p>
             </div>
+            ) : null
           ) : (
             <>
-              <header className="library-doc-toolbar">
+              {mobileDetail && (
+                <header className="library-mobile-nav">
+                  <button
+                    type="button"
+                    className="library-mobile-back"
+                    onClick={clearSelection}
+                    aria-label="Back to library list"
+                  >
+                    <IconChevronLeft size={18} />
+                    <span>Library</span>
+                  </button>
+                  <span className={`library-type-badge ${selected.plan?.strategy ?? "direct"}`}>
+                    {strategyLabel(selected.plan?.strategy)}
+                  </span>
+                </header>
+              )}
+
+              <header className={`library-doc-toolbar ${mobileDetail ? "library-doc-toolbar--mobile" : ""}`}>
                 <div className="library-doc-toolbar-main">
+                  {!mobileDetail && (
                   <div className="library-doc-badges">
                     <span className={`library-type-badge lg ${selected.plan?.strategy ?? "direct"}`}>
                       {strategyLabel(selected.plan?.strategy)}
@@ -276,32 +339,25 @@ export function DeliverablesView({
                       <IconCheck size={12} /> Paid
                     </span>
                   </div>
-                  <p className="library-doc-toolbar-title">
-                    {selected ? listTitle(selected) : "Deliverable"}
-                  </p>
-                </div>
-                <div className="library-doc-actions">
-                  <button
-                    type="button"
-                    className="btn primary sm"
-                    onClick={handleDownloadPdf}
-                    disabled={exportingPdf}
-                  >
-                    <IconDownload size={14} />
-                    {exportingPdf ? "Preparing…" : "Download PDF"}
-                  </button>
-                  {displaySummary && (
-                    <button type="button" className="btn ghost sm" onClick={() => void handleCopy()}>
-                      {copied ? "Copied" : "Copy text"}
-                    </button>
                   )}
-                  <button type="button" className="btn ghost sm" onClick={handleDownloadTxt}>
-                    TXT
-                  </button>
-                  <button type="button" className="btn ghost sm" onClick={handleDownloadJson}>
-                    JSON
-                  </button>
+                  <p className="library-doc-toolbar-title">
+                    {listTitle(selected)}
+                  </p>
+                  {mobileDetail && (
+                    <p className="library-doc-toolbar-meta">
+                      <span className="library-doc-paid inline">
+                        <IconCheck size={12} /> Paid ${formatUsdc(selected.totalUsdc)}
+                      </span>
+                      <span className="library-doc-meta-dot" aria-hidden />
+                      <span>{formatRelativeTime(selected.at)}</span>
+                    </p>
+                  )}
                 </div>
+                {!mobileDetail && (
+                <div className="library-doc-actions">
+                  {docActions}
+                </div>
+                )}
               </header>
 
               <div className="library-paper-canvas">
@@ -315,6 +371,10 @@ export function DeliverablesView({
                   )}
                 </PaperDocument>
               </div>
+
+              {mobileDetail && docActions && (
+                <footer className="library-mobile-actions">{docActions}</footer>
+              )}
 
               {selected.steps.some((s) => s.settlementId) && (
                 <footer className="library-doc-footer">
