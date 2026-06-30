@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { Express, Request, Response } from "express";
 import { sessionIdFromRequest } from "./user-session.ts";
 import { filterJobsForOwner, jobVisibleToOwner, resolveJobOwnerFromRequest } from "./job-owner.ts";
+import { registerAuctionRoutes } from "./auction-routes.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_PATH = resolve(__dirname, "../../../.data/butler-state.json");
@@ -177,6 +178,13 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
 
   const apiBase = resolveApiBase();
 
+  registerAuctionRoutes({
+    app,
+    statePath: STATE_PATH,
+    sellerAddress: SELLER,
+    apiBase,
+  });
+
   try {
     const { createMarketplaceGateway, registerAgentExecuteRoutes, warmGatewayFacilitator } = await import(
       "./marketplace-execute.ts"
@@ -238,7 +246,7 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
   });
 
   console.log(
-    "  task routes: policy · ledger · agent/status · butler/run · registry · x402 execute · deliverables (lite mode)"
+    "  task routes: policy · ledger · agent/status · butler/run · auctions · registry · x402 execute · deliverables (lite mode)"
   );
 
   setImmediate(() => {

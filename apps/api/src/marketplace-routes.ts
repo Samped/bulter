@@ -36,9 +36,8 @@ import { filterJobsForOwner, jobVisibleToOwner, resolveJobOwnerFromRequest, stam
 import { getOpenAiPlannerStatus } from "./openai-planner.ts";
 import {
   executeAuctionAward,
-  loadProcessedAuctions,
-  startAuctionEngine,
 } from "./auction-engine.ts";
+import { registerAuctionRoutes } from "./auction-routes.ts";
 import { registerRegistryRoutes } from "./registry-routes.ts";
 import { registerAgentExecuteRoutes } from "./marketplace-execute.ts";
 import { agentRunReadiness } from "./agent-runner.ts";
@@ -312,150 +311,7 @@ export function registerMarketplaceRoutes(
   });
 
   // --- Reverse auctions (automated competitive bidding) ---
-  function syncAuctions() {
-    const { auctions, toAward } = loadProcessedAuctions(statePath, sellerAddress);
-    for (const id of toAward) {
-      void executeAuctionAward({ statePath, sellerAddress, apiBase, auctionId: id });
-    }
-    return auctions;
-  }
-
-  app.get("/api/marketplace/auctions", (_req, res) => {
-    res.json(syncAuctions());
-  });
-
-  app.get("/api/marketplace/auctions/:id", (req, res) => {
-    const auction = syncAuctions().find((a) => a.id === req.params.id);
-    if (!auction) {
-      res.status(404).json({ error: "Auction not found" });
-      return;
-    }
-    res.json(auction);
-  });
-
-  app.post("/api/marketplace/auctions", (req, res) => {
-    const brief = String(req.body?.brief ?? "").trim();
-    if (!brief) {
-      res.status(400).json({ error: "brief required" });
-      return;
-    }
-    let mp = loadMp();
-    const qualityTier = (req.body?.qualityTier ?? "standard") as QualityTier;
-    const maxBudgetUsdc = req.body?.maxBudgetUsdc != null ? String(req.body.maxBudgetUsdc).trim() : undefined;
-    const auctionMode = defaultAuctionMode(
-      qualityTier,
-      req.body?.auctionMode === "etf" ? "etf" : req.body?.auctionMode === "single" ? "single" : undefined
-    );
-    const userCategory = req.body?.category as ReverseAuction["category"] | undefined;
-    const auction = initializeAuction({
-      brief,
-      category: resolveTaskCategory(brief, userCategory, qualityTier),
-      minReputation: Number(req.body?.minReputation ?? 70),
-      ttlSeconds: Number(req.body?.ttlSeconds ?? 90),
-      autoAward: req.body?.autoAward !== false,
-      bidIntervalSeconds: Number(req.body?.bidIntervalSeconds ?? 12),
-      qualityTier,
-      maxBudgetUsdc: maxBudgetUsdc || undefined,
-      auctionMode,
-      credits: mpCredits(),
-    });
-    mp = { ...mp, auctions: [...mp.auctions, auction] };
-    saveMp(mp);
-    res.status(201).json(auction);
-  });
-
-  app.post("/api/marketplace/auctions/:id/solicit", (req, res) => {
-    const auction = syncAuctions().find((a) => a.id === req.params.id);
-    if (!auction) {
-      res.status(404).json({ error: "Auction not found" });
-      return;
-    }
-    res.json(auction);
-  });
-
-  app.post("/api/marketplace/auctions/:id/bids", (req, res) => {
-    const agentId = String(req.body?.agentId ?? "").trim();
-    const priceUsdc = String(req.body?.priceUsdc ?? "").trim();
-    if (!agentId) {
-      res.status(400).json({ error: "agentId required" });
-      return;
-    }
-
-    let mp = loadMp();
-    const auction = mp.auctions.find((a) => a.id === req.params.id);
-    if (!auction) {
-      res.status(404).json({ error: "Auction not found" });
-      return;
-    }
-    if (auction.status !== "open") {
-      res.status(400).json({ error: "Auction is not open" });
-      return;
-    }
-    if (Math.floor(Date.now() / 1000) > auction.deadlineAt) {
-      res.status(400).json({ error: "Auction deadline passed" });
-      return;
-    }
-
-    const agent = getMarketplaceAgent(agentId);
-    if (!agent) {
-      res.status(404).json({ error: "Agent not found" });
-      return;
-    }
-
-    const credits = new Map(mpCredits().map((c) => [c.agentId, c]));
-    const score = credits.get(agentId)?.score ?? 0;
-    if (score < auction.minReputation) {
-      res.status(403).json({ error: `Agent reputation ${score} below minimum ${auction.minReputation}` });
-      return;
-    }
-
-    const bidPrice = priceUsdc || agent.priceUsdc;
-    const check = validateCustomBid(agentId, bidPrice);
-    if (!check?.ok) {
-      res.status(400).json({ error: check?.error ?? "Invalid bid" });
-      return;
-    }
-    if (auction.maxBudgetUsdc && Number(bidPrice) > Number(auction.maxBudgetUsdc) + 1e-9) {
-      res.status(400).json({ error: `Bid exceeds max budget ($${auction.maxBudgetUsdc})` });
-      return;
-    }
-
-    const base = buildCatalogBid(agentId, credits);
-    if (!base) {
-      res.status(500).json({ error: "Could not build bid" });
-      return;
-    }
-
-    const bid = { ...base, priceUsdc: bidPrice, at: Math.floor(Date.now() / 1000) };
-
-    const updated = {
-      ...auction,
-      bids: mergeAuctionBids(auction.bids, [bid]),
-    };
-    mp = { ...mp, auctions: mp.auctions.map((a) => (a.id === auction.id ? updated : a)) };
-    saveMp(mp);
-    res.status(201).json(updated);
-  });
-
-  app.post("/api/marketplace/auctions/:id/award", async (req, res) => {
-    try {
-      const result = await executeAuctionAward({
-        statePath,
-        sellerAddress,
-        apiBase,
-        auctionId: req.params.id,
-        forceX402: !!req.body?.forceX402,
-      });
-      if (!result?.ok) {
-        res.status(400).json({ error: result?.error ?? "Award failed" });
-        return;
-      }
-      const auction = syncAuctions().find((a) => a.id === req.params.id);
-      res.json({ ok: true, auction });
-    } catch (e) {
-      res.status(500).json({ error: e instanceof Error ? e.message : "Award failed" });
-    }
-  });
+  const stopAuctionEngine = registerAuctionRoutes({ app, statePath, sellerAddress, apiBase });
 
   // --- Butler orchestrator (discover → negotiate → settle) ---
   const butlerReadiness = (_req: Request, res: Response) => {
@@ -504,5 +360,5 @@ export function registerMarketplaceRoutes(
   app.get("/api/payer-agent/readiness", butlerReadiness);
   app.post("/api/payer-agent/run", butlerRun);
 
-  return startAuctionEngine({ statePath, sellerAddress, apiBase });
+  return stopAuctionEngine;
 }
