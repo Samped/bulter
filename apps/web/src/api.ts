@@ -793,7 +793,7 @@ function butlerPollDeadlineMs(body: {
   qualityTier?: QualityTier;
   auctionMode?: AuctionMode;
 }): number {
-  if (body.auctionMode === "etf" || body.qualityTier === "full") return 900_000;
+  if (body.auctionMode === "etf" || body.qualityTier === "full") return 1_200_000;
   return 300_000;
 }
 
@@ -984,6 +984,29 @@ export function getButlerRunStatus(runId: string) {
     error?: string;
     elapsedMs?: number;
   }>(`/api/butler/run/${runId}`, undefined, IS_LOCAL_API ? 20_000 : 30_000, IS_LOCAL_API ? 3 : 10);
+}
+
+/** Keep polling after the main deadline — server may still be paying agents. */
+export async function pollButlerRunUntilDone(runId: string, maxWaitMs = 900_000): Promise<ButlerResult | null> {
+  const deadline = Date.now() + maxWaitMs;
+  let delay = 3_000;
+  while (Date.now() < deadline) {
+    try {
+      const status = await getButlerRunStatus(runId);
+      if (status.status === "ok" && status.result) return status.result;
+      if (status.status === "error") return status.result ?? null;
+      if (status.status === "pending" || status.status === "running") {
+        await new Promise((r) => setTimeout(r, delay));
+        delay = Math.min(delay + 500, 8_000);
+        continue;
+      }
+      return null;
+    } catch {
+      await new Promise((r) => setTimeout(r, delay));
+      delay = Math.min(delay + 1_000, 10_000);
+    }
+  }
+  return null;
 }
 
 export async function runButler(body: {

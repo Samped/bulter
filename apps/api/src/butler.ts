@@ -6,6 +6,8 @@ import {
   initializeAuction,
   resolveExpressBrief,
   resolveDeepWorkRouting,
+  resolveBtcPipelineRouting,
+  getMarketplaceEtf,
   wantsDeepBrief,
   listMarketplaceAgents,
   loadMarketplaceState,
@@ -333,6 +335,7 @@ export async function runButler(opts: {
 
   const express = resolveExpressBrief(brief);
   const deepWork = resolveDeepWorkRouting(brief);
+  const btcRoute = resolveBtcPipelineRouting(brief);
   const qualityTier = express ? "brief" : deepWork ? deepWork.qualityTier : (opts.qualityTier ?? "standard");
   const category = express?.category ?? resolveTaskCategory(brief, opts.category, qualityTier);
   const auctionMode =
@@ -410,6 +413,41 @@ export async function runButler(opts: {
         : `Catalog: ${quotes.length} agents eligible for ${category} (${listMarketplaceAgents().filter((a) => a.origin === "external").length} external)`,
     quotes,
   });
+
+  if (strategy === "auction" && btcRoute?.etfId && !express) {
+    const etf = getMarketplaceEtf(btcRoute.etfId);
+    const leadId = etf?.agentIds[0];
+    const leadAgent = leadId ? listMarketplaceAgents().find((a) => a.id === leadId) : undefined;
+    if (etf && leadAgent) {
+      const credit = credits.find((c) => c.agentId === leadId);
+      const bid: AuctionBid = {
+        agentId: leadAgent.id,
+        agentName: etf.name,
+        priceUsdc: etf.bundlePriceUsdc,
+        etaSeconds: etf.etaSeconds,
+        reputation: credit?.score ?? 80,
+        at: now(),
+        etfId: etf.id,
+      };
+      phases.push({
+        phase: "negotiate",
+        at: now(),
+        message: `Fast route — ${etf.name} ($${etf.bundlePriceUsdc} USDC, ~${Math.round(etf.etaSeconds / 60) || 1} min)`,
+        winner: { agentId: bid.agentId, agentName: bid.agentName, priceUsdc: bid.priceUsdc },
+      });
+      return settleWinningBid({
+        brief,
+        category,
+        apiBase: opts.apiBase,
+        statePath: opts.statePath,
+        sellerAddress: opts.sellerAddress,
+        bid,
+        forceX402: opts.forceX402,
+        phases,
+        now,
+      });
+    }
+  }
 
   if (strategy === "direct" || (express && quotes.length === 0)) {
     if (express && quotes.length === 0) {

@@ -446,7 +446,7 @@ export function initializeAuction(params: {
 }
 
 /** Headlines-only tasks should not run multi-agent ETF pipelines. */
-export { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, resolveExpressBrief, resolveDeepWorkRouting, wantsDeepBrief } from "./brief-intent.ts";
+export { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, resolveExpressBrief, resolveDeepWorkRouting, resolveBtcPipelineRouting, wantsDeepBrief } from "./brief-intent.ts";
 
 export function inferAuctionCategory(brief: string): MarketplaceCategory {
   const t = brief.toLowerCase();

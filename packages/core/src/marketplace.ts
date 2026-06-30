@@ -550,6 +550,7 @@ export function scoreEtfForBrief(
   if (etf.id === "btc-onchain-etf") {
     if (/btc|bitcoin/.test(t)) score += 18;
     else score -= 40;
+    if (!wantsDeepBrief(brief) && /on[- ]?chain|onchain|defi/.test(t)) score -= 35;
   }
 
   if (etf.id === "defi-alpha-etf" && /defi|yield|tvl|uniswap|aave/.test(t)) score += 18;
