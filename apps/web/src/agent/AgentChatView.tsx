@@ -366,11 +366,11 @@ export function AgentChatView({
         <div className="agent-toolbar-actions">
           <button
             type="button"
-            className="btn ghost sm"
+            className="btn ghost sm agent-toolbar-config-btn"
             onClick={() => setConfigOpen((v) => !v)}
             aria-expanded={configOpen}
           >
-            {configOpen ? "Hide config" : "Configure agent"}
+            {configOpen ? "Hide" : "Config"}
           </button>
         </div>
       </div>
