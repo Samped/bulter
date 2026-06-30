@@ -8,6 +8,8 @@ node scripts/set-workspaces-render.js
 npm install --omit=dev
 npm run build:render -w @butler/api
 
+# Small VMs OOM if we boot Circle CLI twice during deploy; installer already runs --version once.
+export BUTLER_SKIP_CLI_SMOKE=1
 if bash scripts/ensure-circle-cli.sh; then
   echo "==> Circle CLI ready"
 else
