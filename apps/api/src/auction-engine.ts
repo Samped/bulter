@@ -18,7 +18,6 @@ import { stampJobFromAuction } from "./job-owner.ts";
 import { runWithUserSession } from "./user-session.ts";
 
 const awardingLocks = new Set<string>();
-
 const STALE_PAYER_AUCTION_SECS = 180;
 const SETTLEMENT_POLL_MS = 1_000;
 
@@ -314,12 +313,18 @@ export function startAuctionEngine(opts: {
       }
 
       for (const id of toAward) {
-        void executeAuctionAward({
-          statePath: opts.statePath,
-          sellerAddress: opts.sellerAddress,
-          apiBase: opts.apiBase,
-          auctionId: id,
-        }).then((res) => {
+        const auction = state.auctions.find((a) => a.id === id);
+        const run = () =>
+          executeAuctionAward({
+            statePath: opts.statePath,
+            sellerAddress: opts.sellerAddress,
+            apiBase: opts.apiBase,
+            auctionId: id,
+          });
+        const pending = auction?.ownerSessionId
+          ? runWithUserSession(auction.ownerSessionId, run)
+          : run();
+        void pending.then((res) => {
           if (!res.ok && res.error) {
             console.warn(`[auction-engine] auto-award ${id}: ${res.error}`);
           }

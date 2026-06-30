@@ -55,3 +55,18 @@ export function filterJobsForOwner(jobs: MarketplaceJob[], owner: JobOwner): Mar
   if (!owner.sessionId && !owner.payerAddress) return [];
   return jobs.filter((j) => jobVisibleToOwner(j, owner));
 }
+
+export function auctionVisibleToOwner(auction: ReverseAuction, owner: JobOwner): boolean {
+  if (owner.sessionId && auction.ownerSessionId) {
+    return auction.ownerSessionId === owner.sessionId;
+  }
+  if (owner.payerAddress && auction.payerAddress) {
+    return auction.payerAddress.toLowerCase() === owner.payerAddress.toLowerCase();
+  }
+  return false;
+}
+
+export function filterAuctionsForOwner(auctions: ReverseAuction[], owner: JobOwner): ReverseAuction[] {
+  if (!owner.sessionId && !owner.payerAddress) return [];
+  return auctions.filter((a) => auctionVisibleToOwner(a, owner));
+}
