@@ -232,7 +232,7 @@ async function request<T>(
           res.status === 502 || res.status === 503 || res.status === 504
             ? IS_LOCAL_API
               ? `API is waking up (${res.status}). Wait 30s and try again.`
-              : `Backend offline (${res.status}) — the Oracle API may be hung. Open /api/health; if it fails, run oracle-recover.sh on the VM, then request a fresh code.`
+              : `Backend offline (${res.status}). If /api/health shows "ok":true, tap Resend and try again. Otherwise run oracle-recover.sh on the VM.`
             : res.status === 429
               ? "Circle is rate-limiting logins. Wait 10–15 minutes, request a new code, then verify once."
               : `${res.status} ${path}`;
@@ -250,6 +250,21 @@ async function request<T>(
           needsNewCode = needsNewCode || !!body.needsNewCode;
         } catch {
           /* ignore non-JSON error bodies */
+        }
+        if (
+          !IS_LOCAL_API &&
+          (res.status === 502 || res.status === 503 || res.status === 504) &&
+          path.startsWith("/api/circle/login")
+        ) {
+          try {
+            const h = await getHealthQuick();
+            if (h.ok) {
+              detail =
+                "Login hit a temporary 502 while the API is online. Tap Resend for a fresh code, then Verify again.";
+            }
+          } catch {
+            /* keep detail */
+          }
         }
         const err = new Error(detail) as Error & { needsNewCode?: boolean };
         if (needsNewCode) err.needsNewCode = true;
