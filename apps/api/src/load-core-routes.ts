@@ -16,10 +16,11 @@ import {
   ensureCircleExecutor,
   fundCircleAgentAfterLogin,
   getGatewayBalanceForApi,
+  invalidateCircleCache,
   probeCircleCli,
   scheduleGatewayBalanceRefresh,
 } from "./circle-cli.ts";
-import { loadCircleConfig, resolveCircleExecutorAddress, resolveCircleChain, saveCircleConfig } from "./circle-config.ts";
+import { loadCircleConfig, resolveCircleExecutorAddress, resolveCircleChain, saveCircleConfig, clearCircleConfig } from "./circle-config.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../../../.env") });
@@ -67,10 +68,11 @@ export function loadCoreRoutes(app: Express): void {
 
   app.post("/api/circle/logout", (_req, res) => {
     try {
+      invalidateCircleCache();
+      clearCircleConfig();
       const result = circleLogout();
       if (!result?.ok) {
-        res.status(500).json({ error: result?.error ?? "Logout failed" });
-        return;
+        console.warn("[circle/logout] CLI logout:", result?.error ?? "unknown");
       }
       res.json({ ok: true });
     } catch (error) {

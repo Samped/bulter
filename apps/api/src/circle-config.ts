@@ -46,6 +46,18 @@ export function saveCircleConfig(patch: CircleConfig): CircleConfig {
   return next;
 }
 
+/** Wipe per-browser Circle credentials (sign-out). */
+export function clearCircleConfig(): void {
+  const path = configPath();
+  if (!path) return;
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "{}");
+  } catch {
+    /* ignore */
+  }
+}
+
 export function resolveCircleExecutorAddress(): `0x${string}` | null {
   if (getUserSessionPaths()) {
     const cfg = loadCircleConfig();
