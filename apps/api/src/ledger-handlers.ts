@@ -29,19 +29,26 @@ export function handleGetLedger(
   );
 
   const sessionPayers = resolveSessionActivityPayerAddresses(state.records);
+  const ownerPayerAddresses = resolveOwnerPayerAddresses(owner);
   const activityPayerAddresses =
-    sessionPayers.length > 0 ? sessionPayers : resolveActivityPayerAddresses(state.records);
+    sessionPayers.length > 0 ? sessionPayers : ownerPayerAddresses;
 
   const allRecords = attributed.slice().reverse();
   const hasOwner = !!(owner.sessionId || owner.payerAddress || owner.gatewayPayerAddress);
 
   let records: SpendRecord[];
   if (scope === "mine") {
-    const mineAddrs =
-      activityPayerAddresses.length > 0 ? activityPayerAddresses : resolveOwnerPayerAddresses(owner);
-    records = filterMineRecords(attributed, mineAddrs);
-    if (records.length === 0 && hasOwner) {
+    if (owner.sessionId) {
       records = filterRecordsForOwner(attributed, owner, mp.jobs, mp.auctions);
+      if (records.length === 0 && sessionPayers.length > 0) {
+        records = filterMineRecords(attributed, sessionPayers);
+      }
+    } else if (sessionPayers.length > 0) {
+      records = filterMineRecords(attributed, sessionPayers);
+    } else if (hasOwner) {
+      records = filterRecordsForOwner(attributed, owner, mp.jobs, mp.auctions);
+    } else {
+      records = [];
     }
     records = records.slice().reverse();
   } else if (hasOwner && scope === "yours") {

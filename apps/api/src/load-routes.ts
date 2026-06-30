@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { Express, Request, Response } from "express";
 import type { SpendRecord } from "@butler/core";
 import { handleGetLedger } from "./ledger-handlers.ts";
+import { hasActiveUserSession } from "./user-session.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../../../.env") });
@@ -81,7 +82,7 @@ export async function loadRoutes(app: Express): Promise<void> {
   const {
     enrichSpendPayer,
     getExecutorWalletAddress,
-    resolveActivityPayerAddresses,
+    resolveSessionActivityPayerAddresses,
     attributeLedgerRecords,
     filterMineRecords,
     applyJobAttribution,

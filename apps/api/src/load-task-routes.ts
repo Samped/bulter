@@ -5,7 +5,7 @@
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Express, Request, Response } from "express";
-import { sessionIdFromRequest } from "./user-session.ts";
+import { sessionIdFromRequest, hasActiveUserSession } from "./user-session.ts";
 import { filterJobsForOwner, jobVisibleToOwner, resolveJobOwnerFromRequest } from "./job-owner.ts";
 import { handleGetLedger } from "./ledger-handlers.ts";
 import { registerAuctionRoutes } from "./auction-routes.ts";
@@ -62,16 +62,17 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
   app.get("/api/agent/status", async (_req, res) => {
     try {
       const state = loadState(STATE_PATH, SELLER);
-      const executorAddress = getExecutorWalletAddress();
-      const readiness = agentRunReadiness();
       const circleExecutor = circleConfig.resolveCircleExecutorAddress();
+      const executorAddress =
+        circleExecutor ?? (hasActiveUserSession() ? null : getExecutorWalletAddress());
+      const readiness = agentRunReadiness();
       if (!circleExecutor && circleCli.circleCliLoggedIn()) {
         void Promise.resolve().then(() => circleCli.ensureCircleExecutor());
       }
       const gatewayBalanceUsdc = circleCli.getGatewayBalanceForApi(circleExecutor);
       const activityPayerAddresses = resolveSessionActivityPayerAddresses(state.records);
       res.json({
-        executorAddress: executorAddress ?? circleExecutor,
+        executorAddress,
         executorReady: readiness.canRun,
         sellerAddress: SELLER,
         circleCli: circleCli.circleCliInstalled(),
