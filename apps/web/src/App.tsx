@@ -30,11 +30,14 @@ import {
 import {
   IconActivity,
   IconAgent,
+  IconClose,
   IconLibrary,
   IconMarketplace,
+  IconMenu,
   IconPolicy,
   IconRefresh,
   IconTrace,
+  IconWallet,
 } from "./icons.tsx";
 import { PaymentTrace } from "./trace/PaymentTrace.tsx";
 import { StackStatusPanel } from "./trace/StackStatus.tsx";
@@ -43,6 +46,7 @@ import { AgentChatView } from "./agent/AgentChatView.tsx";
 import { DeliverablesView } from "./deliverables/DeliverablesView.tsx";
 import { CircleLoginPanel } from "./circle/CircleLoginPanel.tsx";
 import { formatWorkflowError } from "./format.ts";
+import { useIsMobile } from "./use-mobile.ts";
 
 type Tab = "agent" | "library" | "marketplace" | "policy" | "activity" | "trace";
 type ActivityScope = "all" | "mine";
@@ -63,6 +67,11 @@ const NAV: { id: Tab; label: string; Icon: typeof IconMarketplace }[] = [
   { id: "activity", label: "Activity", Icon: IconActivity },
   { id: "trace", label: "Trace", Icon: IconTrace },
 ];
+
+function shortEmail(email: string): string {
+  const local = email.split("@")[0] ?? email;
+  return local.length > 14 ? `${local.slice(0, 13)}…` : local;
+}
 
 export function App() {
   const [tab, setTab] = useState<Tab>("agent");
@@ -85,6 +94,8 @@ export function App() {
   const [activityPayerAddresses, setActivityPayerAddresses] = useState<string[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [butlerBusy, setButlerBusy] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   const loadActivityLedger = useCallback(async (scope: ActivityScope) => {
     setActivityLoading(true);
@@ -212,6 +223,28 @@ export function App() {
     }
   }, [ledger, tab, activityScope]);
 
+  useEffect(() => {
+    if (!isMobile) setMobileMenuOpen(false);
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileMenuOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [mobileMenuOpen]);
+
+  const goToTab = (id: Tab) => {
+    setTab(id);
+    setMobileMenuOpen(false);
+  };
+
   const payerReady =
     agentStatus?.canRun === true ||
     (!!circleStatus?.loggedIn &&
@@ -312,8 +345,25 @@ export function App() {
       ? circleStatus.executorAddress
       : agentStatus?.circleExecutorAddress ?? null;
 
+  const gatewayBalance =
+    circleStatus?.gatewayBalanceUsdc ?? agentStatus?.gatewayBalanceUsdc ?? null;
+  const gatewayLabel =
+    gatewayBalance != null ? `$${formatUsdc(gatewayBalance)}` : "—";
+  const gatewayLow = Number(gatewayBalance ?? 0) === 0;
+
+  const accountLabel = circleStatus?.loggedIn
+    ? circleStatus.email
+      ? shortEmail(circleStatus.email)
+      : userWallet
+        ? shortAddr(userWallet)
+        : "Connected"
+    : "Sign in";
+
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell ${isMobile ? "is-mobile" : ""} ${tab === "agent" ? "app-shell--chat" : ""}`}
+    >
+      {!isMobile && (
       <aside className="sidebar">
         <div className="sidebar-brand">
           <img src="/logo.png" alt="" className="brand-mark" width={28} height={28} />
@@ -344,8 +394,128 @@ export function App() {
           </div>
         </div>
       </aside>
+      )}
 
-      <main className="main">
+      {isMobile && (
+      <header className="mobile-header">
+        <button
+          type="button"
+          className="mobile-header-brand"
+          onClick={() => goToTab("agent")}
+          aria-label="Butler home"
+        >
+          <img src="/logo.png" alt="" className="brand-mark" width={24} height={24} />
+          <span className="mobile-header-title">Butler</span>
+        </button>
+
+        <button
+          type="button"
+          className={`mobile-header-pill account ${circleStatus?.loggedIn ? "connected" : ""}`}
+          onClick={() => setMobileMenuOpen(true)}
+          aria-label="Account and menu"
+        >
+          <IconWallet size={14} />
+          <span className="mobile-header-pill-text">{accountLabel}</span>
+        </button>
+
+        <button
+          type="button"
+          className={`mobile-header-pill balance ${gatewayLow ? "warn" : ""}`}
+          onClick={() => setMobileMenuOpen(true)}
+          aria-label={`Gateway balance ${gatewayLabel}`}
+        >
+          <span className="mobile-header-pill-label">GW</span>
+          <span className="mobile-header-pill-text">{gatewayLabel}</span>
+        </button>
+
+        <button
+          type="button"
+          className={`mobile-menu-toggle ${mobileMenuOpen ? "open" : ""}`}
+          onClick={() => setMobileMenuOpen((v) => !v)}
+          aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={mobileMenuOpen}
+        >
+          {mobileMenuOpen ? <IconClose size={20} /> : <IconMenu size={20} />}
+        </button>
+      </header>
+      )}
+
+      {isMobile && mobileMenuOpen && (
+        <>
+          <button
+            type="button"
+            className="mobile-menu-backdrop"
+            aria-label="Close menu"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <div className="mobile-menu-panel" role="dialog" aria-label="Navigation menu">
+            <div className="mobile-menu-account">
+              <div className="mobile-menu-account-row">
+                <IconWallet size={18} />
+                <div className="mobile-menu-account-copy">
+                  <strong>{circleStatus?.loggedIn ? circleStatus.email ?? "Circle payer" : "Not signed in"}</strong>
+                  {userWallet ? (
+                    <span className="muted small mono" title={userWallet}>
+                      {shortAddr(userWallet)}
+                    </span>
+                  ) : (
+                    <span className="muted small">Log in to pay agents via x402</span>
+                  )}
+                </div>
+              </div>
+              <div className={`mobile-menu-balance ${gatewayLow ? "warn" : ""}`}>
+                <span className="mobile-menu-balance-label">Gateway USDC</span>
+                <span className="mobile-menu-balance-value">{gatewayLabel}</span>
+              </div>
+            </div>
+
+            <nav className="mobile-menu-nav" aria-label="Sections">
+              {NAV.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`mobile-menu-nav-item ${tab === id ? "active" : ""}`}
+                  onClick={() => goToTab(id)}
+                >
+                  <Icon size={18} />
+                  <span>{label}</span>
+                  {tab === id && <span className="mobile-menu-nav-dot" aria-hidden />}
+                </button>
+              ))}
+            </nav>
+
+            <div className="mobile-menu-tools">
+              <CircleLoginPanel
+                variant="toolbar"
+                onReady={refresh}
+                onLoginSuccess={() => {
+                  void refresh();
+                }}
+              />
+              <div className="mobile-menu-tools-row">
+                <MetricChip label="Mode" value={live ? "Live" : "Dev"} variant={live ? "success" : "default"} />
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() => {
+                    void refresh();
+                  }}
+                >
+                  <IconRefresh size={15} />
+                  Refresh
+                </button>
+              </div>
+              <div className="mobile-menu-meta">
+                <StatusDot live={live} />
+                <span className="chain-tag">Arc · x402</span>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      <main className={`main ${isMobile ? "main--mobile" : ""}`}>
+        {!isMobile && (
         <header className="topbar">
           <div className="topbar-left">
             <nav className="topbar-crumb" aria-label="Breadcrumb">
@@ -414,6 +584,7 @@ export function App() {
             </div>
           </div>
         </header>
+        )}
 
         <div className="main-inner">
           {workflowMessage && tab === "marketplace" && (
