@@ -13,7 +13,6 @@ import { handleGetUserPreferences, handlePutUserPreferences } from "./user-prefe
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_PATH = resolveButlerStatePath();
-const MARKETPLACE_PATH = resolveMarketplaceStatePath();
 const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);
 const SELLER = (process.env.BUTLER_SELLER_ADDRESS ?? "0x933a2405f84c224be1ef373ba16e992e1f459682") as `0x${string}`;
 
@@ -34,6 +33,38 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+type AgentDeps = {
+  agentRunReadiness: () => { canRun: boolean; reason?: string; mode?: string };
+  loadState: typeof import("@butler/core").loadState;
+  getExecutorWalletAddress: () => string | null;
+  resolveSessionActivityPayerAddresses: (records: import("@butler/core").SpendRecord[]) => string[];
+  circleCli: typeof import("./circle-cli.ts");
+  circleConfig: typeof import("./circle-config.ts");
+  getOpenAiPlannerStatus: () => import("./openai-planner.ts").OpenAiPlannerStatus;
+};
+
+let agentDepsPromise: Promise<AgentDeps> | null = null;
+
+function loadAgentDeps(): Promise<AgentDeps> {
+  agentDepsPromise ??= Promise.all([
+    import("./agent-runner.ts"),
+    import("@butler/core"),
+    import("./ledger-payer.ts"),
+    import("./circle-cli.ts"),
+    import("./circle-config.ts"),
+    import("./openai-planner.ts"),
+  ]).then(([agentRunner, core, ledgerPayer, circleCli, circleConfig, openai]) => ({
+    agentRunReadiness: agentRunner.agentRunReadiness,
+    loadState: core.loadState,
+    getExecutorWalletAddress: ledgerPayer.getExecutorWalletAddress,
+    resolveSessionActivityPayerAddresses: ledgerPayer.resolveSessionActivityPayerAddresses,
+    circleCli,
+    circleConfig,
+    getOpenAiPlannerStatus: openai.getOpenAiPlannerStatus,
+  }));
+  return agentDepsPromise;
+}
+
 async function registerMarketplaceExecuteRoutes(
   app: Express,
   importPromise: Promise<typeof import("./marketplace-execute.ts")>
@@ -43,7 +74,8 @@ async function registerMarketplaceExecuteRoutes(
     policyStatePath: STATE_PATH,
     sellerAddress: SELLER,
   };
-  const { setExecuteLoadError } = await import("./route-loader-status.ts");
+  const { setExecuteLoadError, setBootPhase } = await import("./route-loader-status.ts");
+  setBootPhase("execute-import");
 
   try {
     const mod = await Promise.race([
@@ -53,6 +85,7 @@ async function registerMarketplaceExecuteRoutes(
       }),
     ]);
 
+    setBootPhase("execute-gateway");
     let gateway: Awaited<ReturnType<typeof mod.createMarketplaceGateway>> | null = null;
     try {
       gateway = await Promise.race([
@@ -69,6 +102,7 @@ async function registerMarketplaceExecuteRoutes(
     }
 
     mod.registerAgentExecuteRoutes(app, gateway, opts);
+    setBootPhase("live");
   } catch (error) {
     const message = error instanceof Error ? error.message : "Execute routes failed to load";
     setExecuteLoadError(message);
@@ -76,8 +110,10 @@ async function registerMarketplaceExecuteRoutes(
     try {
       const mod = await Promise.race([importPromise, sleep(60_000)]);
       mod.registerAgentExecuteRoutes(app, null, opts);
+      setBootPhase("live-lite");
       console.log("  x402 execute routes: fallback lite mode (no Gateway middleware)");
     } catch (fallbackErr) {
+      setBootPhase("execute-failed");
       console.error(
         "Execute routes fallback failed:",
         fallbackErr instanceof Error ? fallbackErr.message : fallbackErr
@@ -87,30 +123,18 @@ async function registerMarketplaceExecuteRoutes(
 }
 
 export async function loadTaskRoutes(app: Express): Promise<void> {
+  const { setBootPhase } = await import("./route-loader-status.ts");
+  setBootPhase("start");
   console.log("  task routes: boot start");
+
   /** Prefetch while lighter routes register — import is heavy on small VMs. */
   const marketplaceExecuteImport = import("./marketplace-execute.ts");
+  void loadAgentDeps().catch((err) => {
+    console.error("Agent deps prefetch failed:", err instanceof Error ? err.message : err);
+  });
 
-  const [
-    { agentRunReadiness },
-    { loadState, remainingDailyUsdc },
-    { getExecutorWalletAddress, resolveSessionActivityPayerAddresses },
-    circleCli,
-    circleConfig,
-  ] = await Promise.all([
-    import("./agent-runner.ts"),
-    import("@butler/core"),
-    import("./ledger-payer.ts"),
-    import("./circle-cli.ts"),
-    import("./circle-config.ts"),
-  ]);
-  console.log("  task routes: core deps loaded");
-
-  const [{ registerTraceRoutes }, { getOpenAiPlannerStatus }] = await Promise.all([
-    import("./trace-routes.ts"),
-    import("./openai-planner.ts"),
-  ]);
-
+  setBootPhase("core");
+  const { loadState, loadMarketplaceState } = await import("@butler/core");
   loadState(STATE_PATH, SELLER);
 
   app.get("/api/policy", (_req, res) => {
@@ -133,35 +157,39 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
     handlePutUserPreferences(req, res);
   });
 
-  void registerTraceRoutes(app).catch((err) => {
-    console.error("Trace routes failed to load:", err instanceof Error ? err.message : err);
-  });
+  setBootPhase("trace");
+  void import("./trace-routes.ts")
+    .then(({ registerTraceRoutes }) => registerTraceRoutes(app))
+    .catch((err) => {
+      console.error("Trace routes failed to load:", err instanceof Error ? err.message : err);
+    });
 
   app.get("/api/agent/status", async (_req, res) => {
     try {
-      const state = loadState(STATE_PATH, SELLER);
-      const circleExecutor = circleConfig.resolveCircleExecutorAddress();
+      const deps = await loadAgentDeps();
+      const state = deps.loadState(STATE_PATH, SELLER);
+      const circleExecutor = deps.circleConfig.resolveCircleExecutorAddress();
       const executorAddress =
-        circleExecutor ?? (hasActiveUserSession() ? null : getExecutorWalletAddress());
-      const readiness = agentRunReadiness();
-      if (!circleExecutor && circleCli.circleCliLoggedIn()) {
-        void Promise.resolve().then(() => circleCli.ensureCircleExecutor());
+        circleExecutor ?? (hasActiveUserSession() ? null : deps.getExecutorWalletAddress());
+      const readiness = deps.agentRunReadiness();
+      if (!circleExecutor && deps.circleCli.circleCliLoggedIn()) {
+        void Promise.resolve().then(() => deps.circleCli.ensureCircleExecutor());
       }
-      const gatewayBalanceUsdc = circleCli.getGatewayBalanceForApi(circleExecutor);
-      const activityPayerAddresses = resolveSessionActivityPayerAddresses(state.records);
+      const gatewayBalanceUsdc = deps.circleCli.getGatewayBalanceForApi(circleExecutor);
+      const activityPayerAddresses = deps.resolveSessionActivityPayerAddresses(state.records);
       res.json({
         executorAddress,
         executorReady: readiness.canRun,
         sellerAddress: SELLER,
-        circleCli: circleCli.circleCliInstalled(),
-        circleCliLoggedIn: circleCli.circleCliLoggedIn(),
+        circleCli: deps.circleCli.circleCliInstalled(),
+        circleCliLoggedIn: deps.circleCli.circleCliLoggedIn(),
         circleExecutorAddress: circleExecutor,
         activityPayerAddresses,
-        useCircleCli: circleConfig.useCircleCliPayments() || circleCli.circleCliLoggedIn(),
+        useCircleCli: deps.circleConfig.useCircleCliPayments() || deps.circleCli.circleCliLoggedIn(),
         canRun: readiness.canRun,
         paymentMode: readiness.mode,
         gatewayBalanceUsdc,
-        openAiPlanner: getOpenAiPlannerStatus(),
+        openAiPlanner: deps.getOpenAiPlannerStatus(),
         ...(readiness.reason ? { reason: readiness.reason } : {}),
       });
     } catch (error) {
@@ -169,7 +197,8 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
     }
   });
 
-  const butlerReadiness = (_req: Request, res: Response) => {
+  const butlerReadiness = async (_req: Request, res: Response) => {
+    const { agentRunReadiness } = await import("./agent-runner.ts");
     res.json(agentRunReadiness());
   };
 
@@ -233,9 +262,8 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
   app.post("/api/payer-agent/run", butlerRun);
   app.get("/api/payer-agent/run/:runId", butlerRunPoll);
 
-  const { loadMarketplaceState } = await import("@butler/core");
+  setBootPhase("auctions");
   const apiBase = resolveApiBase();
-
   const { registerAuctionRoutes } = await import("./auction-routes.ts");
   registerAuctionRoutes({
     app,
@@ -286,10 +314,10 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
     res.json(jobs);
   });
 
+  setBootPhase("shell-done");
   console.log(
     "  task routes: policy · trace · agent/status · butler/run · auctions · deliverables (lite mode)"
   );
 
-  /** Do not block boot — heavy import + Gateway warm can take minutes on small VMs. */
   void registerMarketplaceExecuteRoutes(app, marketplaceExecuteImport);
 }
