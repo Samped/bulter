@@ -97,6 +97,47 @@ export function isSentimentOnlyBrief(brief: string): boolean {
   return wantsSentiment && !wantsDeepBrief(brief) && !isChartOnlyBrief(brief);
 }
 
+/** Wallet reputation / copy-trade due diligence — Wallet Reputation Agent. */
+export function isWalletReputationBrief(brief: string): boolean {
+  if (wantsDeepBrief(brief)) return false;
+  const t = brief.toLowerCase();
+  const hasWallet = /\b0x[a-fA-F0-9]{40}\b/.test(brief);
+  return (
+    /wallet reputation|scam score|sybil score|whale score|copy trade|copy-trading|wallet risk/.test(t) ||
+    (hasWallet && /reputation|scam|sybil|whale|pnl|profit|copy/.test(t))
+  );
+}
+
+/** Token deep-dive — Token Research Agent. */
+export function isTokenResearchBrief(brief: string): boolean {
+  if (wantsDeepBrief(brief)) return false;
+  const t = brief.toLowerCase();
+  return (
+    /token research|token analysis|analyze token|tokenomics|unlock schedule|vesting schedule|holder distribution/.test(
+      t
+    ) || (/analyze\b/.test(t) && /\b(token|coin)\b/.test(t))
+  );
+}
+
+/** DeFi portfolio risk — Portfolio Risk Agent. */
+export function isPortfolioRiskBrief(brief: string): boolean {
+  if (wantsDeepBrief(brief)) return false;
+  const t = brief.toLowerCase();
+  return /liquidation risk|value at risk|\bvar\b|portfolio risk|defi portfolio|collateral risk|hedge suggestion/.test(
+    t
+  );
+}
+
+/** Multi-source crypto news intelligence report. */
+export function isCryptoNewsIntelBrief(brief: string): boolean {
+  if (wantsDeepBrief(brief)) return false;
+  const t = brief.toLowerCase();
+  return (
+    /news intelligence|market-moving|market moving events|bullish.*bearish|bearish.*bullish/.test(t) ||
+    (/crypto news|news report/.test(t) && /sentiment|intelligence|market-moving|sources/.test(t))
+  );
+}
+
 /** Solidity source pasted in a brief — route to Audit Agent, not on-chain market analysis. */
 export function isSoliditySourceBrief(brief: string): boolean {
   return /pragma\s+solidity/i.test(brief) && /contract\s+\w+/i.test(brief);
@@ -147,6 +188,18 @@ export function resolveExpressBrief(brief: string): ExpressBrief | null {
   }
   if (isBillOnlyBrief(brief)) {
     return { category: "bills", agentId: "bill-agent", label: "utility bill quote" };
+  }
+  if (isWalletReputationBrief(brief)) {
+    return { category: "market-data", agentId: "wallet-reputation-agent", label: "wallet reputation" };
+  }
+  if (isTokenResearchBrief(brief)) {
+    return { category: "research", agentId: "token-research-agent", label: "token research" };
+  }
+  if (isPortfolioRiskBrief(brief)) {
+    return { category: "reporting", agentId: "portfolio-risk-agent", label: "portfolio risk" };
+  }
+  if (isCryptoNewsIntelBrief(brief)) {
+    return { category: "news", agentId: "crypto-news-intelligence-agent", label: "news intelligence" };
   }
   if (isHeadlineOnlyBrief(brief)) {
     return { category: "news", agentId: "news-agent", label: "headlines" };

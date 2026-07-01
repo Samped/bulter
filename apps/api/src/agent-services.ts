@@ -751,3 +751,233 @@ If user lists services in the brief, include them; otherwise provide a template 
 /** Marketplace agent aliases */
 export const buildBillPayload = buildUtilityQuote;
 export const buildSubscriptionPayload = buildSubscriptionAudit;
+
+export function extractWalletAddress(text?: string): `0x${string}` | null {
+  const match = text?.match(/\b(0x[a-fA-F0-9]{40})\b/);
+  return match ? (match[1] as `0x${string}`) : null;
+}
+
+async function fetchCoinDetail(symbol: string) {
+  const id = CRYPTO_IDS[symbol.toLowerCase()] ?? symbol.toLowerCase();
+  const url = `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(id)}?localization=false&tickers=false&community_data=true&developer_data=false`;
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`CoinGecko detail failed (${res.status})`);
+  const data = (await res.json()) as {
+    id?: string;
+    symbol?: string;
+    name?: string;
+    market_data?: {
+      current_price?: { usd?: number };
+      market_cap?: { usd?: number };
+      total_volume?: { usd?: number };
+      circulating_supply?: number;
+      total_supply?: number;
+      max_supply?: number;
+    };
+    description?: { en?: string };
+  };
+  return {
+    id: data.id ?? id,
+    symbol: (data.symbol ?? symbol).toUpperCase(),
+    name: data.name ?? symbol.toUpperCase(),
+    priceUsd: data.market_data?.current_price?.usd,
+    marketCapUsd: data.market_data?.market_cap?.usd,
+    volume24hUsd: data.market_data?.total_volume?.usd,
+    circulatingSupply: data.market_data?.circulating_supply,
+    totalSupply: data.market_data?.total_supply,
+    maxSupply: data.market_data?.max_supply,
+    description: data.description?.en?.slice(0, 500),
+    source: "coingecko",
+    asOf: new Date().toISOString(),
+  };
+}
+
+export async function buildPortfolioRiskPayload(brief?: string, priorContext?: string) {
+  if (!openAiConfigured()) {
+    throw analystUnavailable("Portfolio Risk Agent");
+  }
+  const topic = brief?.trim() || "DeFi portfolio risk";
+  const market = await fetchMarketQuote(brief).catch(() => null);
+  const ctx = priorContext?.trim() ? `\n\nContext from prior agents:\n${priorContext.trim().slice(0, 6000)}` : "";
+
+  return openAiJson<{
+    type: string;
+    focus: string;
+    liquidationRisk: { score: number; label: string; positionsAtRisk: string[] };
+    valueAtRisk: { horizon: string; confidence: string; estimateUsd: string; note: string };
+    portfolioRiskScore: number;
+    factors: { name: string; severity: "low" | "medium" | "high"; note: string }[];
+    hedges: { action: string; instrument: string; rationale: string }[];
+    summary: string;
+  }>(
+    `You are a DeFi risk officer. Analyze leveraged/DeFi portfolio risk. Return JSON:
+type="portfolio-risk", focus, liquidationRisk (score 0-100, label, positionsAtRisk strings),
+valueAtRisk (horizon e.g. "24h", confidence e.g. "95%", estimateUsd range string, note),
+portfolioRiskScore (0-100), factors (4-6), hedges (2-4 with action/instrument/rationale), summary.
+Not investment advice. Be specific to DeFi (collateral ratios, LTV, funding, stablecoin depeg).`,
+    `Portfolio risk analysis: ${topic}${market ? `\nMarket: ${JSON.stringify(market)}` : ""}${ctx}`
+  ).then((data) => ({
+    ...data,
+    brief: brief?.trim() || undefined,
+    marketContext: market ?? undefined,
+    generatedAt: new Date().toISOString(),
+    source: ANALYST_SOURCE,
+  }));
+}
+
+export async function buildCryptoNewsIntelligencePayload(brief?: string) {
+  const topic = brief?.trim() || "cryptocurrency markets";
+  const live = await fetchLiveCryptoHeadlines(40).catch(() => [] as LiveHeadline[]);
+
+  if (live.length === 0 && !openAiConfigured()) {
+    throw analystUnavailable("Crypto News Intelligence Agent");
+  }
+
+  if (!openAiConfigured()) {
+    return {
+      type: "crypto-news-intelligence",
+      topic,
+      marketSentiment: { score: 0, label: "neutral" as const },
+      marketMovingEvents: live.slice(0, 8).map((h) => ({
+        headline: h.title,
+        source: h.source,
+        url: h.url,
+        impact: "medium" as const,
+        bullishBearish: 0,
+        whyItMatters: "Review headline for trading implications.",
+      })),
+      summary: `Synthesized ${live.length} headlines from live feeds.`,
+      sourcesScanned: live.length,
+      generatedAt: new Date().toISOString(),
+      source: "rss",
+    };
+  }
+
+  return openAiJson<{
+    type: string;
+    topic: string;
+    marketSentiment: { score: number; label: "bullish" | "bearish" | "neutral" | "mixed" };
+    marketMovingEvents: {
+      headline: string;
+      source: string;
+      url?: string;
+      impact: "low" | "medium" | "high";
+      bullishBearish: number;
+      whyItMatters: string;
+    }[];
+    themes: string[];
+    summary: string;
+  }>(
+    `You are a crypto intelligence desk. Given live RSS headlines from the last 24h, produce a market intelligence report.
+Use ONLY provided headlines — do not invent stories.
+Return JSON: type="crypto-news-intelligence", topic, marketSentiment (score -1 to 1, label),
+marketMovingEvents (6-10 most market-moving with impact, bullishBearish -1 to 1, whyItMatters),
+themes (3-5 macro themes), summary (executive paragraph).`,
+    `User brief: ${topic}
+
+Live headlines (${live.length} scanned):
+${JSON.stringify(live.slice(0, 35), null, 2)}`
+  ).then((data) => ({
+    ...data,
+    topic,
+    sourcesScanned: live.length,
+    generatedAt: new Date().toISOString(),
+    source: live.length > 0 ? "rss+butler" : ANALYST_SOURCE,
+  }));
+}
+
+export async function buildWalletReputationPayload(brief?: string) {
+  if (!openAiConfigured()) {
+    throw analystUnavailable("Wallet Reputation Agent");
+  }
+  const wallet = extractWalletAddress(brief);
+  const address = wallet ?? "0x0000000000000000000000000000000000000000";
+  const request = brief?.trim() || `Wallet reputation for ${address}`;
+
+  return openAiJson<{
+    type: string;
+    address: string;
+    scamScore: number;
+    whaleScore: number;
+    sybilScore: number;
+    defiHistory: { protocols: string[]; activityLevel: string; tenure: string };
+    pnlEstimate: { label: string; confidence: "low" | "medium" | "high"; note: string };
+    flags: string[];
+    copyTradeVerdict: "avoid" | "caution" | "neutral" | "favorable";
+    summary: string;
+  }>(
+    `You assess EVM wallet reputation for copy-trading due diligence. Return JSON:
+type="wallet-reputation", address, scamScore (0-100, higher=worse), whaleScore (0-100),
+sybilScore (0-100, higher=worse), defiHistory (protocols[], activityLevel, tenure),
+pnlEstimate (label e.g. "profitable trader", confidence, note — heuristic only),
+flags (red/yellow flags), copyTradeVerdict, summary.
+Note: without on-chain API this is pattern-based heuristics from address + user context — state limitations in summary.`,
+    `Wallet reputation check: ${request}\nAddress: ${address}`
+  ).then((data) => ({
+    ...data,
+    address,
+    brief: brief?.trim() || undefined,
+    disclaimer: "Heuristic assessment — verify on-chain before copying trades.",
+    generatedAt: new Date().toISOString(),
+    source: ANALYST_SOURCE,
+  }));
+}
+
+export async function buildTokenResearchPayload(brief?: string, priorContext?: string) {
+  const topic = brief?.trim() || "token research";
+  const { symbol } = inferSymbol(brief);
+  const coin = await fetchCoinDetail(symbol).catch(() => null);
+  const ctx = priorContext?.trim() ? `\n\nPrior context:\n${priorContext.trim().slice(0, 4000)}` : "";
+
+  if (!openAiConfigured() && !coin) {
+    throw analystUnavailable("Token Research Agent");
+  }
+
+  if (!openAiConfigured()) {
+    return {
+      type: "token-research",
+      token: symbol,
+      marketData: coin,
+      holders: { distribution: "Data unavailable without analyst", topHolders: [] as string[] },
+      tvl: { estimate: "N/A", protocols: [] as string[] },
+      unlockSchedule: [] as { date: string; amount: string; note: string }[],
+      tokenomics: { supply: coin?.circulatingSupply, maxSupply: coin?.maxSupply },
+      competitors: [] as string[],
+      risks: ["Configure OpenAI for full token research synthesis."],
+      summary: `${symbol} market snapshot from CoinGecko.`,
+      generatedAt: new Date().toISOString(),
+      source: "coingecko",
+    };
+  }
+
+  return openAiJson<{
+    type: string;
+    token: string;
+    holders: { distribution: string; topHolders: string[] };
+    tvl: { estimate: string; protocols: string[] };
+    unlockSchedule: { date: string; amount: string; note: string }[];
+    tokenomics: { model: string; inflation: string; utility: string; supplyNotes: string };
+    competitors: { name: string; differentiator: string }[];
+    risks: { risk: string; severity: "low" | "medium" | "high" }[];
+    bullCase: string;
+    bearCase: string;
+    summary: string;
+  }>(
+    `You are a crypto token analyst. Return JSON: type="token-research", token symbol,
+holders (distribution narrative, topHolders as % strings),
+tvl (estimate string, protocols[]), unlockSchedule (upcoming unlocks if known or estimated),
+tokenomics (model, inflation, utility, supplyNotes), competitors (3-5 with differentiator),
+risks (4-6 with severity), bullCase, bearCase, summary.
+Use market data when provided; clearly note estimates vs verified data.`,
+    `Token research: ${topic}
+Symbol: ${symbol}
+${coin ? `Market data: ${JSON.stringify(coin)}` : ""}${ctx}`
+  ).then((data) => ({
+    ...data,
+    token: data.token || symbol,
+    marketData: coin ?? undefined,
+    brief: brief?.trim() || undefined,
+    generatedAt: new Date().toISOString(),
+    source: coin ? "coingecko+butler" : ANALYST_SOURCE,
+  }));
+}

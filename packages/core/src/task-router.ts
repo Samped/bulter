@@ -56,6 +56,10 @@ function scoreAgent(agent: MarketplaceAgent, task: string): number {
     "onchain-agent": ["onchain", "on-chain", "whale", "flows", "holders", "network"],
     "competitor-agent": ["competitor", "moat", "versus", "vs", "market share", "landscape"],
     "risk-agent": ["risk", "hedge", "drawdown", "volatility", "portfolio"],
+    "portfolio-risk-agent": ["liquidation", "var", "defi portfolio", "collateral", "leverage", "hedge"],
+    "crypto-news-intelligence-agent": ["intelligence", "market-moving", "bullish", "bearish", "news report"],
+    "wallet-reputation-agent": ["wallet", "reputation", "scam", "sybil", "whale", "copy trade", "pnl"],
+    "token-research-agent": ["token", "tokenomics", "unlock", "vesting", "holders", "tvl"],
     "bill-agent": ["utility", "bill", "invoice", "electricity", "energy"],
     "subscription-agent": ["subscription", "saas", "recurring", "netflix", "spending"],
   };
@@ -129,6 +133,17 @@ function matchEtf(task: string): TaskPlan | null {
   }
 
   if (/defi|yield|tvl|uniswap|aave/.test(t)) {
+    const dd = getMarketplaceEtf("defi-due-diligence-etf");
+    if (dd && (/wallet|reputation|copy trade|token research|due diligence/.test(t) || /0x[a-fA-F0-9]{40}/.test(task))) {
+      return {
+        strategy: "etf",
+        etfId: dd.id,
+        agentIds: dd.agentIds,
+        reason: `Matched workflow "${dd.name}" for DeFi due diligence.`,
+        estimatedUsdc: dd.bundlePriceUsdc,
+        etaSeconds: dd.etaSeconds,
+      };
+    }
     const etf = getMarketplaceEtf("defi-alpha-etf");
     if (etf) {
       return {
