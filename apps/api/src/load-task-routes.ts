@@ -10,9 +10,6 @@ import { filterJobsForOwner, jobVisibleToOwner, resolveJobOwnerFromRequest } fro
 import { resolveButlerStatePath, resolveMarketplaceStatePath } from "./data-paths.ts";
 import { handleGetPolicy, handlePutPolicy, handleResetPolicy } from "./policy-handlers.ts";
 import { handleGetUserPreferences, handlePutUserPreferences } from "./user-preferences.ts";
-import { registerAuctionRoutes } from "./auction-routes.ts";
-import { registerTraceRoutes } from "./trace-routes.ts";
-import { getOpenAiPlannerStatus } from "./openai-planner.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_PATH = resolveButlerStatePath();
@@ -108,6 +105,11 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
     import("./circle-config.ts"),
   ]);
   console.log("  task routes: core deps loaded");
+
+  const [{ registerTraceRoutes }, { getOpenAiPlannerStatus }] = await Promise.all([
+    import("./trace-routes.ts"),
+    import("./openai-planner.ts"),
+  ]);
 
   loadState(STATE_PATH, SELLER);
 
@@ -231,23 +233,17 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
   app.post("/api/payer-agent/run", butlerRun);
   app.get("/api/payer-agent/run/:runId", butlerRunPoll);
 
-  const [
-    { buildJobSummary, inferPlanFromJob },
-    { loadMarketplaceState },
-  ] = await Promise.all([
-    import("./marketplace-task.ts"),
-    import("@butler/core"),
-  ]);
-  console.log("  task routes: marketplace task module loaded");
-
+  const { loadMarketplaceState } = await import("@butler/core");
   const apiBase = resolveApiBase();
 
+  const { registerAuctionRoutes } = await import("./auction-routes.ts");
   registerAuctionRoutes({
     app,
     statePath: STATE_PATH,
     sellerAddress: SELLER,
     apiBase,
   });
+  console.log("  task routes: auctions registered");
 
   const { getRouteLoaderStatus } = await import("./route-loader-status.ts");
   app.get("/api/marketplace/loader-status", (_req, res) => {
@@ -262,18 +258,20 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
     res.json(loadMp().jobs.slice(-50).reverse());
   });
 
-  app.get("/api/marketplace/jobs/:id", (req, res) => {
+  app.get("/api/marketplace/jobs/:id", async (req, res) => {
     const owner = resolveJobOwnerFromRequest(req);
     const job = loadMp().jobs.find((j) => j.id === req.params.id);
     if (!job || !jobVisibleToOwner(job, owner)) {
       res.status(404).json({ error: "Job not found" });
       return;
     }
+    const { buildJobSummary, inferPlanFromJob } = await import("./marketplace-task.ts");
     res.json({ ...job, plan: job.plan ?? inferPlanFromJob(job), summary: buildJobSummary(job) });
   });
 
-  app.get("/api/marketplace/deliverables", (req, res) => {
+  app.get("/api/marketplace/deliverables", async (req, res) => {
     const owner = resolveJobOwnerFromRequest(req);
+    const { buildJobSummary, inferPlanFromJob } = await import("./marketplace-task.ts");
     const jobs = filterJobsForOwner(
       loadMp().jobs.filter((j) => j.status === "completed"),
       owner
