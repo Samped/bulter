@@ -203,7 +203,7 @@ const AGENT_SERVICES: Record<string, AgentServiceDef> = {
   },
   "portfolio-risk-agent": {
     price: "$0.06",
-    merchantId: "utility-quote",
+    merchantId: "research-papers",
     category: "apis",
     policyAgent: "research",
     etaSeconds: 22,

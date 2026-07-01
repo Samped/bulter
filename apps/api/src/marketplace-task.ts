@@ -413,7 +413,6 @@ export function finalizeCompletedJob(
   orchestration: OrchestratorResult
 ): MarketplaceJob {
   const stepsResult = orchestration?.steps ?? [];
-  const completed = stepsResult.length > 0 && stepsResult.every((s) => s?.ok);
   const steps = job.steps.map((step, i) => {
     const r = stepsResult[i];
     if (!r) return { ...step, status: "failed" as const };
@@ -427,6 +426,8 @@ export function finalizeCompletedJob(
   });
 
   const doneSteps = steps.filter((s) => s.status === "done" && s.output != null);
+  const completed =
+    stepsResult.length > 0 && stepsResult.every((s) => s?.ok) && doneSteps.length === steps.length;
   const combined = combineWorkflowResult(doneSteps);
   const result = combined ?? orchestration.result;
 
@@ -442,8 +443,11 @@ export function finalizeCompletedJob(
   return finalized;
 }
 
+const EMPTY_DELIVERABLE_SUMMARY = "No deliverable content available.";
+
 export function buildJobSummary(job: MarketplaceJob): string {
-  if (job.summary?.trim()) return job.summary.trim();
+  const cached = job.summary?.trim();
+  if (cached && cached !== EMPTY_DELIVERABLE_SUMMARY) return cached;
   const doneSteps = job.steps.filter((s) => s.status === "done" && s.output != null);
   if (doneSteps.length > 1) {
     const combined = combineWorkflowResult(doneSteps);
@@ -452,7 +456,15 @@ export function buildJobSummary(job: MarketplaceJob): string {
   }
   if (doneSteps.length === 1) return formatTaskResult(doneSteps[0]!.output);
   if (job.result != null) return formatTaskResult(job.result);
-  return "No deliverable content available.";
+  const failed = job.steps.filter((s) => s.status === "failed" || s.error);
+  if (failed.length > 0) {
+    const detail = failed
+      .map((s) => s.error || `${s.label ?? s.agentId}: step failed`)
+      .filter(Boolean)
+      .join("; ");
+    return detail ? `Deliverable could not be generated: ${detail}` : EMPTY_DELIVERABLE_SUMMARY;
+  }
+  return EMPTY_DELIVERABLE_SUMMARY;
 }
 
 export function planToJobPlan(plan: TaskPlan): MarketplaceJob["plan"] {

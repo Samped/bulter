@@ -370,7 +370,7 @@ export const MARKETPLACE_AGENTS: MarketplaceAgent[] = [
     servicePath: "/marketplace/agents/portfolio-risk-agent/execute",
     priceUsdc: "0.06",
     etaSeconds: 22,
-    merchantId: "utility-quote",
+    merchantId: "research-papers",
     policyAgent: "research",
     capabilities: ["liquidation", "var", "hedge", "defi-portfolio", "collateral", "leverage"],
   },

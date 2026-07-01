@@ -20,6 +20,26 @@ import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { appendLedgerFromOrchestration } from "./ledger-sync.ts";
 import { executeLocalAgentPay, isInternalAgentPayUrl, type LocalAgentExecuteOpts } from "./marketplace-execute.ts";
 
+const EMPTY_DELIVERABLE_SUMMARY = "No deliverable content available.";
+
+/** Agent execute responses wrap payload in `data`; reject payment-only or error bodies. */
+export function unwrapAgentExecutePayload(body: unknown): Record<string, unknown> | null {
+  if (!body || typeof body !== "object") return null;
+  const row = body as Record<string, unknown>;
+  if (typeof row.error === "string" && row.data == null) return null;
+  const inner = row.data;
+  if (inner && typeof inner === "object") return inner as Record<string, unknown>;
+  if (row.marketplace && !row.type && row.data == null) return null;
+  return row;
+}
+
+export function agentExecuteSucceeded(body: unknown): boolean {
+  const payload = unwrapAgentExecutePayload(body);
+  if (!payload) return false;
+  if (typeof payload.error === "string" && !payload.type) return false;
+  return Object.keys(payload).length > 0;
+}
+
 function snippetFromStepBody(body: unknown): string {
   if (!body || typeof body !== "object") return "";
   const row = body as Record<string, unknown>;
@@ -106,6 +126,16 @@ async function payAndFetch(
       }
       try {
         const body = JSON.parse(pay.stdout || "{}");
+        if (!agentExecuteSucceeded(body)) {
+          const errRow = body as Record<string, unknown>;
+          const err =
+            typeof errRow.error === "string"
+              ? errRow.error
+              : typeof errRow.message === "string"
+                ? errRow.message
+                : "Agent returned no deliverable after payment";
+          return { ok: false, status: 503, body, error: err };
+        }
         return { ok: true, status: 200, body };
       } catch {
         const res = await fetch(url, { headers: { Accept: "application/json" } });
@@ -132,7 +162,17 @@ async function payAndFetch(
         body = { raw: data };
       }
     }
-    return { ok: status >= 200 && status < 300, status, body };
+    if (!agentExecuteSucceeded(body)) {
+      const errRow = (body ?? {}) as Record<string, unknown>;
+      const err =
+        typeof errRow.error === "string"
+          ? errRow.error
+          : status >= 200 && status < 300
+            ? "Agent returned no deliverable after payment"
+            : `HTTP ${status}`;
+      return { ok: false, status: status || 503, body, error: err };
+    }
+    return { ok: true, status, body };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Payment failed";
     return { ok: false, status: 0, error: formatPaymentError(message) };
@@ -207,9 +247,11 @@ async function runOneStep(params: {
   }
 
   const body = finalRes?.body as Record<string, unknown> | undefined;
+  const payload = unwrapAgentExecutePayload(body);
+  const paid = !!finalRes?.ok && agentExecuteSucceeded(body);
   const stepResult: OrchestratorStepResult = {
     agentId: params.step.agentId,
-    ok: !!finalRes?.ok,
+    ok: paid,
     status: finalRes?.status ?? 0,
     settlementId:
       typeof body?.settlementId === "string"
@@ -217,8 +259,10 @@ async function runOneStep(params: {
         : typeof body?.transaction === "string"
           ? body.transaction
           : undefined,
-    output: body?.data ?? body,
-    error: finalRes?.error ?? (finalRes?.ok ? undefined : `HTTP ${finalRes?.status ?? 0}`),
+    output: payload ?? undefined,
+    error:
+      finalRes?.error ??
+      (paid ? undefined : typeof body?.error === "string" ? body.error : `HTTP ${finalRes?.status ?? 0}`),
   };
 
   if (stepResult.ok && stepResult.settlementId && params.internalPay?.policyStatePath && params.internalPay.sellerAddress) {
@@ -237,8 +281,8 @@ async function runOneStep(params: {
 
   let snippet = "";
   let output: unknown;
-  if (finalRes?.ok && body) {
-    output = body?.data ?? body;
+  if (paid && payload) {
+    output = payload;
     snippet = snippetFromStepBody(body);
   }
 

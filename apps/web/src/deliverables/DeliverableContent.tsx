@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { AGENT_COLORS, agentInitials } from "./utils.ts";
 import { unwrapAgentPayload } from "./format.ts";
+import { parseDeliverablePayload } from "./payload.ts";
 import { combineWorkflowResult } from "./combine.ts";
 import {
   auditSeverityClass,
@@ -13,6 +14,15 @@ import {
   formatBillDueDate,
   isUtilityBillPayload,
 } from "./bill.ts";
+import {
+  CryptoNewsBlock,
+  PortfolioRiskBlock,
+  TokenResearchBlock,
+  WalletReputationBlock,
+  renderDeFiAgentBlocks,
+  resolveDeFiPayload,
+  isIntelPayload,
+} from "./defi-agents.tsx";
 
 function ReportBlock({ data }: { data: Record<string, unknown> }) {
   const report = data.report as Record<string, unknown> | undefined;
@@ -502,6 +512,7 @@ function renderPayload(data: Record<string, unknown>) {
   if (data.type === "technical-analysis" || (typeof data.pattern === "string" && !Array.isArray(data.papers))) {
     blocks.push(<ChartBlock key="chart" data={data} />);
   }
+  blocks.push(...renderDeFiAgentBlocks(data));
   return blocks.length > 0 ? blocks : null;
 }
 
@@ -555,6 +566,11 @@ export function CombinedDeliverableBody({
     return <p className="paper-prose paper-empty">No structured output was stored for this job.</p>;
   }
 
+  const intelBlocks = renderDeFiAgentBlocks(merged, brief);
+  if (intelBlocks.length > 0 && isIntelPayload(merged)) {
+    return <div className="paper-sections paper-unified paper-intel-root">{intelBlocks}</div>;
+  }
+
   const contractSource = resolveAuditContractSource(brief, merged);
   const billRequest = billRequestText(brief, merged);
 
@@ -562,6 +578,10 @@ export function CombinedDeliverableBody({
   const defi = merged.defi as Record<string, unknown> | undefined;
   const macro = merged.macro as Record<string, unknown> | undefined;
   const risk = merged.risk as Record<string, unknown> | undefined;
+  const walletData = resolveDeFiPayload(merged, "walletReputation") ?? merged;
+  const tokenData = resolveDeFiPayload(merged, "tokenResearch") ?? merged;
+  const newsData = resolveDeFiPayload(merged, "newsIntelligence") ?? merged;
+  const portfolioData = resolveDeFiPayload(merged, "portfolioRisk") ?? merged;
   const chartData =
     merged.pattern != null || merged.type === "technical-analysis"
       ? merged
@@ -582,6 +602,18 @@ export function CombinedDeliverableBody({
   if (macro) blocks.push(<MacroBlock key="macro" data={macro} />);
   if (Array.isArray(merged.papers)) blocks.push(<ResearchBlock key="research" data={merged} />);
   if (risk) blocks.push(<RiskBlock key="risk" data={risk} />);
+  if (resolveDeFiPayload(merged, "walletReputation") || merged.type === "wallet-reputation") {
+    blocks.push(<WalletReputationBlock key="wallet" data={walletData} brief={brief} />);
+  }
+  if (resolveDeFiPayload(merged, "tokenResearch") || merged.type === "token-research") {
+    blocks.push(<TokenResearchBlock key="token" data={tokenData} />);
+  }
+  if (resolveDeFiPayload(merged, "newsIntelligence") || merged.type === "crypto-news-intelligence") {
+    blocks.push(<CryptoNewsBlock key="news" data={newsData} />);
+  }
+  if (resolveDeFiPayload(merged, "portfolioRisk") || merged.type === "portfolio-risk") {
+    blocks.push(<PortfolioRiskBlock key="portfolio-risk" data={portfolioData} />);
+  }
   if (typeof merged.contract === "string" || merged.type === "audit" || Array.isArray(merged.findings)) {
     blocks.push(<AuditBlock key="audit" data={merged} contractSource={contractSource} />);
   }
@@ -609,7 +641,7 @@ export function DeliverableStepContent({
   index: number;
   total: number;
 }) {
-  const data = unwrapAgentPayload(output);
+  const data = parseDeliverablePayload(output) ?? unwrapAgentPayload(output);
   const color = (agentId && AGENT_COLORS[agentId]) || "#71717a";
 
   const body = !data ? (

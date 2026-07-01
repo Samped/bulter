@@ -7223,3 +7223,827 @@ select.field-input {
   max-height: 320px;
   overflow: auto;
 }
+
+/* ─── DeFi intelligence deliverables (wallet / token / news / portfolio risk) ─── */
+.intel-deliverable {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.intel-hero {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem 1.125rem;
+  border: 1px solid #d4d4d4;
+  background: linear-gradient(180deg, #fafafa 0%, #f3f3f3 100%);
+}
+
+.intel-hero-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.intel-kicker {
+  margin: 0;
+  font-family: var(--paper-sans);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #666;
+}
+
+.intel-wallet-address {
+  margin: 0;
+  font-size: 0.8125rem;
+  word-break: break-all;
+  color: #111;
+}
+
+.intel-token-symbol {
+  margin: 0;
+  font-family: var(--paper-serif);
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #111;
+}
+
+.intel-token-name {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #555;
+}
+
+.intel-news-topic {
+  margin: 0;
+  font-family: var(--paper-serif);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #111;
+}
+
+.intel-asof {
+  font-size: 0.75rem;
+  color: #777;
+  white-space: nowrap;
+}
+
+.intel-verdict {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  font-family: var(--paper-sans);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.intel-verdict.tone-positive {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #86efac;
+}
+
+.intel-verdict.tone-negative {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+.intel-verdict.tone-warn {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.intel-verdict.tone-neutral {
+  background: #f4f4f5;
+  color: #52525b;
+  border: 1px solid #d4d4d8;
+}
+
+.intel-score-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.intel-score-grid.three {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.intel-score-meter {
+  padding: 0.75rem 0.875rem;
+  border: 1px solid #ddd;
+  background: #fff;
+}
+
+.intel-score-meter-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
+
+.intel-score-meter-label {
+  font-family: var(--paper-sans);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #555;
+}
+
+.intel-score-meter-value {
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #111;
+}
+
+.intel-score-meter-track {
+  height: 6px;
+  background: #e5e5e5;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.intel-score-meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #3f3f46;
+}
+
+.intel-score-meter.tone-good .intel-score-meter-fill {
+  background: #16a34a;
+}
+
+.intel-score-meter.tone-warn .intel-score-meter-fill {
+  background: #d97706;
+}
+
+.intel-score-meter.tone-bad .intel-score-meter-fill {
+  background: #dc2626;
+}
+
+.intel-score-meter-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.6875rem;
+  color: #888;
+}
+
+.intel-card {
+  padding: 0.875rem 1rem;
+  border: 1px solid #ddd;
+  background: #fafafa;
+}
+
+.intel-card-title {
+  margin: 0 0 0.5rem;
+  font-family: var(--paper-sans);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #444;
+}
+
+.intel-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin: 0;
+  font-size: 0.875rem;
+  color: #333;
+}
+
+.intel-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+}
+
+.intel-chip {
+  display: inline-flex;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid #ccc;
+  border-radius: 999px;
+  background: #fff;
+  font-family: var(--paper-sans);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.intel-pnl-label {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #111;
+}
+
+.intel-confidence {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.intel-confidence.conf-high {
+  color: #166534;
+}
+
+.intel-confidence.conf-medium {
+  color: #92400e;
+}
+
+.intel-confidence.conf-low {
+  color: #71717a;
+}
+
+.intel-flag-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: #333;
+}
+
+.intel-disclaimer {
+  margin: 0;
+  padding: 0.65rem 0.875rem;
+  border-left: 3px solid #d4d4d4;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #666;
+  font-style: italic;
+}
+
+.intel-market-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+}
+
+.intel-stat-label {
+  display: block;
+  font-family: var(--paper-sans);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #666;
+}
+
+.intel-stat-num {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #111;
+}
+
+.intel-case-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.intel-case {
+  padding: 0.875rem 1rem;
+  border: 1px solid #ddd;
+}
+
+.intel-case.bull {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.intel-case.bear {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.intel-case-title {
+  margin: 0 0 0.45rem;
+  font-family: var(--paper-sans);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.intel-case.bull .intel-case-title {
+  color: #166534;
+}
+
+.intel-case.bear .intel-case-title {
+  color: #991b1b;
+}
+
+.intel-tvl-estimate {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #111;
+}
+
+.intel-table th {
+  width: 28%;
+}
+
+.intel-competitor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.625rem;
+}
+
+.intel-competitor-card {
+  padding: 0.75rem 0.875rem;
+  border: 1px solid #ddd;
+  background: #fafafa;
+}
+
+.intel-competitor-card h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #111;
+}
+
+.intel-competitor-card p {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: #444;
+}
+
+.intel-sev {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  font-family: var(--paper-sans);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-right: 0.5rem;
+  flex-shrink: 0;
+}
+
+.intel-sev.high {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.intel-sev.medium {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.intel-sev.low {
+  background: #f4f4f5;
+  color: #52525b;
+}
+
+.intel-risk-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.intel-risk-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.intel-sentiment {
+  display: inline-flex;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.intel-sentiment.tone-bullish {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.intel-sentiment.tone-bearish {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.intel-sentiment.tone-neutral,
+.intel-sentiment.tone-mixed {
+  background: #f4f4f5;
+  color: #52525b;
+}
+
+.intel-event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.intel-event-card {
+  padding: 0.75rem 0.875rem;
+  border: 1px solid #ddd;
+  background: #fafafa;
+}
+
+.intel-event-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.intel-bias {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #71717a;
+}
+
+.intel-bias.up {
+  color: #166534;
+}
+
+.intel-bias.down {
+  color: #991b1b;
+}
+
+.intel-event-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+
+.intel-event-title a {
+  color: #111;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.intel-event-source {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  color: #777;
+}
+
+.intel-risk-score-ring {
+  display: flex;
+  align-items: baseline;
+  gap: 0.15rem;
+}
+
+.intel-risk-score-num {
+  font-family: var(--paper-serif);
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #111;
+}
+
+.intel-risk-score-sub {
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.intel-risk-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-self: flex-end;
+}
+
+.intel-risk-positions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.intel-risk-positions li {
+  padding: 0.55rem 0.75rem;
+  border-left: 3px solid #d4d4d4;
+  background: #fafafa;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.intel-hedge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.625rem;
+}
+
+.intel-hedge-card {
+  padding: 0.75rem 0.875rem;
+  border: 1px solid #ddd;
+  background: #fff;
+}
+
+.intel-hedge-card h4 {
+  margin: 0 0 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #111;
+}
+
+.intel-hedge-instrument {
+  margin: 0 0 0.35rem;
+  font-family: var(--paper-sans);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #666;
+}
+
+@media (max-width: 640px) {
+  .intel-score-grid.three,
+  .intel-case-grid,
+  .intel-competitor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .intel-two-col {
+    grid-template-columns: 1fr;
+  }
+
+  .intel-token-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Intel sheet — hide redundant abstract spacing */
+.library-paper-sheet--intel .paper-masthead {
+  border-bottom-color: #111;
+}
+
+.library-paper-sheet--intel .paper-title {
+  font-size: 1.35rem;
+  line-height: 1.25;
+}
+
+.library-paper-sheet--intel .paper-content {
+  padding-top: 0.5rem;
+}
+
+.paper-intel-root {
+  margin: 0;
+}
+
+/* Token research — terminal-style hero */
+.intel-token-hero {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 1.25rem;
+  padding: 1.25rem 1.35rem;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #334155 100%);
+  color: #f8fafc;
+  border-radius: 2px;
+}
+
+.intel-token-hero .intel-kicker {
+  color: #94a3b8;
+}
+
+.intel-token-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  margin: 0.15rem 0 0.5rem;
+}
+
+.intel-token-hero .intel-token-symbol {
+  margin: 0;
+  font-family: var(--paper-serif);
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+}
+
+.intel-token-hero .intel-token-name {
+  margin: 0;
+  font-size: 1rem;
+  color: #cbd5e1;
+}
+
+.intel-lead {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: #e2e8f0;
+  max-width: 52ch;
+}
+
+.intel-token-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  align-content: start;
+}
+
+.intel-metric-card {
+  padding: 0.65rem 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
+
+.intel-metric-card.primary {
+  grid-column: 1 / -1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.intel-metric-card .intel-stat-label {
+  color: #94a3b8;
+}
+
+.intel-metric-value {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.intel-metric-card.primary .intel-metric-value {
+  font-size: 1.65rem;
+}
+
+.intel-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.intel-panel {
+  padding: 1rem 1.1rem;
+  border: 1px solid #e5e5e5;
+  background: #fff;
+}
+
+.intel-panel-title {
+  margin: 0 0 0.65rem;
+  font-family: var(--paper-sans);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #111;
+}
+
+.intel-panel-prose,
+.intel-case-body {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: #333;
+}
+
+.intel-dl {
+  margin: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.intel-dl dt {
+  font-family: var(--paper-sans);
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #777;
+}
+
+.intel-dl dd {
+  margin: 0.1rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: #222;
+}
+
+.intel-holder-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.intel-holder-stat {
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #e5e5e5;
+  background: #fafafa;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: center;
+  color: #222;
+}
+
+.intel-timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.intel-timeline li {
+  display: grid;
+  grid-template-columns: 6rem 1fr;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #eee;
+  font-size: 0.875rem;
+}
+
+.intel-timeline-date {
+  font-weight: 700;
+  color: #444;
+}
+
+.intel-comp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.intel-comp-table th,
+.intel-comp-table td {
+  border: 1px solid #e5e5e5;
+  padding: 0.5rem 0.65rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.intel-comp-table th {
+  background: #f5f5f5;
+  font-family: var(--paper-sans);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #555;
+}
+
+.intel-comp-name {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.intel-risk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem;
+}
+
+.intel-risk-card {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #e5e5e5;
+  background: #fafafa;
+}
+
+.intel-risk-card p {
+  margin: 0.4rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #333;
+}
+
+@media (max-width: 768px) {
+  .intel-token-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .intel-holder-stats {
+    grid-template-columns: 1fr;
+  }
+}
