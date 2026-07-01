@@ -10,6 +10,8 @@ import { resumePendingLoginJobs } from "./circle-login-jobs.ts";
 import { pruneButlerRunJobs } from "./butler-run-jobs.ts";
 import { userSessionMiddleware } from "./user-session.ts";
 import { getRouteLoaderStatus, LEDGER_BACKFILL_VERSION } from "./route-loader-status.ts";
+import { resolveButlerStatePath, resolveMarketplaceStatePath } from "./data-paths.ts";
+import { handleGetLedger } from "./ledger-handlers.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../../../.env") });
@@ -47,6 +49,11 @@ app.get("/api/health", (_req, res) => {
     ledgerVersion: LEDGER_BACKFILL_VERSION,
     ...(loader.executeLoadError ? { executeLoadError: loader.executeLoadError } : {}),
   });
+});
+
+/** Activity ledger — registered at boot (same as health) so it never 404s during async route load. */
+app.get("/api/ledger", (req, res) => {
+  handleGetLedger(req, res, resolveButlerStatePath(), SELLER, resolveMarketplaceStatePath());
 });
 
 app.use(
