@@ -33,7 +33,66 @@ function resolvePaymentApiBase(): string {
   return `http://127.0.0.1:${PORT}`;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function registerMarketplaceExecuteRoutes(
+  app: Express,
+  importPromise: Promise<typeof import("./marketplace-execute.ts")>
+): Promise<void> {
+  const opts = {
+    statePath: STATE_PATH,
+    policyStatePath: STATE_PATH,
+    sellerAddress: SELLER,
+  };
+  const { setExecuteLoadError } = await import("./route-loader-status.ts");
+
+  try {
+    const mod = await Promise.race([
+      importPromise,
+      sleep(60_000).then(() => {
+        throw new Error("marketplace-execute import timed out after 60s");
+      }),
+    ]);
+
+    let gateway: Awaited<ReturnType<typeof mod.createMarketplaceGateway>> | null = null;
+    try {
+      gateway = await Promise.race([
+        mod.createMarketplaceGateway(SELLER),
+        sleep(30_000).then(() => {
+          throw new Error("Circle Gateway init timed out after 30s");
+        }),
+      ]);
+      await Promise.race([mod.warmGatewayFacilitator(gateway), sleep(15_000)]);
+    } catch (gwErr) {
+      const msg = gwErr instanceof Error ? gwErr.message : String(gwErr);
+      console.warn("Gateway setup skipped — lite execute routes:", msg);
+      gateway = null;
+    }
+
+    mod.registerAgentExecuteRoutes(app, gateway, opts);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Execute routes failed to load";
+    setExecuteLoadError(message);
+    console.error("Butler API execute routes failed:", message);
+    try {
+      const mod = await Promise.race([importPromise, sleep(60_000)]);
+      mod.registerAgentExecuteRoutes(app, null, opts);
+      console.log("  x402 execute routes: fallback lite mode (no Gateway middleware)");
+    } catch (fallbackErr) {
+      console.error(
+        "Execute routes fallback failed:",
+        fallbackErr instanceof Error ? fallbackErr.message : fallbackErr
+      );
+    }
+  }
+}
+
 export async function loadTaskRoutes(app: Express): Promise<void> {
+  /** Prefetch while lighter routes register — import is heavy on small VMs. */
+  const marketplaceExecuteImport = import("./marketplace-execute.ts");
+
   const [
     { agentRunReadiness },
     { loadState, remainingDailyUsdc },
@@ -185,24 +244,6 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
     apiBase,
   });
 
-  try {
-    const { createMarketplaceGateway, registerAgentExecuteRoutes, warmGatewayFacilitator } = await import(
-      "./marketplace-execute.ts"
-    );
-    const gateway = await createMarketplaceGateway(SELLER);
-    await warmGatewayFacilitator(gateway);
-    registerAgentExecuteRoutes(app, gateway, {
-      statePath: STATE_PATH,
-      policyStatePath: STATE_PATH,
-      sellerAddress: SELLER,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Execute routes failed to load";
-    const { setExecuteLoadError } = await import("./route-loader-status.ts");
-    setExecuteLoadError(message);
-    console.error("Butler API execute routes failed:", message);
-  }
-
   const { getRouteLoaderStatus } = await import("./route-loader-status.ts");
   app.get("/api/marketplace/loader-status", (_req, res) => {
     res.json(getRouteLoaderStatus());
@@ -243,6 +284,9 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
   });
 
   console.log(
-    "  task routes: policy · trace · agent/status · butler/run · auctions · x402 execute · deliverables (lite mode)"
+    "  task routes: policy · trace · agent/status · butler/run · auctions · deliverables (lite mode)"
   );
+
+  /** Do not block boot — heavy import + Gateway warm can take minutes on small VMs. */
+  void registerMarketplaceExecuteRoutes(app, marketplaceExecuteImport);
 }

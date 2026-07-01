@@ -39,9 +39,10 @@ const routesReady = new Promise<void>((resolve) => {
 /** Liveness probe — registered first; no RPC calls that can hang. */
 app.get("/api/health", (_req, res) => {
   const loader = getRouteLoaderStatus();
+  const executeReady = loader.executeRoutes > 0;
   res.json({
     ok: ready && taskRoutesReady,
-    mode: !ready ? "starting" : !taskRoutesReady ? "loading" : "live",
+    mode: !ready ? "starting" : !taskRoutesReady ? "booting" : !executeReady ? "loading" : "live",
     chain: ARC_EIP155,
     seller: SELLER,
     executeRoutes: loader.executeRoutes,

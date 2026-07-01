@@ -609,6 +609,6 @@ export async function warmGatewayFacilitator(gateway: Gateway): Promise<void> {
     void handler(req as Parameters<typeof handler>[0], res as Parameters<typeof handler>[1], () => {
       resolve();
     });
-    setTimeout(resolve, 30_000);
+    setTimeout(resolve, 15_000);
   });
 }

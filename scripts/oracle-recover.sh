@@ -122,8 +122,8 @@ for i in $(seq 1 30); do
       fi
     fi
     loader=$(curl -sf --max-time 8 http://127.0.0.1:3001/api/marketplace/loader-status 2>/dev/null || echo "")
-    if echo "$loader" | grep -q '"executeRoutes":15'; then
-      echo "OK — 15 agent execute routes registered"
+    if echo "$loader" | grep -qE '"executeRoutes":(1[5-9]|20)'; then
+      echo "OK — agent execute routes registered ($(echo "$loader" | sed -n 's/.*"executeRoutes":\([0-9]*\).*/\1/p'))"
     else
       echo "WARN — loader-status: ${loader:-unavailable}"
     fi
