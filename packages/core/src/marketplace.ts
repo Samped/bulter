@@ -362,6 +362,54 @@ export const MARKETPLACE_AGENTS: MarketplaceAgent[] = [
     policyAgent: "bills",
     capabilities: ["subscription", "saas", "recurring", "audit"],
   },
+  {
+    id: "portfolio-risk-agent",
+    name: "Portfolio Risk Agent",
+    tagline: "DeFi liquidation risk, VaR & hedge suggestions per portfolio",
+    category: "reporting",
+    servicePath: "/marketplace/agents/portfolio-risk-agent/execute",
+    priceUsdc: "0.06",
+    etaSeconds: 22,
+    merchantId: "utility-quote",
+    policyAgent: "research",
+    capabilities: ["liquidation", "var", "hedge", "defi-portfolio", "collateral", "leverage"],
+  },
+  {
+    id: "crypto-news-intelligence-agent",
+    name: "Crypto News Intelligence Agent",
+    tagline: "Multi-source market-moving news with bullish/bearish scoring",
+    category: "news",
+    servicePath: "/marketplace/agents/crypto-news-intelligence-agent/execute",
+    priceUsdc: "0.025",
+    etaSeconds: 20,
+    merchantId: "research-summary",
+    policyAgent: "research",
+    capabilities: ["news", "intelligence", "market-moving", "sentiment", "macro-crypto"],
+  },
+  {
+    id: "wallet-reputation-agent",
+    name: "Wallet Reputation Agent",
+    tagline: "Scam, whale, DeFi history, PnL & sybil scores for any address",
+    category: "market-data",
+    servicePath: "/marketplace/agents/wallet-reputation-agent/execute",
+    priceUsdc: "0.035",
+    etaSeconds: 18,
+    merchantId: "price-feed",
+    policyAgent: "research",
+    capabilities: ["wallet", "reputation", "scam", "sybil", "whale", "pnl", "copy-trade"],
+  },
+  {
+    id: "token-research-agent",
+    name: "Token Research Agent",
+    tagline: "Holders, TVL, unlocks, tokenomics, competitors & risks",
+    category: "research",
+    servicePath: "/marketplace/agents/token-research-agent/execute",
+    priceUsdc: "0.045",
+    etaSeconds: 28,
+    merchantId: "research-papers",
+    policyAgent: "research",
+    capabilities: ["tokenomics", "holders", "tvl", "unlocks", "vesting", "competitors", "token-research"],
+  },
 ];
 
 /** Pay once — entire agent workflow executes via chained x402. */
@@ -442,6 +490,14 @@ export const MARKETPLACE_ETFS: AgentEtf[] = [
     ],
     bundlePriceUsdc: "0.22",
     etaSeconds: 161,
+  },
+  {
+    id: "defi-due-diligence-etf",
+    name: "DeFi Due Diligence ETF",
+    description: "Wallet reputation → token research → portfolio risk before you copy a trade",
+    agentIds: ["wallet-reputation-agent", "token-research-agent", "portfolio-risk-agent"],
+    bundlePriceUsdc: "0.12",
+    etaSeconds: 68,
   },
 ];
 
@@ -564,6 +620,9 @@ export function scoreEtfForBrief(
   if (etf.id === "macro-radar-etf" && /macro|fed|rates|cpi|inflation|economy/.test(t)) score += 18;
   if (etf.id === "crypto-research-etf" && /crypto|btc|eth|sol/.test(t)) score += 12;
   if (etf.id === "bill-audit-bundle" && /bill|subscription|utility|invoice/.test(t)) score += 20;
+
+  if (etf.id === "defi-due-diligence-etf" && /wallet|reputation|scam|sybil|copy trade|due diligence|token research|tokenomics/.test(t)) score += 22;
+  if (etf.id === "defi-due-diligence-etf" && /0x[a-fA-F0-9]{40}/.test(brief)) score += 15;
 
   if (etf.id === "nvidia-investment-report") {
     if (/nvda|nvidia|tsla|aapl|msft|stock|equity|share/.test(t)) score += 22;

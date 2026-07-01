@@ -226,6 +226,80 @@ export function formatTaskResult(result: unknown): string {
       .join("\n\n");
   }
 
+  if (obj.type === "portfolio-risk" || typeof obj.portfolioRiskScore === "number") {
+    const liq = obj.liquidationRisk as Record<string, unknown> | undefined;
+    const var_ = obj.valueAtRisk as Record<string, unknown> | undefined;
+    const factors = (obj.factors as Record<string, unknown>[] | undefined)
+      ?.map((f) => `- [${f.severity}] ${f.name}: ${f.note}`)
+      .join("\n");
+    const hedges = (obj.hedges as Record<string, unknown>[] | undefined)
+      ?.map((h) => `- ${h.action} (${h.instrument}): ${h.rationale}`)
+      .join("\n");
+    return [
+      `Portfolio risk score: ${obj.portfolioRiskScore ?? "?"}/100`,
+      liq ? `Liquidation: ${liq.label} (${liq.score}/100)` : null,
+      var_ ? `VaR (${var_.horizon}, ${var_.confidence}): ${var_.estimateUsd}` : null,
+      factors ? `\nFactors\n${factors}` : null,
+      hedges ? `\nHedges\n${hedges}` : null,
+      typeof obj.summary === "string" ? `\n${obj.summary}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (obj.type === "crypto-news-intelligence") {
+    const sentiment = obj.marketSentiment as Record<string, unknown> | undefined;
+    const events = (obj.marketMovingEvents as Record<string, unknown>[] | undefined)
+      ?.map((e) => `- [${e.impact}] ${e.headline} (${e.source}) — ${e.whyItMatters}`)
+      .join("\n");
+    const themes = (obj.themes as string[] | undefined)?.map((t) => `- ${t}`).join("\n");
+    return [
+      `News intelligence: ${obj.topic ?? "crypto"}`,
+      sentiment ? `Market sentiment: ${sentiment.label} (${sentiment.score})` : null,
+      events ? `\nMarket-moving events\n${events}` : null,
+      themes ? `\nThemes\n${themes}` : null,
+      typeof obj.summary === "string" ? `\n${obj.summary}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (obj.type === "wallet-reputation") {
+    const defi = obj.defiHistory as Record<string, unknown> | undefined;
+    const pnl = obj.pnlEstimate as Record<string, unknown> | undefined;
+    const flags = (obj.flags as string[] | undefined)?.map((f) => `- ${f}`).join("\n");
+    return [
+      `Wallet: ${obj.address ?? "—"}`,
+      `Scam ${obj.scamScore}/100 · Whale ${obj.whaleScore}/100 · Sybil ${obj.sybilScore}/100`,
+      `Copy-trade verdict: ${obj.copyTradeVerdict ?? "—"}`,
+      defi ? `DeFi: ${defi.activityLevel} on ${(defi.protocols as string[] | undefined)?.join(", ") ?? "—"}` : null,
+      pnl ? `PnL estimate: ${pnl.label} (${pnl.confidence})` : null,
+      flags ? `\nFlags\n${flags}` : null,
+      typeof obj.summary === "string" ? `\n${obj.summary}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (obj.type === "token-research") {
+    const risks = (obj.risks as Record<string, unknown>[] | undefined)
+      ?.map((r) => `- [${r.severity}] ${r.risk ?? r}`)
+      .join("\n");
+    const competitors = (obj.competitors as Record<string, unknown>[] | undefined)
+      ?.map((c) => `- ${c.name}: ${c.differentiator}`)
+      .join("\n");
+    return [
+      `Token research: ${obj.token ?? "—"}`,
+      typeof obj.bullCase === "string" ? `Bull: ${obj.bullCase}` : null,
+      typeof obj.bearCase === "string" ? `Bear: ${obj.bearCase}` : null,
+      competitors ? `\nCompetitors\n${competitors}` : null,
+      risks ? `\nRisks\n${risks}` : null,
+      typeof obj.summary === "string" ? `\n${obj.summary}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
   if (obj.type === "risk" || typeof obj.riskScore === "number") {
     const factors = (obj.factors as Record<string, unknown>[] | undefined)
       ?.map((f) => `- [${f.severity}] ${f.name}: ${f.note}`)
