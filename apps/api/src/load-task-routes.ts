@@ -71,10 +71,6 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
     handlePutUserPreferences(req, res);
   });
 
-  app.get("/api/ledger", (req, res) => {
-    handleGetLedger(req, res, STATE_PATH, SELLER, MARKETPLACE_PATH);
-  });
-
   await registerTraceRoutes(app);
 
   app.get("/api/agent/status", async (_req, res) => {
