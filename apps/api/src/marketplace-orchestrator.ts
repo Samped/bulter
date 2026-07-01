@@ -17,6 +17,7 @@ import { appendServiceUrlParams } from "./x402-probe.ts";
 import { combineWorkflowResult } from "./deliverable-combine.ts";
 import { stashWorkflowContext } from "./context-store.ts";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
+import { appendLedgerFromOrchestration } from "./ledger-sync.ts";
 import { executeLocalAgentPay, isInternalAgentPayUrl, type LocalAgentExecuteOpts } from "./marketplace-execute.ts";
 
 function snippetFromStepBody(body: unknown): string {
@@ -219,6 +220,20 @@ async function runOneStep(params: {
     output: body?.data ?? body,
     error: finalRes?.error ?? (finalRes?.ok ? undefined : `HTTP ${finalRes?.status ?? 0}`),
   };
+
+  if (stepResult.ok && stepResult.settlementId && params.internalPay?.policyStatePath && params.internalPay.sellerAddress) {
+    const paidBy = typeof body?.paid_by === "string" ? body.paid_by : undefined;
+    appendLedgerFromOrchestration({
+      policyStatePath: params.internalPay.policyStatePath,
+      sellerAddress: params.internalPay.sellerAddress,
+      job: params.job,
+      agentId: params.step.agentId,
+      settlementId: stepResult.settlementId,
+      amountUsdc: params.step.priceUsdc,
+      output: stepResult.output,
+      payerAddress: paidBy,
+    });
+  }
 
   let snippet = "";
   let output: unknown;
