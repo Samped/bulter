@@ -7,30 +7,48 @@ import * as esbuild from "esbuild";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
-mkdirSync("dist", { recursive: true });
-
 /** Bump when ledger / activity backfill logic changes (see route-loader-status.ts). */
 const LEDGER_BACKFILL_VERSION = 2;
 
-/** Bundle workspace TS; keep npm packages external so Node resolves them from node_modules. */
-await esbuild.build({
-  entryPoints: ["src/server.ts"],
-  bundle: true,
-  platform: "node",
-  target: "node20",
-  format: "esm",
-  outfile: "dist/server.mjs",
-  external: [
-    "express",
-    "cors",
-    "dotenv",
-    "@circle-fin/x402-batching",
-    "@x402/core",
-    "@x402/evm",
-    "viem",
-  ],
-  logLevel: "info",
-});
+mkdirSync("dist", { recursive: true });
+
+function printBuildErrors(error) {
+  if (error && typeof error === "object" && "errors" in error && Array.isArray(error.errors)) {
+    for (const e of error.errors) {
+      console.error(e.text || e.message || String(e));
+      if (e.location) {
+        console.error(`  at ${e.location.file}:${e.location.line}:${e.location.column}`);
+      }
+    }
+    return;
+  }
+  console.error(error);
+}
+
+try {
+  await esbuild.build({
+    entryPoints: ["src/server.ts"],
+    bundle: true,
+    platform: "node",
+    target: "node20",
+    format: "esm",
+    outfile: "dist/server.mjs",
+    external: [
+      "express",
+      "cors",
+      "dotenv",
+      "@circle-fin/x402-batching",
+      "@x402/core",
+      "@x402/evm",
+      "viem",
+    ],
+    logLevel: "warning",
+  });
+} catch (error) {
+  console.error("esbuild failed:");
+  printBuildErrors(error);
+  process.exit(1);
+}
 
 let gitHead = "unknown";
 try {

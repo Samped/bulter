@@ -4,11 +4,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-echo "=== build stamp ==="
-cat apps/api/dist/build-stamp.json 2>/dev/null || echo "MISSING — run: npm run build:render -w @butler/api"
+echo "=== build stamp (optional dist) ==="
+cat apps/api/dist/build-stamp.json 2>/dev/null || echo "dist bundle not built — lite mode uses tsx source"
 
 echo ""
-echo "=== local health ==="
+echo "=== local health (expect ledgerVersion: 2) ==="
 health=$(curl -sf --max-time 8 http://127.0.0.1:3001/api/health || true)
 echo "$health" | python3 -m json.tool 2>/dev/null || echo "$health"
 
