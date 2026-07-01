@@ -41,9 +41,9 @@ const CATEGORIES = [
 export function CreateTaskModal({ open, initialBrief = "", onClose, onPosted, onButlerComplete }: CreateTaskModalProps) {
   const [brief, setBrief] = useState("");
   const [category, setCategory] = useState("research");
-  const [qualityTier, setQualityTier] = useState<QualityTier>("standard");
-  const [maxBudgetUsdc, setMaxBudgetUsdc] = useState("");
-  const [auctionMode, setAuctionMode] = useState<AuctionMode>("single");
+  const [qualityTier, setQualityTier] = useState<QualityTier>("full");
+  const [maxBudgetUsdc, setMaxBudgetUsdc] = useState("0.25");
+  const [auctionMode, setAuctionMode] = useState<AuctionMode>("etf");
   const [mode, setMode] = useState<SubmitMode>("butler");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +77,7 @@ export function CreateTaskModal({ open, initialBrief = "", onClose, onPosted, on
   useEffect(() => {
     if (qualityTier === "full") {
       setAuctionMode("etf");
-      setMaxBudgetUsdc((prev) => prev || "0.15");
+      setMaxBudgetUsdc((prev) => prev || "0.25");
     } else if (qualityTier === "brief") {
       setAuctionMode("single");
     }
@@ -270,7 +270,7 @@ export function CreateTaskModal({ open, initialBrief = "", onClose, onPosted, on
                     min="0"
                     step="0.001"
                     className="mp-create-input"
-                    placeholder="0.10"
+                    placeholder="0.25"
                     value={maxBudgetUsdc}
                     onChange={(e) => setMaxBudgetUsdc(e.target.value)}
                   />

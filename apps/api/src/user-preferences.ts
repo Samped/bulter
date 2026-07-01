@@ -17,11 +17,29 @@ export type UserUsagePreferences = {
 };
 
 const DEFAULTS: UserUsagePreferences = {
-  defaultQualityTier: "standard",
+  defaultQualityTier: "full",
   defaultCategory: "research",
-  defaultMaxBudgetUsdc: "0.10",
-  defaultAuctionMode: "single",
+  defaultMaxBudgetUsdc: "0.25",
+  defaultAuctionMode: "etf",
 };
+
+/** Upgrade sessions that still have the old shipped defaults (0.10 / standard / single). */
+function normalizePreferences(raw: Partial<UserUsagePreferences>): UserUsagePreferences {
+  const merged = { ...DEFAULTS, ...raw };
+  const legacyBudget =
+    merged.defaultMaxBudgetUsdc === "0.10" || merged.defaultMaxBudgetUsdc === "0.15";
+  const legacyTier = !merged.defaultQualityTier || merged.defaultQualityTier === "standard";
+  const legacyMode = !merged.defaultAuctionMode || merged.defaultAuctionMode === "single";
+  if (legacyBudget && legacyTier && legacyMode) {
+    return {
+      ...merged,
+      defaultQualityTier: "full",
+      defaultMaxBudgetUsdc: "0.25",
+      defaultAuctionMode: "etf",
+    };
+  }
+  return merged;
+}
 
 function preferencesPath(): string | null {
   const session = getUserSessionPaths();
@@ -31,12 +49,12 @@ function preferencesPath(): string | null {
 
 export function loadUserPreferences(): UserUsagePreferences {
   const path = preferencesPath();
-  if (!path || !existsSync(path)) return { ...DEFAULTS };
+  if (!path || !existsSync(path)) return normalizePreferences({});
   try {
     const raw = JSON.parse(readFileSync(path, "utf8")) as UserUsagePreferences;
-    return { ...DEFAULTS, ...raw };
+    return normalizePreferences(raw);
   } catch {
-    return { ...DEFAULTS };
+    return normalizePreferences({});
   }
 }
 
