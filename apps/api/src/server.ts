@@ -48,6 +48,7 @@ app.get("/api/health", (_req, res) => {
     executeRoutes: loader.executeRoutes,
     internalAgentPay: loader.internalAgentPay,
     ledgerVersion: LEDGER_BACKFILL_VERSION,
+    bootPhase: loader.bootPhase,
     ...(loader.executeLoadError ? { executeLoadError: loader.executeLoadError } : {}),
   });
 });
@@ -135,8 +136,27 @@ app.listen(PORT, "0.0.0.0", () => {
 
   setImmediate(() => {
     if (process.env.BUTLER_LITE_API === "true") {
-      void import("./load-task-routes.ts")
-        .then(({ loadTaskRoutes }) => loadTaskRoutes(app))
+      const bootCapMs = Number(process.env.BUTLER_TASK_BOOT_CAP_MS ?? 45_000);
+      void Promise.race([
+        import("./load-task-routes.ts"),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`load-task-routes import timed out after ${bootCapMs}ms`)), bootCapMs)
+        ),
+      ])
+        .then(({ loadTaskRoutes }) => {
+          const boot = loadTaskRoutes(app);
+          return Promise.race([
+            boot,
+            new Promise<void>((resolve) => {
+              setTimeout(() => {
+                console.warn(
+                  `Butler API task routes boot cap (${bootCapMs}ms) — marking ready; load continues in background`
+                );
+                resolve();
+              }, bootCapMs);
+            }),
+          ]);
+        })
         .then(() => {
           markTaskRoutesReady();
           console.log("Butler API lite mode — task routes loaded (full marketplace: BUTLER_LITE_API=false)");
