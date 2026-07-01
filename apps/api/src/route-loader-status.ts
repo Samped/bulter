@@ -2,6 +2,9 @@
 let executeRouteCount = 0;
 let executeLoadError: string | null = null;
 
+/** Bump when ledger backfill logic changes — check via GET /api/health ledgerVersion. */
+export const LEDGER_BACKFILL_VERSION = 2;
+
 export function setExecuteRouteCount(n: number): void {
   executeRouteCount = n;
 }

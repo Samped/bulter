@@ -9,7 +9,7 @@ import { registerCircleLoginRoutes } from "./circle-login-routes.ts";
 import { resumePendingLoginJobs } from "./circle-login-jobs.ts";
 import { pruneButlerRunJobs } from "./butler-run-jobs.ts";
 import { userSessionMiddleware } from "./user-session.ts";
-import { getRouteLoaderStatus } from "./route-loader-status.ts";
+import { getRouteLoaderStatus, LEDGER_BACKFILL_VERSION } from "./route-loader-status.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../../../.env") });
@@ -44,6 +44,7 @@ app.get("/api/health", (_req, res) => {
     seller: SELLER,
     executeRoutes: loader.executeRoutes,
     internalAgentPay: loader.internalAgentPay,
+    ledgerVersion: LEDGER_BACKFILL_VERSION,
     ...(loader.executeLoadError ? { executeLoadError: loader.executeLoadError } : {}),
   });
 });

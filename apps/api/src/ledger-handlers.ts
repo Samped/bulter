@@ -9,6 +9,7 @@ import {
 } from "./ledger-payer.ts";
 import { resolveMarketplaceForLedger, syncLedgerFromJobs } from "./ledger-sync.ts";
 import { resolveJobOwnerFromRequest, resolveOwnerPayerAddresses } from "./job-owner.ts";
+import { LEDGER_BACKFILL_VERSION } from "./route-loader-status.ts";
 
 export function handleGetLedger(
   req: Request,
@@ -63,5 +64,10 @@ export function handleGetLedger(
     records,
     totalCount: allRecords.length,
     activityPayerAddresses,
+    meta: {
+      ledgerVersion: LEDGER_BACKFILL_VERSION,
+      jobsIndexed: jobs.length,
+      persistedRecords: ledgerRecords.length,
+    },
   });
 }

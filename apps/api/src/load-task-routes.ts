@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { Express, Request, Response } from "express";
 import { sessionIdFromRequest, hasActiveUserSession } from "./user-session.ts";
 import { filterJobsForOwner, jobVisibleToOwner, resolveJobOwnerFromRequest } from "./job-owner.ts";
+import { resolveButlerStatePath, resolveMarketplaceStatePath } from "./data-paths.ts";
 import { handleGetLedger } from "./ledger-handlers.ts";
 import { handleGetPolicy, handlePutPolicy, handleResetPolicy } from "./policy-handlers.ts";
 import { handleGetUserPreferences, handlePutUserPreferences } from "./user-preferences.ts";
@@ -15,8 +16,8 @@ import { registerTraceRoutes } from "./trace-routes.ts";
 import { getOpenAiPlannerStatus } from "./openai-planner.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const STATE_PATH = resolve(__dirname, "../../../.data/butler-state.json");
-const MARKETPLACE_PATH = resolve(__dirname, "../../../.data/marketplace-state.json");
+const STATE_PATH = resolveButlerStatePath();
+const MARKETPLACE_PATH = resolveMarketplaceStatePath();
 const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);
 const SELLER = (process.env.BUTLER_SELLER_ADDRESS ?? "0x933a2405f84c224be1ef373ba16e992e1f459682") as `0x${string}`;
 
