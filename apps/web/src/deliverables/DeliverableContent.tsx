@@ -21,7 +21,6 @@ import {
   WalletReputationBlock,
   renderDeFiAgentBlocks,
   resolveDeFiPayload,
-  isIntelPayload,
 } from "./defi-agents.tsx";
 
 function ReportBlock({ data }: { data: Record<string, unknown> }) {
@@ -567,7 +566,7 @@ export function CombinedDeliverableBody({
   }
 
   const intelBlocks = renderDeFiAgentBlocks(merged, brief);
-  if (intelBlocks.length > 0 && isIntelPayload(merged)) {
+  if (intelBlocks.length > 0) {
     return <div className="paper-sections paper-unified paper-intel-root">{intelBlocks}</div>;
   }
 
@@ -647,7 +646,11 @@ export function DeliverableStepContent({
   const body = !data ? (
     <pre className="paper-raw">{JSON.stringify(output, null, 2)}</pre>
   ) : (
-    renderPayload(data) ?? <pre className="paper-raw">{JSON.stringify(data, null, 2)}</pre>
+    (() => {
+      const intel = renderDeFiAgentBlocks(data);
+      if (intel.length > 0) return <div className="paper-intel-root">{intel}</div>;
+      return renderPayload(data) ?? <pre className="paper-raw">{JSON.stringify(data, null, 2)}</pre>;
+    })()
   );
 
   return (

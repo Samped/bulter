@@ -39,7 +39,18 @@ export async function planTaskForRun(params: {
 
 export function formatTaskResult(result: unknown): string {
   if (result == null) return "Task completed. No structured output was returned.";
-  if (typeof result === "string") return result;
+  if (typeof result === "string") {
+    const trimmed = result.trim();
+    if (trimmed.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        if (parsed && typeof parsed === "object") return formatTaskResult(parsed);
+      } catch {
+        /* plain text summary */
+      }
+    }
+    return result;
+  }
 
   const obj = unwrapAgentPayload(result);
   if (!obj) return JSON.stringify(result, null, 2);
@@ -445,9 +456,16 @@ export function finalizeCompletedJob(
 
 const EMPTY_DELIVERABLE_SUMMARY = "No deliverable content available.";
 
+function isJsonBlobSummary(text: string): boolean {
+  const t = text.trim();
+  return t.startsWith("{") && t.endsWith("}");
+}
+
 export function buildJobSummary(job: MarketplaceJob): string {
   const cached = job.summary?.trim();
-  if (cached && cached !== EMPTY_DELIVERABLE_SUMMARY) return cached;
+  if (cached && cached !== EMPTY_DELIVERABLE_SUMMARY && !isJsonBlobSummary(cached)) {
+    return cached;
+  }
   const doneSteps = job.steps.filter((s) => s.status === "done" && s.output != null);
   if (doneSteps.length > 1) {
     const combined = combineWorkflowResult(doneSteps);
