@@ -6,6 +6,8 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Express } from "express";
 import { GATEWAY_FACILITATOR, resolveArcRpc, ARC_EIP155 } from "@butler/arc";
+import { resolveButlerStatePath, resolveMarketplaceStatePath } from "./data-paths.ts";
+import { handleGetLedger } from "./ledger-handlers.ts";
 import {
   circleCliInstalled,
   circleCliLoggedIn,
@@ -27,8 +29,14 @@ config({ path: resolve(__dirname, "../../../.env") });
 
 const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);
 const WEB_URL = process.env.WEB_URL ?? `http://localhost:${process.env.WEB_PORT ?? 5174}`;
+const SELLER = (process.env.BUTLER_SELLER_ADDRESS ?? "0x933a2405f84c224be1ef373ba16e992e1f459682") as `0x${string}`;
 
 export function loadCoreRoutes(app: Express): void {
+  /** Activity ledger — core route so it works even if task route bundle fails to import. */
+  app.get("/api/ledger", (req, res) => {
+    handleGetLedger(req, res, resolveButlerStatePath(), SELLER, resolveMarketplaceStatePath());
+  });
+
   app.get("/api/config", (_req, res) => {
     res.json({
       chain: ARC_EIP155,
@@ -160,5 +168,5 @@ export function loadCoreRoutes(app: Express): void {
     }
   });
 
-  console.log(`  core routes: Circle login · config (${PORT})`);
+  console.log(`  core routes: Circle login · config · ledger (${PORT})`);
 }

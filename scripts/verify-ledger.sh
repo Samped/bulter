@@ -13,18 +13,19 @@ health=$(curl -sf --max-time 8 http://127.0.0.1:3001/api/health || true)
 echo "$health" | python3 -m json.tool 2>/dev/null || echo "$health"
 
 echo ""
-echo "=== local ledger (may take up to 60s on first hit) ==="
-ledger=$(curl -sS --max-time 60 http://127.0.0.1:3001/api/ledger || true)
-if [[ -z "$ledger" ]]; then
-  echo "ledger unreachable (empty response)"
+echo "=== local ledger (core route — should not 404) ==="
+code=$(curl -sS -o /tmp/butler-ledger.json -w "%{http_code}" --max-time 60 http://127.0.0.1:3001/api/ledger || echo "000")
+echo "HTTP $code"
+if [[ "$code" != "200" ]]; then
+  head -c 400 /tmp/butler-ledger.json 2>/dev/null || true
+  echo ""
   exit 1
 fi
-echo "$ledger" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
+python3 -c "
+import json
+d = json.load(open('/tmp/butler-ledger.json'))
 if d.get('error'):
-    print('ERROR', d.get('error'))
-    sys.exit(1)
+    raise SystemExit('ERROR ' + str(d.get('error')))
 print('totalCount', d.get('totalCount'))
 print('meta', d.get('meta'))
 print('records returned', len(d.get('records', [])))

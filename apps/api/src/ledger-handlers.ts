@@ -50,11 +50,12 @@ export function handleGetLedger(
     const owner = resolveJobOwnerFromRequest(req);
 
     const ledgerRecords = syncLedgerFromJobs(statePath, sellerAddress, jobs, auctions, state.records);
-    const attributed = applyJobAttribution(
-      attributeLedgerRecords(ledgerRecords),
-      jobs,
-      auctions
-    );
+    let attributed = attributeLedgerRecords(ledgerRecords);
+    try {
+      attributed = applyJobAttribution(attributed, jobs, auctions);
+    } catch (attrErr) {
+      console.warn("[ledger] job attribution skipped:", attrErr);
+    }
 
     const sessionPayers = resolveSessionActivityPayerAddresses(state.records);
     const ownerPayerAddresses = resolveOwnerPayerAddresses(owner);

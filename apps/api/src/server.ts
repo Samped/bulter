@@ -86,8 +86,11 @@ ul{padding-left:1.2rem}</style></head>
 app.use((req, res, next) => {
   if (
     req.path === "/api/health" ||
+    req.path === "/api/ledger" ||
     req.path === "/" ||
     req.path.startsWith("/api/circle/login") ||
+    req.path.startsWith("/api/circle/") ||
+    req.path === "/api/config" ||
     req.path === "/api/marketplace/agents/research-agent/execute-probe"
   ) {
     return next();
