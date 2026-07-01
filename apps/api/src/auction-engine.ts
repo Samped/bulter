@@ -12,10 +12,21 @@ import {
   type MarketplaceState,
   type ReverseAuction,
 } from "@butler/core";
-import { buildDirectJob, buildEtfJob, runMarketplaceWorkflow } from "./marketplace-orchestrator.ts";
-import { finalizeCompletedJob } from "./marketplace-task.ts";
 import { stampJobFromAuction } from "./job-owner.ts";
 import { runWithUserSession } from "./user-session.ts";
+
+let orchestratorModule: typeof import("./marketplace-orchestrator.ts") | null = null;
+let marketplaceTaskModule: typeof import("./marketplace-task.ts") | null = null;
+
+async function orchestrator() {
+  orchestratorModule ??= await import("./marketplace-orchestrator.ts");
+  return orchestratorModule;
+}
+
+async function marketplaceTask() {
+  marketplaceTaskModule ??= await import("./marketplace-task.ts");
+  return marketplaceTaskModule;
+}
 
 const awardingLocks = new Set<string>();
 const STALE_PAYER_AUCTION_SECS = 180;
@@ -63,6 +74,9 @@ async function resumeAwardedWorkflow(
   const credits = new Map(getAgentCredits(loadMarketplaceState(opts.statePath, opts.sellerAddress)).map((c) => [c.agentId, c]));
   const winner = pickAuctionWinner(auction, credits);
   if (!winner) return { ok: false, error: "No winner on stalled auction" };
+
+  const { buildEtfJob, buildDirectJob, runMarketplaceWorkflow } = await orchestrator();
+  const { finalizeCompletedJob } = await marketplaceTask();
 
   const built = winner.etfId
     ? buildEtfJob(winner.etfId, auction.brief)
@@ -202,6 +216,9 @@ export async function executeAuctionAward(opts: {
       const msg = auction.maxBudgetUsdc ? "No eligible winner within max budget" : "No eligible winner";
       return { ok: false, error: msg };
     }
+
+    const { buildEtfJob, buildDirectJob, runMarketplaceWorkflow } = await orchestrator();
+    const { finalizeCompletedJob } = await marketplaceTask();
 
     const built = winner.etfId
       ? buildEtfJob(winner.etfId, auction.brief)
