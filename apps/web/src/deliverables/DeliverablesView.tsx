@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatUsdc, getMarketplaceDeliverable, getMarketplaceDeliverables, type MarketplaceDeliverable } from "../api.ts";
 import { IconCheck, IconChevronLeft, IconChevronRight, IconDownload, IconLibrary, IconRefresh, IconSearch } from "../icons.tsx";
 import { DeliverableSummary, CombinedDeliverableBody } from "./DeliverableContent.tsx";
+import { IntelDeliverableBody, isIntelPayload } from "./defi-agents.tsx";
+import { resolveDeliverablePayload } from "./payload.ts";
 import { combineWorkflowResult } from "./combine.ts";
 import { downloadText, slugify } from "./format.ts";
 import { formatWorkflowError } from "../format.ts";
@@ -106,9 +108,18 @@ export function DeliverablesView({
   };
 
   const doneSteps = (selected?.steps ?? []).filter((s) => s.status === "done" && s.output != null);
+  const structuredPayload = useMemo(
+    () => resolveDeliverablePayload(selected),
+    [selected]
+  );
   const displaySummary = useMemo(() => {
     if (!selected) return "";
-    if (selected.summary?.trim()) return selected.summary;
+    if (structuredPayload && isIntelPayload(structuredPayload)) {
+      return typeof structuredPayload.summary === "string" ? structuredPayload.summary : selected.brief ?? "";
+    }
+    if (selected.summary?.trim() && !selected.summary.trim().startsWith("{")) {
+      return selected.summary.trim();
+    }
     const merged = doneSteps.length > 0 ? combineWorkflowResult(doneSteps) : null;
     if (merged) {
       return [
@@ -124,7 +135,7 @@ export function DeliverablesView({
         .join("\n\n");
     }
     return "";
-  }, [selected, doneSteps]);
+  }, [selected, doneSteps, structuredPayload]);
   const totalSpent = useMemo(
     () => items.reduce((sum, j) => sum + (Number(j.totalUsdc) || 0), 0),
     [items]
@@ -364,10 +375,12 @@ export function DeliverablesView({
               </header>
 
               <div className="library-paper-canvas">
-                <PaperDocument job={selected} ref={paperRef}>
-                  {doneSteps.length > 0 ? (
+                <PaperDocument job={selected} ref={paperRef} payload={structuredPayload}>
+                  {structuredPayload && isIntelPayload(structuredPayload) ? (
+                    <IntelDeliverableBody payload={structuredPayload} brief={selected.brief} />
+                  ) : doneSteps.length > 0 ? (
                     <CombinedDeliverableBody steps={doneSteps} brief={selected.brief} />
-                  ) : selected.summary ? (
+                  ) : selected.summary && !selected.summary.trim().startsWith("{") ? (
                     <DeliverableSummary text={selected.summary} />
                   ) : (
                     <p className="paper-prose paper-empty">No structured output was stored for this job.</p>

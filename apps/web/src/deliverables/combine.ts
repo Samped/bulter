@@ -1,4 +1,4 @@
-import { unwrapAgentPayload } from "./format.ts";
+import { parseDeliverablePayload } from "./payload.ts";
 import { isUtilityBillPayload } from "./bill.ts";
 
 function appendUnique<T>(existing: T[] | undefined, incoming: T[]): T[] {
@@ -8,7 +8,7 @@ function appendUnique<T>(existing: T[] | undefined, incoming: T[]): T[] {
 /** Merge multi-agent step outputs into one library document (mirrors API deliverable-combine). */
 export function combineWorkflowResult(steps: { output?: unknown }[]): Record<string, unknown> | null {
   const payloads = steps
-    .map((s) => unwrapAgentPayload(s.output))
+    .map((s) => parseDeliverablePayload(s.output))
     .filter((p): p is Record<string, unknown> => !!p);
   if (payloads.length === 0) return null;
   if (payloads.length === 1) return payloads[0]!;
@@ -65,6 +65,10 @@ export function combineWorkflowResult(steps: { output?: unknown }[]): Record<str
     if (p.type === "defi" || Array.isArray(p.topProtocols)) combined.defi = p;
     if (p.type === "macro" || typeof p.fedOutlook === "string") combined.macro = p;
     if (p.type === "onchain" || Array.isArray(p.signals)) combined.onchain = p;
+    if (p.type === "portfolio-risk" || typeof p.portfolioRiskScore === "number") combined.portfolioRisk = p;
+    if (p.type === "crypto-news-intelligence") combined.newsIntelligence = p;
+    if (p.type === "wallet-reputation") combined.walletReputation = p;
+    if (p.type === "token-research") combined.tokenResearch = p;
     if (p.type === "risk" || typeof p.riskScore === "number") combined.risk = p;
     if (typeof p.contract === "string" || p.type === "audit" || Array.isArray(p.findings)) {
       combined.type = "audit";

@@ -3,13 +3,13 @@ import { formatUsdc, type MarketplaceDeliverable } from "../api.ts";
 import { strategyLabel } from "./utils.ts";
 import { auditPaperTitle, isAuditDeliverable } from "./audit.ts";
 import { billPaperTitle, isBillDeliverable } from "./bill.ts";
-import { combineWorkflowResult } from "./combine.ts";
-import { unwrapAgentPayload } from "./format.ts";
+import { resolveDeliverablePayload } from "./payload.ts";
+import { isIntelPayload, intelDeliverableKicker } from "./defi-agents.tsx";
 
 export const PaperDocument = forwardRef<
   HTMLElement,
-  { job: MarketplaceDeliverable; children: ReactNode }
->(function PaperDocument({ job, children }, ref) {
+  { job: MarketplaceDeliverable; children: ReactNode; payload?: Record<string, unknown> | null }
+>(function PaperDocument({ job, children, payload: payloadProp }, ref) {
   const date = new Date(job.at * 1000).toLocaleDateString(undefined, {
     year: "numeric",
     month: "long",
@@ -18,31 +18,39 @@ export const PaperDocument = forwardRef<
   const strategy = strategyLabel(job.plan?.strategy);
   const isAudit = isAuditDeliverable(job);
   const isBill = !isAudit && isBillDeliverable(job);
-  const payload = useMemo(() => {
-    const done = job.steps.filter((s) => s.status === "done" && s.output != null);
-    const merged = combineWorkflowResult(done);
-    if (merged) return merged;
-    const step = job.steps.find((s) => s.output != null);
-    return step ? unwrapAgentPayload(step.output) : null;
-  }, [job.steps]);
+  const payload = useMemo(() => payloadProp ?? resolveDeliverablePayload(job), [job, payloadProp]);
+  const isIntel = payload != null && isIntelPayload(payload);
   const title = isAudit
     ? auditPaperTitle(job, payload)
     : isBill
       ? billPaperTitle(job, payload)
-      : (job.brief ?? "Deliverable Report");
+      : isIntel && (typeof payload?.token === "string" || typeof payload?.tokenSymbol === "string")
+        ? `${String(payload.token ?? payload.tokenSymbol)} — Token Research`
+        : isIntel && typeof payload?.address === "string"
+          ? `Wallet ${String(payload.address).slice(0, 10)}…`
+          : (job.brief ?? "Deliverable Report");
   const showAbstract =
-    !isAudit && !isBill && job.plan?.reason && !/^single-agent task\.?$/i.test(job.plan.reason);
+    !isAudit && !isBill && !isIntel && job.plan?.reason && !/^single-agent task\.?$/i.test(job.plan.reason);
   const sheetClass = isAudit
     ? " library-paper-sheet--audit"
     : isBill
       ? " library-paper-sheet--bill"
-      : "";
+      : isIntel
+        ? " library-paper-sheet--intel"
+        : "";
+  const kicker = isAudit
+    ? "Butler Security Audit"
+    : isBill
+      ? "Butler Utility Quote"
+      : isIntel
+        ? intelDeliverableKicker(payload)
+        : "Butler Research Deliverable";
 
   return (
     <article className={`library-paper-sheet${sheetClass}`} ref={ref}>
       <header className="paper-masthead">
         <p className="paper-kicker">
-          {isAudit ? "Butler Security Audit" : isBill ? "Butler Utility Quote" : "Butler Research Deliverable"}
+          {kicker}
         </p>
         <h1 className="paper-title">{title}</h1>
         <div className="paper-byline">
