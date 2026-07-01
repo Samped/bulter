@@ -9,6 +9,7 @@ import { sessionIdFromRequest, hasActiveUserSession } from "./user-session.ts";
 import { filterJobsForOwner, jobVisibleToOwner, resolveJobOwnerFromRequest } from "./job-owner.ts";
 import { handleGetLedger } from "./ledger-handlers.ts";
 import { handleGetPolicy, handlePutPolicy, handleResetPolicy } from "./policy-handlers.ts";
+import { handleGetUserPreferences, handlePutUserPreferences } from "./user-preferences.ts";
 import { registerAuctionRoutes } from "./auction-routes.ts";
 import { registerTraceRoutes } from "./trace-routes.ts";
 import { getOpenAiPlannerStatus } from "./openai-planner.ts";
@@ -59,6 +60,14 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
 
   app.post("/api/policy/reset", (req, res) => {
     handleResetPolicy(req, res, STATE_PATH, SELLER);
+  });
+
+  app.get("/api/user/preferences", (req, res) => {
+    handleGetUserPreferences(req, res);
+  });
+
+  app.put("/api/user/preferences", (req, res) => {
+    handlePutUserPreferences(req, res);
   });
 
   app.get("/api/ledger", (req, res) => {
