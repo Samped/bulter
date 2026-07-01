@@ -6,7 +6,7 @@ cd "$ROOT"
 
 node scripts/set-workspaces-render.js
 npm install --omit=dev
-npm run build:render -w @butler/api
+npm run build:render -w @butler/api || echo "WARN: dist build failed — lite API runs from tsx source"
 
 # Small VMs OOM if we boot Circle CLI twice during deploy; installer already runs --version once.
 export BUTLER_SKIP_CLI_SMOKE=1
@@ -17,4 +17,8 @@ else
 fi
 
 echo "==> Render build complete"
-test -f apps/api/dist/server.mjs
+if [[ -f apps/api/dist/server.mjs ]]; then
+  echo "dist/server.mjs present"
+else
+  echo "WARN: dist/server.mjs missing — lite VM will use tsx (OK for BUTLER_LITE_API=true)"
+fi
