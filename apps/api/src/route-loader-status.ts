@@ -4,7 +4,7 @@ let executeLoadError: string | null = null;
 let bootPhase = "pending";
 
 /** Bump when ledger backfill logic changes — check via GET /api/health ledgerVersion. */
-export const LEDGER_BACKFILL_VERSION = 2;
+export const LEDGER_BACKFILL_VERSION = 4;
 
 export function setBootPhase(phase: string): void {
   bootPhase = phase;

@@ -321,7 +321,7 @@ app.post("/api/policy/reset", (req, res) => {
 });
 
 app.get("/api/ledger", (req, res) => {
-  handleGetLedger(req, res, STATE_PATH, SELLER, MARKETPLACE_PATH);
+  void handleGetLedger(req, res, STATE_PATH, SELLER, MARKETPLACE_PATH);
 });
 
 app.get("/api/merchants", (_req, res) => {

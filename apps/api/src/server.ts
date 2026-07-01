@@ -11,7 +11,7 @@ import { pruneButlerRunJobs } from "./butler-run-jobs.ts";
 import { userSessionMiddleware } from "./user-session.ts";
 import { getRouteLoaderStatus, LEDGER_BACKFILL_VERSION } from "./route-loader-status.ts";
 import { resolveButlerStatePath, resolveMarketplaceStatePath } from "./data-paths.ts";
-import { handleGetLedger } from "./ledger-handlers.ts";
+import { handleGetLedger, warmLedgerCaches } from "./ledger-handlers.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../../../.env") });
@@ -63,8 +63,10 @@ app.use(userSessionMiddleware);
 
 /** Activity ledger — after session middleware so Mine filter sees the connected Circle wallet. */
 app.get("/api/ledger", (req, res) => {
-  handleGetLedger(req, res, resolveButlerStatePath(), SELLER, resolveMarketplaceStatePath());
+  void handleGetLedger(req, res, resolveButlerStatePath(), SELLER, resolveMarketplaceStatePath());
 });
+
+warmLedgerCaches(resolveButlerStatePath(), SELLER, resolveMarketplaceStatePath());
 
 /** Login routes — never blocked by heavy route imports. */
 registerCircleLoginRoutes(app);

@@ -33,6 +33,12 @@ function settlementFromStep(step: MarketplaceJob["steps"][number]): string | und
   if (typeof payment?.transaction === "string" && payment.transaction.trim()) {
     return payment.transaction.trim();
   }
+  if (typeof output.settlementId === "string" && output.settlementId.trim()) {
+    return output.settlementId.trim();
+  }
+  if (typeof output.transaction === "string" && output.transaction.trim()) {
+    return output.transaction.trim();
+  }
   return undefined;
 }
 
@@ -53,6 +59,14 @@ function spendCategory(agent: { policyAgent: string }): SpendRecord["category"] 
 
 function stepTimestamp(job: MarketplaceJob, stepIndex: number): number {
   return job.at + stepIndex;
+}
+
+function syntheticStepKey(job: MarketplaceJob, step: MarketplaceJob["steps"][number], index: number): string {
+  return `job-${job.id}-${step.agentId}-${index}`;
+}
+
+function recordKey(record: SpendRecord): string {
+  return record.settlementId?.trim() || record.id;
 }
 
 /**
@@ -81,30 +95,30 @@ export function resolveMarketplaceForLedger(
   };
 }
 
-/** Backfill ledger rows from completed marketplace job steps (Circle CLI pays sometimes skip appendRecord). */
+/** Backfill ledger rows from marketplace job steps (Circle CLI / internal pay often skip appendRecord). */
 export function mergeJobSettlementsIntoRecords(
   records: SpendRecord[],
   jobs: MarketplaceJob[],
   _auctions: ReverseAuction[] = []
 ): { records: SpendRecord[]; added: number } {
-  const knownSettlements = new Set(
-    records.map((r) => r.settlementId).filter((id): id is string => !!id?.trim())
-  );
+  const knownKeys = new Set(records.map((r) => recordKey(r)).filter(Boolean));
   const additions: SpendRecord[] = [];
 
   for (const job of jobs) {
-    if (job.status !== "completed") continue;
     job.steps.forEach((step, index) => {
-      const settlementId = settlementFromStep(step);
-      if (!settlementId || knownSettlements.has(settlementId)) return;
+      if (step.status !== "done" && step.status !== "paid") return;
+
+      const syntheticKey = syntheticStepKey(job, step, index);
+      const settlementId = settlementFromStep(step) ?? syntheticKey;
+      if (knownKeys.has(settlementId) || knownKeys.has(syntheticKey)) return;
 
       const agent = getMarketplaceAgent(step.agentId);
       if (!agent) return;
-      if (step.status !== "done" && step.status !== "paid") return;
 
       const payerMeta = resolveJobStepPayer(payerFromStep(step, job), job.payerAddress);
+      const rowId = syntheticKey;
       additions.push({
-        id: `job-${job.id}-${step.agentId}-${index}`,
+        id: rowId,
         at: stepTimestamp(job, index),
         agent: agent.policyAgent,
         category: spendCategory(agent),
@@ -113,10 +127,12 @@ export function mergeJobSettlementsIntoRecords(
         settlementId,
         payerAddress: payerMeta.payerAddress,
         executorAddress: payerMeta.executorAddress,
-        initiator: job.ownerSessionId || job.brief ? "user" : "system",
+        initiator: (job.ownerSessionId || job.brief) ? "user" : "system",
         status: "settled",
       });
-      knownSettlements.add(settlementId);
+      knownKeys.add(settlementId);
+      knownKeys.add(syntheticKey);
+      knownKeys.add(rowId);
     });
   }
 
@@ -129,12 +145,17 @@ export function syncLedgerFromJobs(
   sellerAddress: `0x${string}`,
   jobs: MarketplaceJob[],
   auctions: ReverseAuction[] = [],
-  baseRecords?: SpendRecord[]
+  baseRecords?: SpendRecord[],
+  opts?: { persist?: boolean }
 ): SpendRecord[] {
-  const prior = baseRecords ?? loadState(statePath, sellerAddress).records;
+  const state = loadState(statePath, sellerAddress);
+  const prior = baseRecords ?? state.records;
   const { records, added } = mergeJobSettlementsIntoRecords(prior, jobs, auctions);
   if (added > 0) {
-    console.log(`[ledger] materialized ${added} payment(s) from ${jobs.length} jobs (read-only backfill)`);
+    console.log(`[ledger] materialized ${added} payment(s) from ${jobs.length} jobs`);
+    if (opts?.persist) {
+      saveState({ ...state, records }, statePath);
+    }
   }
   return records;
 }
@@ -169,7 +190,7 @@ export function appendLedgerFromOrchestration(params: {
     settlementId,
     payerAddress: payerMeta.payerAddress,
     executorAddress: payerMeta.executorAddress,
-    initiator: params.job.ownerSessionId || params.job.brief ? "user" : "system",
+    initiator: (params.job.ownerSessionId || params.job.brief) ? "user" : "system",
     status: "settled",
   };
   saveState(appendRecord(state, record), params.policyStatePath);

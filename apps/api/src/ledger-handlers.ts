@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { loadState, remainingDailyUsdc, type SpendRecord } from "@butler/core";
+import { loadState, remainingDailyUsdc, saveState, type SpendRecord } from "@butler/core";
 import {
   applyJobAttribution,
   attributeLedgerRecords,
@@ -7,6 +7,7 @@ import {
   filterRecordsForOwner,
   resolveSessionActivityPayerAddresses,
 } from "./ledger-payer.ts";
+import { prefetchGatewayLedgerCache, syncLedgerFromGateway } from "./gateway-ledger-sync.ts";
 import { resolveMarketplaceForLedger, syncLedgerFromJobs } from "./ledger-sync.ts";
 import { resolveJobOwnerFromRequest, resolveOwnerPayerAddresses } from "./job-owner.ts";
 import { LEDGER_BACKFILL_VERSION } from "./route-loader-status.ts";
@@ -36,20 +37,28 @@ function jobsForLedger(
   return loaded;
 }
 
-export function handleGetLedger(
+export async function handleGetLedger(
   req: Request,
   res: Response,
   statePath: string,
   sellerAddress: `0x${string}`,
   marketplacePath?: string
-): void {
+): Promise<void> {
   try {
     const state = loadState(statePath, sellerAddress);
     const { jobs, auctions } = jobsForLedger(statePath, marketplacePath, sellerAddress);
     const scope = String(req.query.scope ?? "all");
     const owner = resolveJobOwnerFromRequest(req);
 
-    const ledgerRecords = syncLedgerFromJobs(statePath, sellerAddress, jobs, auctions, state.records);
+    let ledgerRecords = syncLedgerFromJobs(statePath, sellerAddress, jobs, auctions, state.records, {
+      persist: true,
+    });
+    const gateway = await syncLedgerFromGateway(sellerAddress, ledgerRecords);
+    ledgerRecords = gateway.records;
+    if (gateway.added > 0) {
+      saveState({ ...loadState(statePath, sellerAddress), records: ledgerRecords }, statePath);
+    }
+
     let attributed = attributeLedgerRecords(ledgerRecords);
     try {
       attributed = applyJobAttribution(attributed, jobs, auctions);
@@ -58,7 +67,7 @@ export function handleGetLedger(
     }
 
     const ownerPayerAddresses = resolveOwnerPayerAddresses(owner);
-    const sessionPayers = resolveSessionActivityPayerAddresses(state.records);
+    const sessionPayers = resolveSessionActivityPayerAddresses(ledgerRecords);
     const activityPayerAddresses =
       ownerPayerAddresses.length > 0 ? ownerPayerAddresses : sessionPayers;
 
@@ -82,7 +91,9 @@ export function handleGetLedger(
       meta: {
         ledgerVersion: LEDGER_BACKFILL_VERSION,
         jobsIndexed: jobs.length,
+        gatewayTransfers: gateway.gatewayCount,
         materializedRecords: ledgerRecords.length,
+        persistedRecords: ledgerRecords.length,
       },
     });
   } catch (error) {
@@ -92,4 +103,13 @@ export function handleGetLedger(
       meta: { ledgerVersion: LEDGER_BACKFILL_VERSION },
     });
   }
+}
+
+export function warmLedgerCaches(
+  statePath: string,
+  sellerAddress: `0x${string}`,
+  marketplacePath?: string
+): void {
+  jobsForLedger(statePath, marketplacePath, sellerAddress);
+  void prefetchGatewayLedgerCache(sellerAddress);
 }
