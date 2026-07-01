@@ -51,6 +51,7 @@ const SERVICE_LABELS: Record<string, string> = {
   "price-feed": "Market / price feed",
   "utility-quote": "Report / bill agent",
   "subscription-check": "Subscription agent",
+  "x402-transfer": "Agent payment",
 };
 
 const NAV: { id: Tab; label: string; Icon: typeof IconMarketplace }[] = [
