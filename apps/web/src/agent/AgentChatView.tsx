@@ -128,7 +128,7 @@ export function AgentChatView({
   useEffect(() => {
     if (qualityTier === "full") {
       setAuctionMode("etf");
-      setMaxBudgetUsdc((prev) => prev || "0.25");
+      setMaxBudgetUsdc((prev) => (!prev || prev === "0.10" || prev === "0.15" ? "0.25" : prev));
     } else if (qualityTier === "brief") {
       setAuctionMode("single");
     }
