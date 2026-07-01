@@ -1023,7 +1023,8 @@ export async function buildWalletReputationPayload(brief?: string) {
   if (!openAiConfigured()) {
     throw analystUnavailable("Wallet Reputation Agent");
   }
-  const wallet = extractWalletAddress(brief);
+  const fromBrief = extractWalletAddress(brief);
+  const wallet = fromBrief;
   const address = wallet ?? "0x0000000000000000000000000000000000000000";
   const request = brief?.trim() || `Wallet reputation for ${address}`;
 
@@ -1048,7 +1049,7 @@ Note: without on-chain API this is pattern-based heuristics from address + user 
     `Wallet reputation check: ${request}\nAddress: ${address}`
   ).then((data) => ({
     ...data,
-    address,
+    address: fromBrief ?? data.address,
     brief: brief?.trim() || undefined,
     disclaimer: "Heuristic assessment — verify on-chain before copying trades.",
     generatedAt: new Date().toISOString(),

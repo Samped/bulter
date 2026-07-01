@@ -42,13 +42,13 @@ function ScoreMeter({
 }
 
 function VerdictBadge({ verdict }: { verdict: string }) {
-  const v = verdict.toLowerCase();
+  const v = verdict.toLowerCase().replace(/\s+/g, " ").trim();
   const tone =
     v === "recommended" || v === "favorable"
       ? "positive"
       : v === "avoid"
         ? "negative"
-        : v === "caution"
+        : v.includes("caution")
           ? "warn"
           : "neutral";
   const label =
@@ -58,7 +58,7 @@ function VerdictBadge({ verdict }: { verdict: string }) {
         ? "Copy trade: Favorable"
         : v === "avoid"
           ? "Copy trade: Avoid"
-          : v === "caution"
+          : v === "caution" || v === "caution advised"
             ? "Copy trade: Caution"
             : v === "neutral"
               ? "Copy trade: Neutral"

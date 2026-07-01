@@ -2,8 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatUsdc, getMarketplaceDeliverable, getMarketplaceDeliverables, type MarketplaceDeliverable } from "../api.ts";
 import { IconCheck, IconChevronLeft, IconChevronRight, IconDownload, IconLibrary, IconRefresh, IconSearch } from "../icons.tsx";
-import { DeliverableSummary, CombinedDeliverableBody } from "./DeliverableContent.tsx";
-import { IntelDeliverableBody, isIntelPayload } from "./defi-agents.tsx";
+import { LibraryDocumentBody } from "./LibraryDocumentBody.tsx";
 import { resolveDeliverablePayload } from "./payload.ts";
 import { combineWorkflowResult } from "./combine.ts";
 import { downloadText, slugify } from "./format.ts";
@@ -88,9 +87,11 @@ export function DeliverablesView({
   };
 
   const pick = (job: MarketplaceDeliverable) => {
-    setSelected(job);
-    onSelectId?.(job.id);
     setCopied(false);
+    onSelectId?.(job.id);
+    void getMarketplaceDeliverable(job.id)
+      .then((full) => setSelected(full))
+      .catch(() => setSelected(job));
   };
 
   const clearSelection = () => {
@@ -376,15 +377,7 @@ export function DeliverablesView({
 
               <div className="library-paper-canvas">
                 <PaperDocument job={selected} ref={paperRef} payload={structuredPayload}>
-                  {structuredPayload && isIntelPayload(structuredPayload) ? (
-                    <IntelDeliverableBody payload={structuredPayload} brief={selected.brief} />
-                  ) : doneSteps.length > 0 ? (
-                    <CombinedDeliverableBody steps={doneSteps} brief={selected.brief} />
-                  ) : selected.summary && !selected.summary.trim().startsWith("{") ? (
-                    <DeliverableSummary text={selected.summary} />
-                  ) : (
-                    <p className="paper-prose paper-empty">No structured output was stored for this job.</p>
-                  )}
+                  <LibraryDocumentBody job={selected} />
                 </PaperDocument>
               </div>
 
