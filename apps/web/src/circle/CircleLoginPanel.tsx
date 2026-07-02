@@ -5,7 +5,6 @@ import {
   circleLoginVerify,
   circleLogout,
   clearPayerDisplayCache,
-  fundCircleWallet,
   getCircleStatus,
   getCircleStatusQuick,
   getCircleWallets,
@@ -130,6 +129,7 @@ export function CircleLoginPanel({
   circleStatus: circleStatusProp,
   onReady,
   onLoginSuccess,
+  onRequestFund,
   variant = "toolbar",
   open: openProp,
   onOpenChange,
@@ -138,6 +138,8 @@ export function CircleLoginPanel({
   circleStatus?: CircleStatus | null;
   onReady?: () => void;
   onLoginSuccess?: (info: { executorAddress: string | null }) => void;
+  /** Open the shared fund-Gateway modal (App shell). */
+  onRequestFund?: () => void;
   variant?: "sidebar" | "toolbar" | "mobile-sheet";
   /** Controlled open (used by mobile sign-in sheet). */
   open?: boolean;
@@ -183,11 +185,7 @@ export function CircleLoginPanel({
     },
     [openProp, internalOpen, onOpenChange]
   );
-  const [showFundModal, setShowFundModal] = useState(false);
-  const [fundBusy, setFundBusy] = useState(false);
-  const [fundMessage, setFundMessage] = useState<string | null>(null);
   const [verifyHint, setVerifyHint] = useState<string | null>(null);
-  const [loggedInAddress, setLoggedInAddress] = useState<string | null>(null);
   const [popoverPos, setPopoverPos] = useState<{ top: number; right: number; width: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const chipRef = useRef<HTMLButtonElement>(null);
@@ -299,7 +297,7 @@ export function CircleLoginPanel({
   useEffect(() => {
     if (!isOpen || variant === "mobile-sheet") return;
     const onDoc = (e: MouseEvent) => {
-      if (step === "otp" || verifying || sending || showFundModal) return;
+      if (step === "otp" || verifying || sending) return;
       const target = e.target as Node;
       if (
         rootRef.current?.contains(target) ||
@@ -312,7 +310,7 @@ export function CircleLoginPanel({
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [isOpen, step, verifying, sending, showFundModal, variant]);
+  }, [isOpen, step, verifying, sending, variant]);
 
   useEffect(() => {
     if (step !== "otp" || !isOpen) return;
@@ -478,8 +476,12 @@ export function CircleLoginPanel({
             const w = await getCircleWallets().catch(() => null);
             if (w?.wallets?.length) setWallets(w.wallets);
           }
+          const bal = s.gatewayBalanceUsdc;
+          if (bal == null || Number(bal) === 0) {
+            onRequestFund?.();
+          }
         } catch {
-          /* optimistic login from verify response */
+          onRequestFund?.();
         }
       })();
     } catch (e) {
@@ -496,21 +498,6 @@ export function CircleLoginPanel({
     } finally {
       setVerifying(false);
       setVerifyHint(null);
-    }
-  };
-
-  const handleFundWallet = async () => {
-    setFundBusy(true);
-    setFundMessage(null);
-    try {
-      await fundCircleWallet();
-      setFundMessage("Testnet USDC is on the way to your wallet. Gateway balance updates in about a minute.");
-      await refresh();
-      onReady?.();
-    } catch (e) {
-      setFundMessage(e instanceof Error ? e.message : "Could not fund wallet. Try the Circle faucet link below.");
-    } finally {
-      setFundBusy(false);
     }
   };
 
@@ -537,7 +524,6 @@ export function CircleLoginPanel({
       resetBrowserSessionId();
       goToEmail();
       setOpen(false);
-      setShowFundModal(false);
       await refresh({ quick: true });
       onReady?.();
     } catch (e) {
@@ -547,40 +533,6 @@ export function CircleLoginPanel({
       setBusy(false);
     }
   };
-
-  const fundModal =
-    showFundModal && loggedInAddress ? (
-      <div className="payer-fund-backdrop" role="presentation">
-        <div className="payer-fund-modal" role="dialog" aria-label="Get testnet tokens">
-          <p className="payer-fund-title">You&apos;re logged in</p>
-          <p className="payer-fund-copy">
-            Get free testnet USDC on Arc so you can run agents and pay x402 merchants.
-          </p>
-          <p className="payer-fund-wallet">
-            Your wallet: <code>{shortAddr(loggedInAddress)}</code>
-          </p>
-          <button
-            type="button"
-            className="btn primary payer-fund-btn"
-            disabled={fundBusy}
-            onClick={() => void handleFundWallet()}
-          >
-            {fundBusy ? "Sending tokens…" : "Get testnet USDC"}
-          </button>
-          <p className="muted small payer-fund-alt">
-            Or use{" "}
-            <a href="https://faucet.circle.com" target="_blank" rel="noreferrer">
-              faucet.circle.com
-            </a>{" "}
-            (Arc testnet) and send to your wallet address.
-          </p>
-          {fundMessage && <p className="payer-fund-msg">{fundMessage}</p>}
-          <button type="button" className="btn ghost sm payer-fund-dismiss" onClick={() => setShowFundModal(false)}>
-            Continue to app
-          </button>
-        </div>
-      </div>
-    ) : null;
 
   const showOtpStep = step === "otp" && !connected;
   const popoverLayout =
@@ -605,17 +557,13 @@ export function CircleLoginPanel({
               Gateway: {payerStatus.gatewayBalanceUsdc} USDC
             </p>
           )}
-          {Number(payerStatus?.gatewayBalanceUsdc ?? 0) === 0 && payerStatus?.executorAddress && (
+          {payerStatus?.executorAddress && (
             <button
               type="button"
               className="btn ghost sm payer-popover-btn"
-              disabled={fundBusy}
-              onClick={() => {
-                setLoggedInAddress(payerStatus!.executorAddress!);
-                setShowFundModal(true);
-              }}
+              onClick={() => onRequestFund?.()}
             >
-              Get testnet USDC
+              Fund Gateway USDC
             </button>
           )}
           {wallets.length > 1 && (
@@ -805,12 +753,7 @@ export function CircleLoginPanel({
     ) : null;
 
   if (variant === "mobile-sheet") {
-    return (
-      <>
-        {mobileSheet && createPortal(mobileSheet, document.body)}
-        {fundModal && createPortal(fundModal, document.body)}
-      </>
-    );
+    return <>{mobileSheet && createPortal(mobileSheet, document.body)}</>;
   }
 
   if (variant === "toolbar") {
@@ -864,7 +807,6 @@ export function CircleLoginPanel({
         </button>
 
         {popover && createPortal(popover, document.body)}
-        {fundModal && createPortal(fundModal, document.body)}
       </div>
     );
   }

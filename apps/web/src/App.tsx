@@ -39,6 +39,7 @@ import { MarketplaceView } from "./marketplace/MarketplaceView.tsx";
 import { AgentChatView } from "./agent/AgentChatView.tsx";
 import { DeliverablesView } from "./deliverables/DeliverablesView.tsx";
 import { CircleLoginPanel } from "./circle/CircleLoginPanel.tsx";
+import { PayerFundModal } from "./circle/PayerFundModal.tsx";
 import { formatWorkflowError } from "./format.ts";
 import { useIsMobile } from "./use-mobile.ts";
 
@@ -106,7 +107,20 @@ export function App() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileLoginOpen, setMobileLoginOpen] = useState(false);
+  const [fundModalOpen, setFundModalOpen] = useState(false);
   const isMobile = useIsMobile();
+
+  const openFundModal = useCallback(() => {
+    const loggedIn = circleStatus?.loggedIn ?? !!loadPayerDisplayCache()?.loggedIn;
+    const executor =
+      circleStatus?.executorAddress ?? loadPayerDisplayCache()?.executorAddress ?? null;
+    if (!loggedIn || !executor) {
+      if (isMobile) setMobileLoginOpen(true);
+      return;
+    }
+    setMobileMenuOpen(false);
+    setFundModalOpen(true);
+  }, [circleStatus?.loggedIn, circleStatus?.executorAddress, isMobile]);
 
   const loadActivityLedger = useCallback(async (scope: ActivityScope) => {
     setActivityLoading(true);
@@ -508,8 +522,8 @@ export function App() {
         <button
           type="button"
           className={`mobile-header-pill balance ${gatewayLow ? "warn" : ""}`}
-          onClick={() => setMobileMenuOpen(true)}
-          aria-label={`Gateway balance ${gatewayLabel}`}
+          onClick={() => openFundModal()}
+          aria-label={`Gateway balance ${gatewayLabel}. Tap to fund.`}
         >
           <span className="mobile-header-pill-label">GW</span>
           <span className="mobile-header-pill-text">{gatewayLabel}</span>
@@ -534,6 +548,7 @@ export function App() {
           onOpenChange={setMobileLoginOpen}
           circleStatus={circleStatus}
           onReady={refresh}
+          onRequestFund={openFundModal}
           onLoginSuccess={() => {
             void refresh();
             setMobileLoginOpen(false);
@@ -568,10 +583,17 @@ export function App() {
                   )}
                 </div>
               </div>
-              <div className={`mobile-menu-balance ${gatewayLow ? "warn" : ""}`}>
-                <span className="mobile-menu-balance-label">Gateway USDC</span>
-                <span className="mobile-menu-balance-value">{gatewayLabel}</span>
-              </div>
+              <button
+                type="button"
+                className={`mobile-menu-balance ${gatewayLow ? "warn" : ""}`}
+                onClick={() => openFundModal()}
+              >
+                <div className="mobile-menu-balance-copy">
+                  <span className="mobile-menu-balance-label">Gateway USDC</span>
+                  <span className="mobile-menu-balance-value">{gatewayLabel}</span>
+                </div>
+                <span className="mobile-menu-balance-action muted small">Fund</span>
+              </button>
             </div>
 
             <nav className="mobile-menu-nav" aria-label="Sections">
@@ -594,6 +616,7 @@ export function App() {
                 variant="toolbar"
                 circleStatus={circleStatus}
                 onReady={refresh}
+                onRequestFund={openFundModal}
                 onLoginSuccess={() => {
                   void refresh();
                 }}
@@ -644,11 +667,14 @@ export function App() {
                 value={gatewayBalance != null ? `$${formatUsdc(gatewayBalance)}` : "—"}
                 variant={gatewayLow ? "warning" : "default"}
                 accent
+                onClick={() => openFundModal()}
+                title="Fund Gateway USDC"
               />
               <CircleLoginPanel
                 variant="toolbar"
                 circleStatus={circleStatus}
                 onReady={refresh}
+                onRequestFund={openFundModal}
                 onLoginSuccess={() => {
                   void refresh();
                 }}
@@ -881,6 +907,13 @@ export function App() {
           )}
         </div>
       </main>
+
+      <PayerFundModal
+        open={fundModalOpen}
+        walletAddress={payerExecutor}
+        onClose={() => setFundModalOpen(false)}
+        onFunded={() => void refresh()}
+      />
     </div>
   );
 }

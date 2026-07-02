@@ -40,14 +40,27 @@ export function MetricChip({
   value,
   variant = "default",
   accent,
+  onClick,
+  title,
 }: {
   label: string;
   value: string;
   variant?: "default" | "success" | "warning";
   accent?: boolean;
+  onClick?: () => void;
+  title?: string;
 }) {
+  const className = `metric-chip ${variant} ${accent ? "accent" : ""}${onClick ? " clickable" : ""}`;
+  if (onClick) {
+    return (
+      <button type="button" className={className} onClick={onClick} title={title}>
+        <span className="metric-chip-label">{label}</span>
+        <span className="metric-chip-value">{value}</span>
+      </button>
+    );
+  }
   return (
-    <div className={`metric-chip ${variant} ${accent ? "accent" : ""}`}>
+    <div className={className}>
       <span className="metric-chip-label">{label}</span>
       <span className="metric-chip-value">{value}</span>
     </div>
