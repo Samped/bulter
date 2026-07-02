@@ -12,7 +12,7 @@ import {
   type MarketplaceState,
   type ReverseAuction,
 } from "@butler/core";
-import { stampJobFromAuction } from "./job-owner.ts";
+import { attachJobPaymentMeta, stampJobFromAuction } from "./job-owner.ts";
 import { runWithUserSession } from "./user-session.ts";
 
 let orchestratorModule: typeof import("./marketplace-orchestrator.ts") | null = null;
@@ -103,7 +103,10 @@ async function resumeAwardedWorkflow(
     const result = auction.ownerSessionId
       ? await runWithUserSession(auction.ownerSessionId, settle)
       : await settle();
-    const finalized = stampJobFromAuction(finalizeCompletedJob(job, result), auction);
+    const finalized = attachJobPaymentMeta(stampJobFromAuction(finalizeCompletedJob(job, result), auction), {
+      sessionId: auction.ownerSessionId,
+      payerAddress: auction.payerAddress,
+    });
     const completed = finalized.status === "completed";
 
     patchMarketplaceState(opts.statePath, opts.sellerAddress, (latest) => {
@@ -270,7 +273,10 @@ export async function executeAuctionAward(opts: {
       ? await runWithUserSession(auction.ownerSessionId, settle)
       : await settle();
 
-    const finalized = stampJobFromAuction(finalizeCompletedJob(job, result), auction);
+    const finalized = attachJobPaymentMeta(stampJobFromAuction(finalizeCompletedJob(job, result), auction), {
+      sessionId: auction.ownerSessionId,
+      payerAddress: auction.payerAddress,
+    });
     const completed = finalized.status === "completed";
 
     patchMarketplaceState(opts.statePath, opts.sellerAddress, (latest) => {

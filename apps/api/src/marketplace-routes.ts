@@ -32,7 +32,8 @@ import {
   runMarketplaceWorkflow,
 } from "./marketplace-orchestrator.ts";
 import { buildJobSummary, finalizeCompletedJob, inferPlanFromJob, planToJobPlan, runMarketplaceTask } from "./marketplace-task.ts";
-import { filterJobsForOwner, jobVisibleToOwner, resolveJobOwnerFromRequest, stampJobOwner } from "./job-owner.ts";
+import { stampJobOwner, resolveJobOwnerFromRequest, attachJobPaymentMeta } from "./job-owner.ts";
+import { handleGetDeliverable, handleListDeliverables } from "./library-handlers.ts";
 import { getOpenAiPlannerStatus } from "./openai-planner.ts";
 import {
   executeAuctionAward,
@@ -108,40 +109,12 @@ export function registerMarketplaceRoutes(
     res.json(loadMp().jobs.slice(-50).reverse());
   });
 
-  app.get("/api/marketplace/jobs/:id", (req, res) => {
-    const owner = resolveJobOwnerFromRequest(req);
-    const job = loadMp().jobs.find((j) => j.id === req.params.id);
-    if (!job || !jobVisibleToOwner(job, owner)) {
-      res.status(404).json({ error: "Job not found" });
-      return;
-    }
-    res.json({ ...job, plan: job.plan ?? inferPlanFromJob(job), summary: buildJobSummary(job) });
+  app.get("/api/marketplace/jobs/:id", async (req, res) => {
+    await handleGetDeliverable(req, res, STATE_PATH, SELLER);
   });
 
-  app.get("/api/marketplace/deliverables", (req, res) => {
-    const owner = resolveJobOwnerFromRequest(req);
-    const jobs = filterJobsForOwner(
-      loadMp().jobs.filter((j) => j.status === "completed"),
-      owner
-    )
-      .slice(-50)
-      .reverse()
-      .map((j) => {
-        try {
-          return {
-            ...j,
-            plan: j.plan ?? inferPlanFromJob(j),
-            summary: buildJobSummary(j),
-          };
-        } catch (err) {
-          return {
-            ...j,
-            plan: j.plan ?? inferPlanFromJob(j),
-            summary: j.summary ?? (err instanceof Error ? err.message : "Summary unavailable"),
-          };
-        }
-      });
-    res.json(jobs);
+  app.get("/api/marketplace/deliverables", async (req, res) => {
+    await handleListDeliverables(req, res, STATE_PATH, SELLER);
   });
 
   app.post("/api/marketplace/jobs", (req, res) => {

@@ -43,7 +43,7 @@ import {
 } from "./external-agent-registry.ts";
 import { probeX402Url } from "./x402-probe.ts";
 import { resolveCircleExecutorAddress } from "./circle-config.ts";
-import { stampAuctionOwner, stampJobOwner, resolveJobOwnerFromSession } from "./job-owner.ts";
+import { stampAuctionOwner, stampJobOwner, resolveJobOwnerFromSession, attachJobPaymentMeta } from "./job-owner.ts";
 
 export { inferAuctionCategory, resolveTaskCategory } from "@butler/core";
 
@@ -155,7 +155,10 @@ async function settleWinningBid(opts: {
     policyStatePath: opts.statePath,
     sellerAddress: opts.sellerAddress,
   });
-  const finalized = stampJobOwner(finalizeCompletedJob(job, result), owner);
+  const finalized = attachJobPaymentMeta(
+    stampJobOwner(finalizeCompletedJob(job, result), owner),
+    owner
+  );
   const completed = finalized.status === "completed";
   const settlementId = result.steps.find((s) => s.settlementId)?.settlementId;
 
@@ -260,7 +263,10 @@ async function settleFromTaskPlan(opts: {
     sellerAddress: opts.sellerAddress,
   });
 
-  const finalized = stampJobOwner(finalizeCompletedJob(job, result), owner);
+  const finalized = attachJobPaymentMeta(
+    stampJobOwner(finalizeCompletedJob(job, result), owner),
+    owner
+  );
   const completed = finalized.status === "completed";
   const settlementId = result.steps.find((s) => s.settlementId)?.settlementId;
 

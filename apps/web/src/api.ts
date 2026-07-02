@@ -1225,7 +1225,7 @@ export interface MarketplaceDeliverable {
 }
 
 export function getMarketplaceDeliverables() {
-  return request<MarketplaceDeliverable[]>("/api/marketplace/deliverables", undefined, 20_000);
+  return request<MarketplaceDeliverable[]>("/api/marketplace/deliverables", undefined, 45_000);
 }
 
 export function getMarketplaceDeliverable(id: string) {

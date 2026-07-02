@@ -13,7 +13,7 @@ import { exportPaperPdf } from "./pdfExport.ts";
 import { formatRelativeTime, jobStatusLabel, strategyLabel } from "./utils.ts";
 import { auditPaperTitle, isAuditDeliverable } from "./audit.ts";
 import { billPaperTitle, isBillDeliverable } from "./bill.ts";
-import { isIntelPayload } from "./defi-agents.tsx";
+import { loadLibraryCache, mergeLibraryItems, saveLibraryCache } from "./library-cache.ts";
 
 export function DeliverablesView({
   selectedId,
@@ -41,13 +41,25 @@ export function DeliverablesView({
   const loadList = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const cached = loadLibraryCache();
+    if (cached.length > 0) {
+      setItems(cached);
+    }
     try {
       const list = await getMarketplaceDeliverables();
-      setItems(list);
-      return list;
+      const merged = mergeLibraryItems(list, cached);
+      setItems(merged);
+      saveLibraryCache(merged);
+      return merged;
     } catch (e) {
-      setError(formatWorkflowError(e instanceof Error ? e.message : "Failed to load deliverables"));
-      return [];
+      const msg = formatWorkflowError(e instanceof Error ? e.message : "Failed to load deliverables");
+      if (cached.length > 0) {
+        setItems(cached);
+        setError(`${msg} — showing saved copies from this browser`);
+      } else {
+        setError(msg);
+      }
+      return cached;
     } finally {
       setLoading(false);
     }

@@ -6,7 +6,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Express, Request, Response } from "express";
 import { sessionIdFromRequest, hasActiveUserSession } from "./user-session.ts";
-import { filterJobsForOwner, jobVisibleToOwner, resolveJobOwnerFromRequest } from "./job-owner.ts";
+import { handleGetDeliverable, handleListDeliverables } from "./library-handlers.ts";
 import { resolveButlerStatePath, resolveMarketplaceStatePath } from "./data-paths.ts";
 import { handleGetPolicy, handlePutPolicy, handleResetPolicy } from "./policy-handlers.ts";
 import { handleGetUserPreferences, handlePutUserPreferences } from "./user-preferences.ts";
@@ -289,33 +289,11 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
   });
 
   app.get("/api/marketplace/jobs/:id", async (req, res) => {
-    const owner = resolveJobOwnerFromRequest(req);
-    const job = loadMp().jobs.find((j) => j.id === req.params.id);
-    if (!job || !jobVisibleToOwner(job, owner)) {
-      res.status(404).json({ error: "Job not found" });
-      return;
-    }
-    const { buildJobSummary, inferPlanFromJob } = await import("./marketplace-task.ts");
-    res.json({ ...job, plan: job.plan ?? inferPlanFromJob(job), summary: buildJobSummary(job) });
+    await handleGetDeliverable(req, res, STATE_PATH, SELLER);
   });
 
   app.get("/api/marketplace/deliverables", async (req, res) => {
-    const owner = resolveJobOwnerFromRequest(req);
-    const { buildJobSummary, inferPlanFromJob } = await import("./marketplace-task.ts");
-    const jobs = filterJobsForOwner(
-      loadMp().jobs.filter((j) =>
-        j.status === "completed" || j.status === "running" || j.status === "paying" || j.status === "pending"
-      ),
-      owner
-    )
-      .slice(-50)
-      .reverse()
-      .map((j) => ({
-        ...j,
-        plan: j.plan ?? inferPlanFromJob(j),
-        summary: buildJobSummary(j),
-      }));
-    res.json(jobs);
+    await handleListDeliverables(req, res, STATE_PATH, SELLER);
   });
 
   setBootPhase("shell-done");
