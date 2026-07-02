@@ -86,6 +86,7 @@ export function AgentChatView({
   payerReason,
   needsGatewayFund,
   gatewayFunding,
+  gatewayFundError,
   onFundGateway,
   onTaskComplete,
   onButlerBusyChange,
@@ -95,6 +96,7 @@ export function AgentChatView({
   payerReason?: string;
   needsGatewayFund?: boolean;
   gatewayFunding?: boolean;
+  gatewayFundError?: string | null;
   onFundGateway?: () => void;
   onTaskComplete?: () => void;
   onButlerBusyChange?: (busy: boolean) => void;
@@ -567,6 +569,11 @@ export function AgentChatView({
           >
             {gatewayFunding ? "Funding…" : "Fund GW account"}
           </button>
+          {gatewayFundError && (
+            <p className="agent-fund-prompt-error" role="alert">
+              {gatewayFundError}
+            </p>
+          )}
         </div>
       )}
 

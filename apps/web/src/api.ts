@@ -722,12 +722,59 @@ export async function circleLoginVerify(
   }
 }
 
-export function fundCircleWallet() {
-  return request<{ pending: boolean; address: string; chain: string }>("/api/circle/fund", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: "{}",
-  }, 15_000, 2);
+export interface FundCircleWalletResult {
+  ok: boolean;
+  pending?: boolean;
+  jobId?: string;
+  status?: "pending" | "ok" | "error";
+  address: string;
+  chain: string;
+  gatewayBalanceUsdc?: string | null;
+  error?: string;
+  walletFund?: { ok: boolean; message?: string; error?: string };
+  gatewayDeposit?: { ok: boolean; message?: string; error?: string };
+}
+
+export async function fundCircleWallet(): Promise<FundCircleWalletResult> {
+  const start = await request<{ pending: boolean; jobId: string; address: string; chain: string }>(
+    "/api/circle/fund",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    },
+    30_000,
+    2
+  );
+  if (!start.jobId) {
+    throw new Error("Fund request did not return a job id");
+  }
+
+  const deadline = Date.now() + 300_000;
+  let delay = 1_500;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, delay));
+    delay = Math.min(delay + 500, 4_000);
+    try {
+      const status = await request<FundCircleWalletResult>(
+        `/api/circle/fund/${start.jobId}`,
+        undefined,
+        45_000,
+        2
+      );
+      if (status.status === "pending") continue;
+      if (status.status === "error" || status.ok === false) {
+        throw new Error(status.error ?? "Gateway funding failed");
+      }
+      return { ...status, ok: true, address: status.address ?? start.address, chain: status.chain ?? start.chain };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/404|not found|expired/i.test(msg)) throw new Error(msg);
+      if (/Gateway funding failed|Wallet fund|deposit/i.test(msg)) throw err instanceof Error ? err : new Error(msg);
+      if (Date.now() >= deadline) throw err instanceof Error ? err : new Error(msg);
+    }
+  }
+  throw new Error("Gateway funding timed out — check your balance in a minute and try again.");
 }
 
 export function circleLogout() {

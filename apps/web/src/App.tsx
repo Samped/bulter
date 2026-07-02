@@ -108,6 +108,7 @@ export function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileLoginOpen, setMobileLoginOpen] = useState(false);
   const [gatewayFunding, setGatewayFunding] = useState(false);
+  const [gatewayFundError, setGatewayFundError] = useState<string | null>(null);
   const isMobile = useIsMobile();
 
   const loadActivityLedger = useCallback(async (scope: ActivityScope) => {
@@ -224,19 +225,46 @@ export function App() {
     const executor =
       circleStatus?.executorAddress ?? loadPayerDisplayCache()?.executorAddress ?? null;
     if (!loggedIn || !executor) {
+      const msg = "Log in with Circle (Payer) before funding Gateway.";
+      setGatewayFundError(msg);
       if (isMobile) setMobileLoginOpen(true);
       return;
     }
     if (gatewayFunding) return;
     setMobileMenuOpen(false);
+    setGatewayFundError(null);
     setGatewayFunding(true);
     try {
-      await fundCircleWallet();
+      const result = await fundCircleWallet();
+      if (result.gatewayBalanceUsdc != null) {
+        setCircleStatus((prev) => {
+          const next = prev
+            ? { ...prev, gatewayBalanceUsdc: result.gatewayBalanceUsdc ?? prev.gatewayBalanceUsdc }
+            : prev;
+          if (next) savePayerDisplayCache(next);
+          return next;
+        });
+      }
+      for (let i = 0; i < 8; i++) {
+        const cs = await getCircleStatusQuick().catch(() => null);
+        if (cs) {
+          setCircleStatus(cs);
+          savePayerDisplayCache(cs);
+          if (Number(cs.gatewayBalanceUsdc ?? 0) > 0) break;
+        }
+        await new Promise((r) => window.setTimeout(r, 2_500));
+      }
+      const latest = await getCircleStatusQuick().catch(() => null);
+      if (!latest || Number(latest.gatewayBalanceUsdc ?? 0) <= 0) {
+        setGatewayFundError(
+          "Funding may still be processing. Wait a minute, refresh the page, or tap Fund GW account again."
+        );
+      } else {
+        setGatewayFundError(null);
+      }
       void refresh({ quiet: true });
-      window.setTimeout(() => void refresh({ quiet: true }), 4000);
-      window.setTimeout(() => void refresh({ quiet: true }), 12000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not fund Gateway");
+      setGatewayFundError(e instanceof Error ? e.message : "Could not fund Gateway");
     } finally {
       setGatewayFunding(false);
     }
@@ -728,6 +756,7 @@ export function App() {
               payerReason={payerBlockReason}
               needsGatewayFund={payerLoggedIn && gatewayLow}
               gatewayFunding={gatewayFunding}
+              gatewayFundError={gatewayFundError}
               onFundGateway={() => void fundGateway()}
               onTaskComplete={refresh}
               onButlerBusyChange={setButlerBusy}

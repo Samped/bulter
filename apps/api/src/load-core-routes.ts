@@ -20,6 +20,7 @@ import {
   probeCircleCli,
   scheduleGatewayBalanceRefresh,
 } from "./circle-cli.ts";
+import { getCircleFundJob, startCircleFundJob } from "./circle-fund-jobs.ts";
 import { loadCircleConfig, resolveCircleExecutorAddress, resolveCircleChain, saveCircleConfig, clearCircleConfig } from "./circle-config.ts";
 import { resolveButlerStatePath } from "./data-paths.ts";
 import { registerRegistryRoutes } from "./registry-routes.ts";
@@ -121,13 +122,54 @@ export function loadCoreRoutes(app: Express): void {
         return;
       }
       const chain = resolveCircleChain();
-      res.status(202).json({ pending: true, address: executor, chain });
-      void fundCircleAgentAfterLogin(executor, chain).catch((err) => {
-        console.error("[circle/fund]", err instanceof Error ? err.message : err);
+      const { jobId } = startCircleFundJob(async () => {
+        const result = await fundCircleAgentAfterLogin(executor, chain);
+        const gatewayBalanceUsdc = loadCircleConfig().gatewayBalanceUsdc ?? getGatewayBalanceForApi(executor);
+        const depositOk = result.gatewayDeposit?.ok ?? false;
+        const ok = result.walletFund.ok && depositOk;
+        const error =
+          result.gatewayDeposit?.error ??
+          result.walletFund.error ??
+          (!depositOk ? "Gateway deposit did not complete" : undefined);
+        return {
+          ok,
+          address: executor,
+          chain,
+          gatewayBalanceUsdc,
+          walletFund: result.walletFund,
+          gatewayDeposit: result.gatewayDeposit,
+          error,
+        };
       });
+      res.status(202).json({ pending: true, jobId, address: executor, chain });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : "Fund failed" });
     }
+  });
+
+  app.get("/api/circle/fund/:jobId", (req, res) => {
+    const job = getCircleFundJob(req.params.jobId);
+    if (!job) {
+      res.status(404).json({ error: "Fund job not found or expired — try again." });
+      return;
+    }
+    if (job.status === "pending") {
+      res.json({ status: "pending", elapsedMs: Date.now() - job.startedAt });
+      return;
+    }
+    if (job.status === "error") {
+      res.json({
+        status: "error",
+        ok: false,
+        error: job.error ?? job.result?.error ?? "Gateway funding failed",
+        address: job.result?.address,
+        chain: job.result?.chain,
+        walletFund: job.result?.walletFund,
+        gatewayDeposit: job.result?.gatewayDeposit,
+      });
+      return;
+    }
+    res.json({ status: "ok", ok: true, ...job.result });
   });
 
   app.post("/api/circle/executor", (req, res) => {

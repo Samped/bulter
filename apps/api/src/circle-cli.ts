@@ -981,12 +981,21 @@ export async function fundCircleAgentAfterLogin(
 
   await new Promise((r) => setTimeout(r, 2_000));
   const depositAmount = (process.env.BUTLER_AUTO_GATEWAY_DEPOSIT_USDC ?? "5").trim();
-  const dep = await circleGatewayDepositAsync({
+  let dep = await circleGatewayDepositAsync({
     amount: depositAmount,
     address,
     chain: resolved,
     method: "direct",
   });
+  if (!dep.ok && /insufficient|balance|funds/i.test(`${dep.stderr}\n${dep.stdout}`)) {
+    await new Promise((r) => setTimeout(r, 8_000));
+    dep = await circleGatewayDepositAsync({
+      amount: depositAmount,
+      address,
+      chain: resolved,
+      method: "direct",
+    });
+  }
   const gatewayDeposit: CircleFundStepResult = dep.ok
     ? {
         ok: true,
