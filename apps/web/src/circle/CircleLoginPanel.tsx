@@ -129,7 +129,6 @@ export function CircleLoginPanel({
   circleStatus: circleStatusProp,
   onReady,
   onLoginSuccess,
-  onRequestFund,
   variant = "toolbar",
   open: openProp,
   onOpenChange,
@@ -138,8 +137,6 @@ export function CircleLoginPanel({
   circleStatus?: CircleStatus | null;
   onReady?: () => void;
   onLoginSuccess?: (info: { executorAddress: string | null }) => void;
-  /** Open the shared fund-Gateway modal (App shell). */
-  onRequestFund?: () => void;
   variant?: "sidebar" | "toolbar" | "mobile-sheet";
   /** Controlled open (used by mobile sign-in sheet). */
   open?: boolean;
@@ -476,12 +473,8 @@ export function CircleLoginPanel({
             const w = await getCircleWallets().catch(() => null);
             if (w?.wallets?.length) setWallets(w.wallets);
           }
-          const bal = s.gatewayBalanceUsdc;
-          if (bal == null || Number(bal) === 0) {
-            onRequestFund?.();
-          }
         } catch {
-          onRequestFund?.();
+          /* optimistic login from verify response */
         }
       })();
     } catch (e) {

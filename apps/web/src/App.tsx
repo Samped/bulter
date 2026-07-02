@@ -349,8 +349,8 @@ export function App() {
         : !payerExecutor
           ? "No Circle agent wallet found. Open Payer and select a wallet on ARC-TESTNET."
           : payerGatewayBalance != null && Number(payerGatewayBalance) <= 0
-            ? "Tap Gateway to fund your account."
-            : "Log in with Circle (Payer) and fund Gateway USDC before running tasks.";
+            ? "Tap Fund GW account on the chat screen."
+            : "Log in with Circle (Payer) before running tasks.";
 
   const handleRunWorkflow = async (etfId: string, brief?: string) => {
     if (!payerReady) {
@@ -397,11 +397,9 @@ export function App() {
   const gatewayLow = Number(gatewayBalance ?? 0) === 0;
   const gatewayChipValue = gatewayFunding
     ? "Funding…"
-    : gatewayLow && payerLoggedIn
-      ? "Fund"
-      : gatewayBalance != null
-        ? `$${formatUsdc(gatewayBalance)}`
-        : "—";
+    : gatewayBalance != null
+      ? `$${formatUsdc(gatewayBalance)}`
+      : "—";
 
   const visibleActivityRecords =
     activityRecords.length > 0
@@ -538,15 +536,8 @@ export function App() {
         <button
           type="button"
           className={`mobile-header-pill balance ${gatewayLow ? "warn" : ""}`}
-          onClick={() => void fundGateway()}
-          disabled={gatewayFunding}
-          aria-label={
-            gatewayFunding
-              ? "Funding Gateway"
-              : gatewayLow
-                ? "Fund Gateway USDC"
-                : `Gateway balance ${gatewayChipValue}`
-          }
+          onClick={() => setMobileMenuOpen(true)}
+          aria-label={`Gateway balance ${gatewayChipValue}`}
         >
           <span className="mobile-header-pill-label">GW</span>
           <span className="mobile-header-pill-text">{gatewayChipValue}</span>
@@ -571,7 +562,6 @@ export function App() {
           onOpenChange={setMobileLoginOpen}
           circleStatus={circleStatus}
           onReady={refresh}
-          onRequestFund={() => void fundGateway()}
           onLoginSuccess={() => {
             void refresh();
             setMobileLoginOpen(false);
@@ -606,20 +596,12 @@ export function App() {
                   )}
                 </div>
               </div>
-              <button
-                type="button"
-                className={`mobile-menu-balance ${gatewayLow ? "warn" : ""}`}
-                onClick={() => void fundGateway()}
-                disabled={gatewayFunding}
-              >
+              <div className={`mobile-menu-balance ${gatewayLow ? "warn" : ""}`}>
                 <div className="mobile-menu-balance-copy">
                   <span className="mobile-menu-balance-label">Gateway USDC</span>
                   <span className="mobile-menu-balance-value">{gatewayChipValue}</span>
                 </div>
-                <span className="mobile-menu-balance-action muted small">
-                  {gatewayFunding ? "…" : "Fund"}
-                </span>
-              </button>
+              </div>
             </div>
 
             <nav className="mobile-menu-nav" aria-label="Sections">
@@ -642,7 +624,6 @@ export function App() {
                 variant="toolbar"
                 circleStatus={circleStatus}
                 onReady={refresh}
-                onRequestFund={() => void fundGateway()}
                 onLoginSuccess={() => {
                   void refresh();
                 }}
@@ -693,14 +674,11 @@ export function App() {
                 value={gatewayChipValue}
                 variant={gatewayLow ? "warning" : "default"}
                 accent
-                onClick={() => void fundGateway()}
-                title={gatewayLow ? "Fund Gateway USDC" : "Tap to add Gateway USDC"}
               />
               <CircleLoginPanel
                 variant="toolbar"
                 circleStatus={circleStatus}
                 onReady={refresh}
-                onRequestFund={() => void fundGateway()}
                 onLoginSuccess={() => {
                   void refresh();
                 }}
