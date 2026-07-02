@@ -5,7 +5,6 @@ import {
 } from "@butler/core";
 import {
   backfillJobsForOwner,
-  filterJobsForOwner,
   resolveJobOwnerFromRequest,
   type JobOwner,
 } from "./job-owner.ts";
@@ -80,7 +79,7 @@ export async function handleGetDeliverable(
     return;
   }
   const { jobs } = backfillJobsForOwner([job], owner);
-  const visible = filterJobsForOwner(jobs, owner)[0];
+  const visible = jobs[0];
   if (!visible) {
     res.status(404).json({ error: "Job not found" });
     return;
