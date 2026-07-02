@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   formatUsdc,
+  fundCircleWallet,
   getAgentStatus,
   getCircleStatus,
   getCircleStatusQuick,
@@ -39,7 +40,6 @@ import { MarketplaceView } from "./marketplace/MarketplaceView.tsx";
 import { AgentChatView } from "./agent/AgentChatView.tsx";
 import { DeliverablesView } from "./deliverables/DeliverablesView.tsx";
 import { CircleLoginPanel } from "./circle/CircleLoginPanel.tsx";
-import { PayerFundModal } from "./circle/PayerFundModal.tsx";
 import { formatWorkflowError } from "./format.ts";
 import { useIsMobile } from "./use-mobile.ts";
 
@@ -107,20 +107,8 @@ export function App() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileLoginOpen, setMobileLoginOpen] = useState(false);
-  const [fundModalOpen, setFundModalOpen] = useState(false);
+  const [gatewayFunding, setGatewayFunding] = useState(false);
   const isMobile = useIsMobile();
-
-  const openFundModal = useCallback(() => {
-    const loggedIn = circleStatus?.loggedIn ?? !!loadPayerDisplayCache()?.loggedIn;
-    const executor =
-      circleStatus?.executorAddress ?? loadPayerDisplayCache()?.executorAddress ?? null;
-    if (!loggedIn || !executor) {
-      if (isMobile) setMobileLoginOpen(true);
-      return;
-    }
-    setMobileMenuOpen(false);
-    setFundModalOpen(true);
-  }, [circleStatus?.loggedIn, circleStatus?.executorAddress, isMobile]);
 
   const loadActivityLedger = useCallback(async (scope: ActivityScope) => {
     setActivityLoading(true);
@@ -231,6 +219,29 @@ export function App() {
     }
   }, [tab, activityScope, loadActivityLedger]);
 
+  const fundGateway = useCallback(async () => {
+    const loggedIn = circleStatus?.loggedIn ?? !!loadPayerDisplayCache()?.loggedIn;
+    const executor =
+      circleStatus?.executorAddress ?? loadPayerDisplayCache()?.executorAddress ?? null;
+    if (!loggedIn || !executor) {
+      if (isMobile) setMobileLoginOpen(true);
+      return;
+    }
+    if (gatewayFunding) return;
+    setMobileMenuOpen(false);
+    setGatewayFunding(true);
+    try {
+      await fundCircleWallet();
+      void refresh({ quiet: true });
+      window.setTimeout(() => void refresh({ quiet: true }), 4000);
+      window.setTimeout(() => void refresh({ quiet: true }), 12000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not fund Gateway");
+    } finally {
+      setGatewayFunding(false);
+    }
+  }, [circleStatus?.loggedIn, circleStatus?.executorAddress, isMobile, gatewayFunding, refresh]);
+
   useEffect(() => {
     let cancelled = false;
     const slowTimer = window.setTimeout(() => {
@@ -338,7 +349,7 @@ export function App() {
         : !payerExecutor
           ? "No Circle agent wallet found. Open Payer and select a wallet on ARC-TESTNET."
           : payerGatewayBalance != null && Number(payerGatewayBalance) <= 0
-            ? "Fund Gateway USDC in Payer before running tasks."
+            ? "Tap Gateway to fund your account."
             : "Log in with Circle (Payer) and fund Gateway USDC before running tasks.";
 
   const handleRunWorkflow = async (etfId: string, brief?: string) => {
@@ -383,9 +394,14 @@ export function App() {
   const userWallet = payerLoggedIn ? payerExecutor : null;
 
   const gatewayBalance = payerGatewayBalance;
-  const gatewayLabel =
-    gatewayBalance != null ? `$${formatUsdc(gatewayBalance)}` : "—";
   const gatewayLow = Number(gatewayBalance ?? 0) === 0;
+  const gatewayChipValue = gatewayFunding
+    ? "Funding…"
+    : gatewayLow && payerLoggedIn
+      ? "Fund"
+      : gatewayBalance != null
+        ? `$${formatUsdc(gatewayBalance)}`
+        : "—";
 
   const visibleActivityRecords =
     activityRecords.length > 0
@@ -522,11 +538,18 @@ export function App() {
         <button
           type="button"
           className={`mobile-header-pill balance ${gatewayLow ? "warn" : ""}`}
-          onClick={() => openFundModal()}
-          aria-label={`Gateway balance ${gatewayLabel}. Tap to fund.`}
+          onClick={() => void fundGateway()}
+          disabled={gatewayFunding}
+          aria-label={
+            gatewayFunding
+              ? "Funding Gateway"
+              : gatewayLow
+                ? "Fund Gateway USDC"
+                : `Gateway balance ${gatewayChipValue}`
+          }
         >
           <span className="mobile-header-pill-label">GW</span>
-          <span className="mobile-header-pill-text">{gatewayLabel}</span>
+          <span className="mobile-header-pill-text">{gatewayChipValue}</span>
         </button>
 
         <button
@@ -548,7 +571,7 @@ export function App() {
           onOpenChange={setMobileLoginOpen}
           circleStatus={circleStatus}
           onReady={refresh}
-          onRequestFund={openFundModal}
+          onRequestFund={() => void fundGateway()}
           onLoginSuccess={() => {
             void refresh();
             setMobileLoginOpen(false);
@@ -586,13 +609,16 @@ export function App() {
               <button
                 type="button"
                 className={`mobile-menu-balance ${gatewayLow ? "warn" : ""}`}
-                onClick={() => openFundModal()}
+                onClick={() => void fundGateway()}
+                disabled={gatewayFunding}
               >
                 <div className="mobile-menu-balance-copy">
                   <span className="mobile-menu-balance-label">Gateway USDC</span>
-                  <span className="mobile-menu-balance-value">{gatewayLabel}</span>
+                  <span className="mobile-menu-balance-value">{gatewayChipValue}</span>
                 </div>
-                <span className="mobile-menu-balance-action muted small">Fund</span>
+                <span className="mobile-menu-balance-action muted small">
+                  {gatewayFunding ? "…" : "Fund"}
+                </span>
               </button>
             </div>
 
@@ -616,7 +642,7 @@ export function App() {
                 variant="toolbar"
                 circleStatus={circleStatus}
                 onReady={refresh}
-                onRequestFund={openFundModal}
+                onRequestFund={() => void fundGateway()}
                 onLoginSuccess={() => {
                   void refresh();
                 }}
@@ -664,17 +690,17 @@ export function App() {
             <div className="toolbar">
               <MetricChip
                 label="Gateway"
-                value={gatewayBalance != null ? `$${formatUsdc(gatewayBalance)}` : "—"}
+                value={gatewayChipValue}
                 variant={gatewayLow ? "warning" : "default"}
                 accent
-                onClick={() => openFundModal()}
-                title="Fund Gateway USDC"
+                onClick={() => void fundGateway()}
+                title={gatewayLow ? "Fund Gateway USDC" : "Tap to add Gateway USDC"}
               />
               <CircleLoginPanel
                 variant="toolbar"
                 circleStatus={circleStatus}
                 onReady={refresh}
-                onRequestFund={openFundModal}
+                onRequestFund={() => void fundGateway()}
                 onLoginSuccess={() => {
                   void refresh();
                 }}
@@ -708,19 +734,6 @@ export function App() {
               }`}
             >
               {workflowMessage}
-            </div>
-          )}
-
-          {payerReady &&
-            payerGatewayBalance === "0" &&
-            (tab === "agent" || tab === "marketplace") && (
-            <div className="inline-alert info">
-              <strong>Fund payer</strong> — Gateway USDC balance is zero. Add testnet USDC at{" "}
-              <a href="https://faucet.circle.com" target="_blank" rel="noreferrer">
-                faucet.circle.com
-              </a>{" "}
-              (Arc testnet), run <code>circle wallet fund --chain ARC-TESTNET</code>, then{" "}
-              <code>circle gateway deposit --method direct</code> before running workflows.
             </div>
           )}
 
@@ -907,13 +920,6 @@ export function App() {
           )}
         </div>
       </main>
-
-      <PayerFundModal
-        open={fundModalOpen}
-        walletAddress={payerExecutor}
-        onClose={() => setFundModalOpen(false)}
-        onFunded={() => void refresh()}
-      />
     </div>
   );
 }

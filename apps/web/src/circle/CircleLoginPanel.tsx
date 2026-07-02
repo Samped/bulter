@@ -557,15 +557,6 @@ export function CircleLoginPanel({
               Gateway: {payerStatus.gatewayBalanceUsdc} USDC
             </p>
           )}
-          {payerStatus?.executorAddress && (
-            <button
-              type="button"
-              className="btn ghost sm payer-popover-btn"
-              onClick={() => onRequestFund?.()}
-            >
-              Fund Gateway USDC
-            </button>
-          )}
           {wallets.length > 1 && (
             <div className="circle-wallet-list">
               {wallets.map((w) => (
