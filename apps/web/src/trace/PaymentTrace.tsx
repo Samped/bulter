@@ -15,10 +15,18 @@ export function PaymentTrace({
   initialId = "",
   sellerAddress,
   recentSettlements = [],
+  needsGatewayFund,
+  gatewayFunding,
+  gatewayFundError,
+  onFundGateway,
 }: {
   initialId?: string;
   sellerAddress?: string;
   recentSettlements?: string[];
+  needsGatewayFund?: boolean;
+  gatewayFunding?: boolean;
+  gatewayFundError?: string | null;
+  onFundGateway?: () => void;
 }) {
   const [settlementId, setSettlementId] = useState(initialId);
   const [step, setStep] = useState(0);
@@ -200,6 +208,24 @@ export function PaymentTrace({
           </details>
         )}
       </Panel>
+
+      {needsGatewayFund && (
+        <div className="trace-fund">
+          <button
+            type="button"
+            className="btn primary trace-fund-btn"
+            disabled={gatewayFunding}
+            onClick={() => onFundGateway?.()}
+          >
+            {gatewayFunding ? "Funding…" : "Fund account"}
+          </button>
+          {gatewayFundError && (
+            <p className="trace-fund-error" role="alert">
+              {gatewayFundError}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

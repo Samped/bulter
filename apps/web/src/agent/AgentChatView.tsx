@@ -84,20 +84,12 @@ const QUALITY_LABEL: Record<QualityTier, string> = {
 export function AgentChatView({
   canRun,
   payerReason,
-  needsGatewayFund,
-  gatewayFunding,
-  gatewayFundError,
-  onFundGateway,
   onTaskComplete,
   onButlerBusyChange,
   onViewDeliverable,
 }: {
   canRun: boolean;
   payerReason?: string;
-  needsGatewayFund?: boolean;
-  gatewayFunding?: boolean;
-  gatewayFundError?: string | null;
-  onFundGateway?: () => void;
   onTaskComplete?: () => void;
   onButlerBusyChange?: (busy: boolean) => void;
   onViewDeliverable?: (jobId: string) => void;
@@ -556,24 +548,6 @@ export function AgentChatView({
               {s}
             </button>
           ))}
-        </div>
-      )}
-
-      {needsGatewayFund && (
-        <div className="agent-fund-prompt">
-          <button
-            type="button"
-            className="btn primary sm agent-fund-prompt-btn"
-            disabled={gatewayFunding}
-            onClick={() => onFundGateway?.()}
-          >
-            {gatewayFunding ? "Funding…" : "Fund GW account"}
-          </button>
-          {gatewayFundError && (
-            <p className="agent-fund-prompt-error" role="alert">
-              {gatewayFundError}
-            </p>
-          )}
         </div>
       )}
 

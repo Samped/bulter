@@ -4332,6 +4332,30 @@ select.field-input {
   font-size: 0.8125rem;
 }
 
+.trace-fund {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  flex-shrink: 0;
+}
+
+.trace-fund-btn {
+  min-width: 11rem;
+  font-weight: 600;
+}
+
+.trace-fund-error {
+  margin: 0;
+  max-width: 24rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--danger);
+  text-align: center;
+}
+
 .trace-explorer {
   display: inline-block;
   margin: 0.5rem 0.875rem 0.875rem;
@@ -5409,32 +5433,6 @@ select.field-input {
 .agent-starter-chip:hover {
   border-color: var(--border-hover);
   color: var(--text);
-}
-
-.agent-fund-prompt {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0 0.75rem 0.5rem;
-  flex-shrink: 0;
-}
-
-.agent-fund-prompt-btn {
-  min-width: 10rem;
-}
-
-.agent-fund-prompt-error {
-  margin: 0;
-  max-width: 22rem;
-  font-size: 0.75rem;
-  line-height: 1.35;
-  color: var(--danger);
-  text-align: center;
-}
-
-.app-shell.is-mobile .agent-fund-prompt {
-  padding: 0 0.625rem 0.5rem;
 }
 
 .agent-chat-composer {

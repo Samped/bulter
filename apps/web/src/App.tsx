@@ -257,7 +257,7 @@ export function App() {
       const latest = await getCircleStatusQuick().catch(() => null);
       if (!latest || Number(latest.gatewayBalanceUsdc ?? 0) <= 0) {
         setGatewayFundError(
-          "Funding may still be processing. Wait a minute, refresh the page, or tap Fund GW account again."
+          "Funding may still be processing. Wait a minute, refresh the page, or try Fund account on Trace again."
         );
       } else {
         setGatewayFundError(null);
@@ -377,7 +377,7 @@ export function App() {
         : !payerExecutor
           ? "No Circle agent wallet found. Open Payer and select a wallet on ARC-TESTNET."
           : payerGatewayBalance != null && Number(payerGatewayBalance) <= 0
-            ? "Tap Fund GW account on the chat screen."
+            ? "Open Trace and tap Fund account."
             : "Log in with Circle (Payer) before running tasks.";
 
   const handleRunWorkflow = async (etfId: string, brief?: string) => {
@@ -754,10 +754,6 @@ export function App() {
             <AgentChatView
               canRun={payerReady}
               payerReason={payerBlockReason}
-              needsGatewayFund={payerLoggedIn && gatewayLow}
-              gatewayFunding={gatewayFunding}
-              gatewayFundError={gatewayFundError}
-              onFundGateway={() => void fundGateway()}
               onTaskComplete={refresh}
               onButlerBusyChange={setButlerBusy}
               onViewDeliverable={(jobId) => {
@@ -926,6 +922,10 @@ export function App() {
                     .filter((id): id is string => !!id)
                 ),
               ]}
+              needsGatewayFund={payerLoggedIn && gatewayLow}
+              gatewayFunding={gatewayFunding}
+              gatewayFundError={gatewayFundError}
+              onFundGateway={() => void fundGateway()}
             />
           )}
         </div>
