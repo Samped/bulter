@@ -5044,6 +5044,19 @@ select.field-input {
   flex-shrink: 0;
 }
 
+.mobile-menu-nav-item.sign-out {
+  margin-top: 0.25rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.mobile-menu-nav-item.sign-out:hover,
+.mobile-menu-nav-item.sign-out:active {
+  color: var(--danger);
+  background: var(--danger-muted);
+}
+
 .mobile-menu-tools {
   margin-top: auto;
   padding: 0.75rem 1rem 1.25rem;

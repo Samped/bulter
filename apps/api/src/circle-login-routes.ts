@@ -104,6 +104,15 @@ async function handleLoginVerify(
       saveCircleConfig({ executorAddress: first, chain });
     }
     const executor = resolveCircleExecutorAddress() ?? first ?? null;
+    if (executor) {
+      const { fundCircleAgentAfterLogin, getGatewayBalanceForApi } = await import("./circle-cli.ts");
+      const balance = getGatewayBalanceForApi(executor);
+      if (balance == null || Number(balance) === 0) {
+        void fundCircleAgentAfterLogin(executor, chain).catch((err) => {
+          console.error("[circle/login/auto-fund]", err instanceof Error ? err.message : err);
+        });
+      }
+    }
     res.json({
       ok: true,
       email: savedEmail ?? result.email,

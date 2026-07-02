@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   formatUsdc,
   fundCircleWallet,
@@ -12,6 +12,9 @@ import {
   runMarketplaceWorkflow as apiRunMarketplaceWorkflow,
   savePayerDisplayCache,
   shortAddr,
+  circleLogout,
+  resetBrowserSessionId,
+  clearPayerDisplayCache,
   type AgentStatus,
   type CircleStatus,
   type Health,
@@ -109,6 +112,7 @@ export function App() {
   const [mobileLoginOpen, setMobileLoginOpen] = useState(false);
   const [gatewayFunding, setGatewayFunding] = useState(false);
   const [gatewayFundError, setGatewayFundError] = useState<string | null>(null);
+  const autoFundExecutorRef = useRef<string | null>(null);
   const isMobile = useIsMobile();
 
   const loadActivityLedger = useCallback(async (scope: ActivityScope) => {
@@ -220,19 +224,21 @@ export function App() {
     }
   }, [tab, activityScope, loadActivityLedger]);
 
-  const fundGateway = useCallback(async () => {
+  const fundGateway = useCallback(async (opts?: { auto?: boolean }) => {
     const loggedIn = circleStatus?.loggedIn ?? !!loadPayerDisplayCache()?.loggedIn;
     const executor =
       circleStatus?.executorAddress ?? loadPayerDisplayCache()?.executorAddress ?? null;
     if (!loggedIn || !executor) {
-      const msg = "Log in with Circle (Payer) before funding Gateway.";
-      setGatewayFundError(msg);
-      if (isMobile) setMobileLoginOpen(true);
+      if (!opts?.auto) {
+        const msg = "Log in with Circle (Payer) before funding Gateway.";
+        setGatewayFundError(msg);
+        if (isMobile) setMobileLoginOpen(true);
+      }
       return;
     }
     if (gatewayFunding) return;
     setMobileMenuOpen(false);
-    setGatewayFundError(null);
+    if (!opts?.auto) setGatewayFundError(null);
     setGatewayFunding(true);
     try {
       const result = await fundCircleWallet();
@@ -256,19 +262,80 @@ export function App() {
       }
       const latest = await getCircleStatusQuick().catch(() => null);
       if (!latest || Number(latest.gatewayBalanceUsdc ?? 0) <= 0) {
-        setGatewayFundError(
-          "Funding may still be processing. Wait a minute, refresh the page, or try Fund account on Trace again."
-        );
+        if (!opts?.auto) {
+          setGatewayFundError(
+            "Funding may still be processing. Wait a minute, refresh the page, or try Fund account on Trace again."
+          );
+        }
       } else {
         setGatewayFundError(null);
       }
       void refresh({ quiet: true });
     } catch (e) {
-      setGatewayFundError(e instanceof Error ? e.message : "Could not fund Gateway");
+      if (!opts?.auto) {
+        setGatewayFundError(e instanceof Error ? e.message : "Could not fund Gateway");
+      }
     } finally {
       setGatewayFunding(false);
     }
   }, [circleStatus?.loggedIn, circleStatus?.executorAddress, isMobile, gatewayFunding, refresh]);
+
+  const maybeAutoFundGateway = useCallback(
+    async (force = false) => {
+      const loggedIn = circleStatus?.loggedIn ?? !!loadPayerDisplayCache()?.loggedIn;
+      const executor =
+        circleStatus?.executorAddress ?? loadPayerDisplayCache()?.executorAddress ?? null;
+      const balance =
+        circleStatus?.gatewayBalanceUsdc ??
+        agentStatus?.gatewayBalanceUsdc ??
+        loadPayerDisplayCache()?.gatewayBalanceUsdc ??
+        null;
+      if (!loggedIn || !executor) return;
+      if (Number(balance ?? 0) > 0) return;
+      const key = executor.toLowerCase();
+      if (!force && autoFundExecutorRef.current === key) return;
+      autoFundExecutorRef.current = key;
+      await fundGateway({ auto: true });
+    },
+    [
+      circleStatus?.loggedIn,
+      circleStatus?.executorAddress,
+      circleStatus?.gatewayBalanceUsdc,
+      agentStatus?.gatewayBalanceUsdc,
+      fundGateway,
+    ]
+  );
+
+  const handlePayerLoginSuccess = useCallback(() => {
+    void refresh();
+    void (async () => {
+      for (let i = 0; i < 10; i++) {
+        await new Promise((r) => window.setTimeout(r, 3_000));
+        const cs = await getCircleStatusQuick().catch(() => null);
+        if (cs) {
+          setCircleStatus(cs);
+          savePayerDisplayCache(cs);
+          if (Number(cs.gatewayBalanceUsdc ?? 0) > 0) return;
+        }
+      }
+      await maybeAutoFundGateway(true);
+    })();
+  }, [refresh, maybeAutoFundGateway]);
+
+  const handleSignOut = useCallback(async () => {
+    setMobileMenuOpen(false);
+    clearPayerDisplayCache();
+    setCircleStatus((prev) =>
+      prev ? { ...prev, loggedIn: false, executorAddress: null, email: undefined } : null
+    );
+    try {
+      await circleLogout();
+      resetBrowserSessionId();
+      await refresh({ quiet: true });
+    } catch {
+      await refresh({ quiet: true });
+    }
+  }, [refresh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -307,6 +374,11 @@ export function App() {
       window.clearTimeout(forceShowTimer);
     };
   }, [refresh]);
+
+  useEffect(() => {
+    if (loading) return;
+    void maybeAutoFundGateway();
+  }, [loading, maybeAutoFundGateway]);
 
   useEffect(() => {
     if (loading) return;
@@ -377,7 +449,9 @@ export function App() {
         : !payerExecutor
           ? "No Circle agent wallet found. Open Payer and select a wallet on ARC-TESTNET."
           : payerGatewayBalance != null && Number(payerGatewayBalance) <= 0
-            ? "Open Trace and tap Fund account."
+            ? gatewayFunding
+              ? "Funding your Gateway account…"
+              : "Gateway balance is $0 — funding starts automatically after login."
             : "Log in with Circle (Payer) before running tasks.";
 
   const handleRunWorkflow = async (etfId: string, brief?: string) => {
@@ -591,8 +665,8 @@ export function App() {
           circleStatus={circleStatus}
           onReady={refresh}
           onLoginSuccess={() => {
-            void refresh();
             setMobileLoginOpen(false);
+            handlePayerLoginSuccess();
           }}
         />
       )}
@@ -645,17 +719,19 @@ export function App() {
                   {tab === id && <span className="mobile-menu-nav-dot" aria-hidden />}
                 </button>
               ))}
+              {payerLoggedIn && (
+                <button
+                  type="button"
+                  className="mobile-menu-nav-item sign-out"
+                  onClick={() => void handleSignOut()}
+                >
+                  <IconWallet size={18} />
+                  <span>Sign out</span>
+                </button>
+              )}
             </nav>
 
             <div className="mobile-menu-tools">
-              <CircleLoginPanel
-                variant="toolbar"
-                circleStatus={circleStatus}
-                onReady={refresh}
-                onLoginSuccess={() => {
-                  void refresh();
-                }}
-              />
               <div className="mobile-menu-tools-row">
                 <MetricChip label="Mode" value={live ? "Live" : "Dev"} variant={live ? "success" : "default"} />
                 <button
@@ -707,9 +783,7 @@ export function App() {
                 variant="toolbar"
                 circleStatus={circleStatus}
                 onReady={refresh}
-                onLoginSuccess={() => {
-                  void refresh();
-                }}
+                onLoginSuccess={handlePayerLoginSuccess}
               />
               <MetricChip label="Mode" value={live ? "Live" : "Dev"} variant={live ? "success" : "default"} />
             </div>
