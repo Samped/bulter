@@ -1,5 +1,5 @@
 /**
- * Lepton Butler CLI — pays x402 merchants on Arc via Circle Gateway.
+ * Butler CLI — pays x402 merchants on Arc via Circle Gateway.
  */
 import { config } from "dotenv";
 import { resolve, dirname } from "node:path";

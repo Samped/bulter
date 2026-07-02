@@ -33,8 +33,8 @@ import {
 import { agentRunReadiness } from "./agent-runner.ts";
 import { executeAuctionAward } from "./auction-engine.ts";
 import { planTaskForRun, runMarketplaceTask, buildJobSummary, finalizeCompletedJob, jobFromPlan, planToJobPlan } from "./marketplace-task.ts";
-import { getOpenAiPlannerStatus } from "./openai-planner.ts";
-import { resolveTaskExecutionShape } from "./task-intelligence.ts";
+import { remoteRouterEnabled } from "./brief-router.ts";
+import { resolveTaskExecutionShape } from "./execution-shape.ts";
 import { buildDirectJob, buildEtfJob, runMarketplaceWorkflow } from "./marketplace-orchestrator.ts";
 import {
   discoverOpenAgents,
@@ -214,7 +214,7 @@ function planWinnerLabel(plan: TaskPlan): { agentId: string; agentName: string; 
   return { agentId: leadId, agentName: name, priceUsdc: plan.estimatedUsdc };
 }
 
-/** Execute a TaskPlan (OpenAI or heuristic) without running a full auction. */
+/** Execute a TaskPlan (remote catalog route or rules) without running a full auction. */
 async function settleFromTaskPlan(opts: {
   plan: TaskPlan;
   brief: string;
@@ -245,7 +245,7 @@ async function settleFromTaskPlan(opts: {
   if (opts.plan.etfId) job.etfId = opts.plan.etfId;
 
   const winner = planWinnerLabel(opts.plan);
-  const routeLabel = opts.plan.router === "planner" ? "OpenAI planner" : "Task router";
+  const routeLabel = opts.plan.router === "remote" ? "Catalog router" : "Rule-based router";
   opts.phases.push({
     phase: "negotiate",
     at: opts.now(),
@@ -301,10 +301,6 @@ async function settleFromTaskPlan(opts: {
     summary: finalized.summary ?? buildJobSummary(finalized),
     error: completed ? undefined : opts.phases[opts.phases.length - 1]?.error,
   };
-}
-
-function aiPlannerEnabled(): boolean {
-  return process.env.BUTLER_AI_PLANNER !== "false" && getOpenAiPlannerStatus().enabled;
 }
 
 function discoverQuotes(
@@ -556,7 +552,7 @@ export async function runButler(opts: {
     quotes,
   });
 
-  if (strategy === "auction" && aiPlannerEnabled() && auctionMode === "etf" && wantsDeepBrief(brief)) {
+  if (strategy === "auction" && remoteRouterEnabled() && auctionMode === "etf" && wantsDeepBrief(brief)) {
     const plan = await planTaskForRun({
       task: brief,
       mode: "auto",
@@ -565,7 +561,7 @@ export async function runButler(opts: {
       auctionMode,
       category,
     });
-    if (plan.router === "planner") {
+    if (plan.router === "remote") {
       return settleFromTaskPlan({
         plan,
         brief,

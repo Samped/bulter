@@ -40,7 +40,7 @@ type AgentDeps = {
   resolveSessionActivityPayerAddresses: (records: import("@butler/core").SpendRecord[]) => string[];
   circleCli: typeof import("./circle-cli.ts");
   circleConfig: typeof import("./circle-config.ts");
-  getOpenAiPlannerStatus: () => import("./openai-planner.ts").OpenAiPlannerStatus;
+  getBriefRouterStatus: () => import("./brief-router.ts").BriefRouterStatus;
 };
 
 let agentDepsPromise: Promise<AgentDeps> | null = null;
@@ -52,15 +52,15 @@ function loadAgentDeps(): Promise<AgentDeps> {
     import("./ledger-payer.ts"),
     import("./circle-cli.ts"),
     import("./circle-config.ts"),
-    import("./openai-planner.ts"),
-  ]).then(([agentRunner, core, ledgerPayer, circleCli, circleConfig, openai]) => ({
+    import("./brief-router.ts"),
+  ]).then(([agentRunner, core, ledgerPayer, circleCli, circleConfig, router]) => ({
     agentRunReadiness: agentRunner.agentRunReadiness,
     loadState: core.loadState,
     getExecutorWalletAddress: ledgerPayer.getExecutorWalletAddress,
     resolveSessionActivityPayerAddresses: ledgerPayer.resolveSessionActivityPayerAddresses,
     circleCli,
     circleConfig,
-    getOpenAiPlannerStatus: openai.getOpenAiPlannerStatus,
+    getBriefRouterStatus: router.getBriefRouterStatus,
   }));
   return agentDepsPromise;
 }
@@ -191,7 +191,7 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
         canRun: readiness.canRun,
         paymentMode: readiness.mode,
         gatewayBalanceUsdc,
-        openAiPlanner: deps.getOpenAiPlannerStatus(),
+        briefRouter: deps.getBriefRouterStatus(),
         ...(readiness.reason ? { reason: readiness.reason } : {}),
       });
     } catch (error) {

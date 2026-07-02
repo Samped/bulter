@@ -1,4 +1,4 @@
-import { openAiConfigured, openAiJson } from "./openai-client.ts";
+import { analystConfigured, analystJson } from "./analyst-client.ts";
 
 const ANALYST_SOURCE = "butler";
 
@@ -86,11 +86,11 @@ export async function buildNewsPayload(brief?: string) {
   const topic = brief?.trim() || "cryptocurrency markets";
   const live = await fetchLiveCryptoHeadlines(12).catch(() => [] as LiveHeadline[]);
 
-  if (live.length === 0 && !openAiConfigured()) {
+  if (live.length === 0 && !analystConfigured()) {
     throw analystUnavailable("News Agent");
   }
 
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     return {
       type: "news",
       topic,
@@ -111,7 +111,7 @@ export async function buildNewsPayload(brief?: string) {
   const count = countMatch ? Math.min(10, Math.max(3, Number(countMatch[1]) || 5)) : 5;
   const seed = live.slice(0, Math.max(count, 8));
 
-  return openAiJson<{
+  return analystJson<{
     type: string;
     topic: string;
     headlines: {
@@ -231,7 +231,7 @@ export async function buildResearchPayload(brief?: string, priorContext?: string
   const ctx = priorContext?.trim() ? `\n\nPrior agent findings to build on:\n${priorContext.trim().slice(0, 8000)}` : "";
   const paperCount = /\b3\b/.test(topic) && /paper|theme/.test(topic.toLowerCase()) ? 3 : undefined;
 
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     const themes = [
       "Bitcoin as digital gold and inflation hedge (Baur et al.)",
       "BTC–equity correlation regime shifts post-2020",
@@ -266,7 +266,7 @@ export async function buildResearchPayload(brief?: string, priorContext?: string
     };
   }
 
-  return openAiJson<{
+  return analystJson<{
     type: string;
     focus: string;
     executiveSummary: string;
@@ -291,13 +291,13 @@ When the brief asks for N papers/themes, return exactly that many. Use realistic
 }
 
 export async function buildSentimentPayload(brief?: string) {
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     throw analystUnavailable("Sentiment Agent");
   }
   const topic = brief?.trim() || "crypto and equities";
   const market = await fetchMarketQuote(brief).catch(() => null);
 
-  return openAiJson<{
+  return analystJson<{
     score: number;
     label: string;
     sources: number;
@@ -323,7 +323,7 @@ export async function buildChartPayload(brief?: string) {
   const baseRsi = quote.change24h > 2 ? 62 : quote.change24h < -2 ? 38 : 50;
   const topic = brief?.trim() || `${quote.symbol} technical analysis`;
 
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     return {
       type: "technical-analysis",
       symbol: quote.symbol,
@@ -342,7 +342,7 @@ export async function buildChartPayload(brief?: string) {
     };
   }
 
-  return openAiJson<{
+  return analystJson<{
     type: string;
     symbol: string;
     price: number;
@@ -377,7 +377,7 @@ Baseline levels: support ${baseSupport}, resistance ${baseResistance}, RSI ~${ba
 }
 
 export async function buildThesisPayload(brief?: string, priorContext?: string) {
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     throw analystUnavailable("Thesis Agent");
   }
   const topic = brief?.trim() || "BTC investment thesis";
@@ -389,7 +389,7 @@ export async function buildThesisPayload(brief?: string, priorContext?: string) 
   const rsi = market && market.change24h > 2 ? 62 : market && market.change24h < -2 ? 38 : 50;
   const ctx = priorContext?.trim() ? `\n\nAdditional context:\n${priorContext.trim().slice(0, 4000)}` : "";
 
-  return openAiJson<{
+  return analystJson<{
     type: "investment-thesis";
     symbol: string;
     liveMarket: { price: number; change24h: number; volume: number; asOf: string; source: string };
@@ -437,7 +437,7 @@ Technicals: support ${support}, resistance ${resistance}, RSI ${rsi}${ctx}`
 }
 
 export async function buildReportPayload(brief?: string, priorContext?: string) {
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     throw analystUnavailable("Report Agent");
   }
   const topic = brief?.trim() || "investment analysis";
@@ -448,7 +448,7 @@ export async function buildReportPayload(brief?: string, priorContext?: string) 
   const t = topic.toLowerCase();
   const researchSynthesis = /research paper|deep dive|academic|literature|due diligence|comprehensive/.test(t);
 
-  return openAiJson<{
+  return analystJson<{
     report: {
       title: string;
       rating: string;
@@ -471,7 +471,7 @@ export async function buildReportPayload(brief?: string, priorContext?: string) 
 }
 
 export async function buildAuditPayload(brief?: string, contract?: string) {
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     throw analystUnavailable("Audit Agent");
   }
   const contractSource = contract?.trim();
@@ -482,7 +482,7 @@ export async function buildAuditPayload(brief?: string, contract?: string) {
     contractSource?.match(/contract\s+(\w+)/i)?.[1] ??
     "SmartContract";
 
-  return openAiJson<{
+  return analystJson<{
     contract: string;
     findings: { severity: string; title: string; detail: string }[];
     summary: string;
@@ -517,11 +517,11 @@ function extractSolidityFromText(text: string): string | undefined {
 }
 
 export async function buildResearchSummary(brief?: string) {
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     throw analystUnavailable("Research Agent");
   }
   const topic = brief?.trim() || "Arc nanopayments and agent commerce";
-  return openAiJson<{ summary: string; sources: number; topics: string[] }>(
+  return analystJson<{ summary: string; sources: number; topics: string[] }>(
     `Return JSON: summary (2-3 sentence executive summary), sources (count), topics (3-5 tags).`,
     `Summarize research on: ${topic}`
   ).then((data) => ({
@@ -533,11 +533,11 @@ export async function buildResearchSummary(brief?: string) {
 }
 
 export async function buildUtilityQuote(brief?: string) {
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     throw analystUnavailable("Bill Agent");
   }
   const request = brief?.trim() || "monthly electricity bill";
-  return openAiJson<{
+  return analystJson<{
     provider: string;
     amountDue: number;
     dueDate: string;
@@ -557,13 +557,13 @@ Base estimates on typical US utility pricing when specifics are missing; state a
 }
 
 export async function buildDefiPayload(brief?: string) {
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     throw analystUnavailable("DeFi Agent");
   }
   const topic = brief?.trim() || "DeFi market overview";
   const market = await fetchMarketQuote(brief).catch(() => null);
 
-  return openAiJson<{
+  return analystJson<{
     type: string;
     focus: string;
     tvlTrend: string;
@@ -584,12 +584,12 @@ export async function buildDefiPayload(brief?: string) {
 }
 
 export async function buildMacroPayload(brief?: string) {
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     throw analystUnavailable("Macro Agent");
   }
   const topic = brief?.trim() || "global macro outlook";
 
-  return openAiJson<{
+  return analystJson<{
     type: string;
     focus: string;
     regime: string;
@@ -616,7 +616,7 @@ export async function buildOnchainPayload(brief?: string) {
   const bias =
     market && market.change24h < -1 ? "bearish" : market && market.change24h > 1 ? "bullish" : "neutral";
 
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     return {
       type: "onchain",
       asset: symbol,
@@ -650,7 +650,7 @@ export async function buildOnchainPayload(brief?: string) {
     };
   }
 
-  return openAiJson<{
+  return analystJson<{
     type: string;
     asset: string;
     networkActivity: string;
@@ -675,12 +675,12 @@ Cover exchange inflows/outflows, large whale transfers, and what signals imply f
 }
 
 export async function buildCompetitorPayload(brief?: string) {
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     throw analystUnavailable("Competitor Agent");
   }
   const topic = brief?.trim() || "competitive landscape";
 
-  return openAiJson<{
+  return analystJson<{
     type: string;
     subject: string;
     competitors: { name: string; moat: string; weakness: string; marketShare: string }[];
@@ -700,14 +700,14 @@ export async function buildCompetitorPayload(brief?: string) {
 }
 
 export async function buildRiskPayload(brief?: string, priorContext?: string) {
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     throw analystUnavailable("Risk Agent");
   }
   const topic = brief?.trim() || "portfolio risk assessment";
   const market = await fetchMarketQuote(brief).catch(() => null);
   const ctx = priorContext?.trim() ? `\n\nContext from prior agents:\n${priorContext.trim().slice(0, 6000)}` : "";
 
-  return openAiJson<{
+  return analystJson<{
     type: string;
     focus: string;
     riskScore: number;
@@ -728,11 +728,11 @@ export async function buildRiskPayload(brief?: string, priorContext?: string) {
 }
 
 export async function buildSubscriptionAudit(brief?: string) {
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     throw analystUnavailable("Subscription Agent");
   }
   const request = brief?.trim() || "audit recurring subscriptions";
-  return openAiJson<{
+  return analystJson<{
     subscriptions: { name: string; amount: number; nextBill: string; category: string }[];
     monthlyTotal: number;
     recommendations: string[];
@@ -925,12 +925,12 @@ export async function buildPortfolioRiskPayload(brief?: string, priorContext?: s
   const market = await fetchMarketQuote(brief).catch(() => null);
   const ctx = priorContext?.trim() ? `\n\nContext from prior agents:\n${priorContext.trim().slice(0, 6000)}` : "";
 
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     return buildPortfolioRiskHeuristic(brief, market);
   }
 
   try {
-    return await openAiJson<{
+    return await analystJson<{
       type: string;
       focus: string;
       liquidationRisk: { score: number; label: string; positionsAtRisk: string[] };
@@ -962,11 +962,11 @@ export async function buildCryptoNewsIntelligencePayload(brief?: string) {
   const topic = brief?.trim() || "cryptocurrency markets";
   const live = await fetchLiveCryptoHeadlines(40).catch(() => [] as LiveHeadline[]);
 
-  if (live.length === 0 && !openAiConfigured()) {
+  if (live.length === 0 && !analystConfigured()) {
     throw analystUnavailable("Crypto News Intelligence Agent");
   }
 
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     return {
       type: "crypto-news-intelligence",
       topic,
@@ -986,7 +986,7 @@ export async function buildCryptoNewsIntelligencePayload(brief?: string) {
     };
   }
 
-  return openAiJson<{
+  return analystJson<{
     type: string;
     topic: string;
     marketSentiment: { score: number; label: "bullish" | "bearish" | "neutral" | "mixed" };
@@ -1020,7 +1020,7 @@ ${JSON.stringify(live.slice(0, 35), null, 2)}`
 }
 
 export async function buildWalletReputationPayload(brief?: string) {
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     throw analystUnavailable("Wallet Reputation Agent");
   }
   const fromBrief = extractWalletAddress(brief);
@@ -1028,7 +1028,7 @@ export async function buildWalletReputationPayload(brief?: string) {
   const address = wallet ?? "0x0000000000000000000000000000000000000000";
   const request = brief?.trim() || `Wallet reputation for ${address}`;
 
-  return openAiJson<{
+  return analystJson<{
     type: string;
     address: string;
     scamScore: number;
@@ -1063,11 +1063,11 @@ export async function buildTokenResearchPayload(brief?: string, priorContext?: s
   const coin = await fetchCoinDetail(symbol).catch(() => null);
   const ctx = priorContext?.trim() ? `\n\nPrior context:\n${priorContext.trim().slice(0, 4000)}` : "";
 
-  if (!openAiConfigured() && !coin) {
+  if (!analystConfigured() && !coin) {
     throw analystUnavailable("Token Research Agent");
   }
 
-  if (!openAiConfigured()) {
+  if (!analystConfigured()) {
     return {
       type: "token-research",
       token: symbol,
@@ -1077,14 +1077,14 @@ export async function buildTokenResearchPayload(brief?: string, priorContext?: s
       unlockSchedule: [] as { date: string; amount: string; note: string }[],
       tokenomics: { supply: coin?.circulatingSupply, maxSupply: coin?.maxSupply },
       competitors: [] as string[],
-      risks: ["Configure OpenAI for full token research synthesis."],
+      risks: ["Analyst service not configured for full token research synthesis."],
       summary: `${symbol} market snapshot from CoinGecko.`,
       generatedAt: new Date().toISOString(),
       source: "coingecko",
     };
   }
 
-  return openAiJson<{
+  return analystJson<{
     type: string;
     token: string;
     holders: { distribution: string; topHolders: string[] };

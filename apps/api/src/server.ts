@@ -85,7 +85,7 @@ a{color:#34d399}code{background:#121820;padding:.15rem .4rem;border-radius:4px;f
 ul{padding-left:1.2rem}</style></head>
 <body>
 <h1>Butler API</h1>
-<p>Backend for the Lepton Butler dashboard (Circle x402 payer). This host has no web UI at <code>/automate</code> — open the dashboard instead.</p>
+<p>Backend for the Butler dashboard (Circle x402 payer). This host has no web UI at <code>/automate</code> — open the dashboard instead.</p>
 <p><a href="${WEB_URL}">Open dashboard →</a></p>
 <ul>
 <li><a href="/api/health">/api/health</a></li>

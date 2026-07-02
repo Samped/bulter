@@ -22,4 +22,4 @@ if [[ ! -d "$LIB/delegation-framework" ]]; then
   git clone --depth 1 --branch v1.3.0 https://github.com/MetaMask/delegation-framework.git "$LIB/delegation-framework"
 fi
 
-echo "✓ Foundry libs ready in packages/contracts/lib/"
+echo "ok: Foundry libs ready in packages/contracts/lib/"

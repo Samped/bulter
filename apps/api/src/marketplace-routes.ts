@@ -34,7 +34,7 @@ import {
 import { buildJobSummary, finalizeCompletedJob, inferPlanFromJob, planToJobPlan, runMarketplaceTask } from "./marketplace-task.ts";
 import { stampJobOwner, resolveJobOwnerFromRequest, attachJobPaymentMeta } from "./job-owner.ts";
 import { handleGetDeliverable, handleListDeliverables } from "./library-handlers.ts";
-import { getOpenAiPlannerStatus } from "./openai-planner.ts";
+import { getBriefRouterStatus } from "./brief-router.ts";
 import {
   executeAuctionAward,
 } from "./auction-engine.ts";
@@ -232,8 +232,8 @@ export function registerMarketplaceRoutes(
     }
   });
 
-  app.get("/api/agent/planner", (_req, res) => {
-    res.json(getOpenAiPlannerStatus());
+  app.get("/api/agent/router", (_req, res) => {
+    res.json(getBriefRouterStatus());
   });
 
   app.post("/api/marketplace/tasks/run", async (req, res) => {

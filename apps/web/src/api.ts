@@ -60,7 +60,7 @@ export interface AgentStatus {
   useCircleCli?: boolean;
   paymentMode?: string;
   gatewayBalanceUsdc?: string | null;
-  openAiPlanner?: { enabled: boolean; model: string };
+  briefRouter?: { enabled: boolean; model: string };
 }
 
 export interface CircleStatus {
@@ -1177,16 +1177,21 @@ export interface TaskPlan {
   reason: string;
   estimatedUsdc: string;
   etaSeconds: number;
-  router?: "planner" | "heuristic";
+  router?: "remote" | "rules";
 }
 
-export interface AgentPlannerStatus {
+export interface BriefRouterStatus {
   enabled: boolean;
   model: string;
 }
 
+export function getBriefRouterStatus() {
+  return request<BriefRouterStatus>("/api/agent/router");
+}
+
+/** @deprecated Use getBriefRouterStatus */
 export function getAgentPlannerStatus() {
-  return request<AgentPlannerStatus>("/api/agent/planner");
+  return getBriefRouterStatus();
 }
 
 export interface TaskRunResult {

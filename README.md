@@ -17,7 +17,7 @@ npm run arc:rpc
 
 # Fund seller wallet at https://faucet.circle.com (Arc testnet USDC)
 # Set BUTLER_SELLER_ADDRESS in .env
-# Set OPENAI_API_KEY to enable analyst agents (research, news, thesis, reports)
+# Set OPENAI_API_KEY to enable research and report agents (thesis, news, audits)
 
 npm run dev                    # API :3001 + dashboard :5174
 ```
@@ -31,15 +31,13 @@ Open http://localhost:5174 → log in with **Circle (Payer)** in the toolbar →
 | **Agent** | Chat UI — Butler auction (default Full + ETF): discover → negotiate → settle |
 | **Library** | Completed deliverables (PDF export, payment trace) |
 | **Auctions** | Reverse auctions, agent network, create tasks |
-| **Policy** | Budget caps, merchant/agent toggles, stack status |
 | **Activity** | Spend ledger (all / mine) |
 | **Trace** | Arc 101 — settlement → batch tx → USDC decode |
 
 ## How payments work
 
-1. **Circle login (recommended)** — email OTP in the toolbar; Butler uses your Circle agent wallet + Gateway balance to pay x402 endpoints.
-2. **Server executor (optional)** — set `BUTLER_EXECUTOR_PRIVATE_KEY` for headless x402 without a Circle session.
-3. **ERC-7710 delegation (optional)** — CLI / API paths; see [docs/LEPTON_CHECKLIST.md](docs/LEPTON_CHECKLIST.md).
+1. **Circle login** — email OTP in the toolbar; Butler uses your Circle agent wallet + Gateway balance to pay x402 endpoints.
+
 
 Worker agents expose x402 at `GET /marketplace/agents/{id}/execute`. ETFs chain one or more agent payments; express pipelines (e.g. BTC full thesis) use a single **thesis-agent** call (~1 min).
 
@@ -63,10 +61,6 @@ Worker agents expose x402 at `GET /marketplace/agents/{id}/execute`. ETFs chain 
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-Set `OPENAI_API_KEY` in `.env` to enable analyst agents (research, news, sentiment, thesis, reports, audits). Market quotes use CoinGecko (crypto) and Yahoo Finance (stocks).
-
-## Lepton
-
-Built for [Lepton RFB 01](https://lepton.thecanteenapp.com/) — Autonomous Paying Agents.
+Set `OPENAI_API_KEY` in `.env` for research-backed agents (thesis, news, sentiment, reports, audits). Market quotes use CoinGecko (crypto) and Yahoo Finance (stocks).
 
 **Agent context:** [AGENTS.md](AGENTS.md) · **Compliance:** [docs/LEPTON_CHECKLIST.md](docs/LEPTON_CHECKLIST.md)

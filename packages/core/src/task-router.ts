@@ -16,7 +16,7 @@ export interface TaskPlan {
   estimatedUsdc: string;
   etaSeconds: number;
   /** How the route was chosen (API layer). */
-  router?: "planner" | "heuristic";
+  router?: "remote" | "rules";
 }
 
 export function sumAgentPrices(agentIds: string[]): { total: string; eta: number } {
@@ -186,7 +186,6 @@ function pickBestAgent(task: string): MarketplaceAgent {
   return listMarketplaceAgents().find((a) => a.id === "research-agent") ?? listMarketplaceAgents()[0]!;
 }
 
-/** Validate planner or manual route selection against the marketplace catalog. */
 export function buildTaskPlanFromRoute(input: {
   strategy: TaskStrategy;
   agentIds: string[];

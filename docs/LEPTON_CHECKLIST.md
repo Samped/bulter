@@ -1,10 +1,10 @@
 # Lepton RFB checklist — Butler compliance map
 
-Butler is a **full-stack autonomous paying agent** that satisfies every Lepton / Canteen onboarding item while keeping our differentiators: **ERC-7710 delegation**, policy engine, wallet-connect dashboard, and one-click agent runs.
+Butler is a **full-stack x402 payment platform** on Arc testnet with ERC-7710 delegation, policy engine, wallet-connect dashboard, and marketplace orchestration.
 
 | # | Requirement | Butler implementation |
 |---|-------------|---------------------|
-| **03** | [ARC CLI](https://github.com/the-canteen-dev/ARC-cli) (`arc-canteen`) | `npm run setup:lepton`, `npm run arc:login`, `npm run arc:context`, `resolveArcRpc()` |
+| **03** | [ARC CLI](https://github.com/the-canteen-dev/ARC-cli) (`arc-canteen`) | `npm run setup:lepton`, `npm run arc:login`, `resolveArcRpc()` |
 | **04** | [Circle CLI](https://developers.circle.com/agent-stack/circle-cli) | `npm run circle:login`, `scripts/circle-wallet-setup.sh`, `circle-cli` agent mode |
 | **05** | [Arc 101 / circle-agent](https://github.com/the-canteen-dev/circle-agent) | Trace APIs + dashboard **Trace** tab, `vendor/circle-agent` |
 | **06** | [Distribution Bootstrap](https://thecanteenapp.com/analysis/2026/05/28/distribution-bootstrap-payments-founders.html) | `docs/DISTRIBUTION.md` — Butler as paying-agent distribution layer |
@@ -26,7 +26,7 @@ Open **http://localhost:5174** → **Circle payer** login (toolbar) → **Agent*
 
 ## 03 — ARC CLI (`arc-canteen`)
 
-**Why:** Authenticated Arc testnet RPC, Canteen agent context, hackathon compliance.
+**Why:** Authenticated Arc testnet RPC via Canteen tooling.
 
 ```bash
 # Install (requires uv)
@@ -36,7 +36,6 @@ arc-canteen shell-init >> ~/.bashrc   # adds $RPC to shell
 
 # Butler shortcuts
 npm run arc:login      # arc-canteen login
-npm run arc:context    # arc-canteen context sync
 npm run arc:rpc        # print RPC URL → ARC_TESTNET_RPC
 ```
 

@@ -2,7 +2,7 @@
   "name": "lepton-butler",
   "private": true,
   "version": "0.1.0",
-  "description": "Lepton Butler — autonomous paying agent on Arc with policy-enforced budgets",
+  "description": "Butler — agent marketplace on Arc with policy-enforced x402 payments",
   "workspaces": [
     "packages/arc",
     "packages/core",

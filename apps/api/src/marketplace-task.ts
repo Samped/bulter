@@ -11,7 +11,7 @@ import {
   type TaskPlan,
 } from "@butler/core";
 import { buildEtfJob, buildWorkflowJob, buildDirectJob, runMarketplaceWorkflow, type OrchestratorResult } from "./marketplace-orchestrator.ts";
-import { planTaskWithOpenAi } from "./openai-planner.ts";
+import { planTaskRemote } from "./brief-router.ts";
 
 export async function planTaskForRun(params: {
   task: string;
@@ -27,14 +27,14 @@ export async function planTaskForRun(params: {
     return planTaskExecution(params);
   }
 
-  const aiPlan = await planTaskWithOpenAi(params.task, params.credits ?? [], {
+  const remotePlan = await planTaskRemote(params.task, params.credits ?? [], {
     qualityTier: params.qualityTier,
     auctionMode: params.auctionMode,
     category: params.category,
   });
-  if (aiPlan) return aiPlan;
+  if (remotePlan) return remotePlan;
 
-  return { ...planTaskExecution(params), router: "heuristic" };
+  return { ...planTaskExecution(params), router: "rules" };
 }
 
 export function formatTaskResult(result: unknown): string {
