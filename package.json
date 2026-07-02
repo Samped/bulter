@@ -4,10 +4,8 @@
   "version": "0.1.0",
   "description": "Butler — agent marketplace on Arc with policy-enforced x402 payments",
   "workspaces": [
-    "packages/arc",
-    "packages/core",
-    "packages/delegation",
-    "apps/api"
+    "packages/*",
+    "apps/*"
   ],
   "scripts": {
     "postinstall": "node -e \"console.log('Butler ready. For API/agent: npm run install:full')\"",

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { resolveExecutionShape, resolveExpressBrief, resolveDeepWorkRouting } from "@butler/core";
+import { resolveExecutionShape, resolveExpressBrief, resolveDeepWorkRouting } from "@butler/core/brief-intent";
 import {
   buildTaskBriefWithPreferences,
   formatUsdc,

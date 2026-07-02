@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./marketplace": "./src/marketplace.ts"
+    "./marketplace": "./src/marketplace.ts",
+    "./brief-intent": "./src/brief-intent.ts"
   },
   "scripts": {
     "test": "node --experimental-strip-types --test src/**/*.test.ts",

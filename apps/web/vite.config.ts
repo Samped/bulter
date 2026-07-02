@@ -22,8 +22,8 @@ export default defineConfig({
         replacement: resolve(root, "packages/core/src/marketplace.ts"),
       },
       {
-        find: "@butler/core",
-        replacement: resolve(root, "packages/core/src/index.ts"),
+        find: "@butler/core/brief-intent",
+        replacement: resolve(root, "packages/core/src/brief-intent.ts"),
       },
       {
         find: "@butler/arc",
@@ -33,6 +33,6 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ["viem", "@butler/arc"],
-    exclude: ["@butler/core"],
+    exclude: ["@butler/core/brief-intent", "@butler/core/marketplace"],
   },
 });
