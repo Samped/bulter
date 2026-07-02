@@ -748,6 +748,9 @@ export function App() {
             <AgentChatView
               canRun={payerReady}
               payerReason={payerBlockReason}
+              needsGatewayFund={payerLoggedIn && gatewayLow}
+              gatewayFunding={gatewayFunding}
+              onFundGateway={() => void fundGateway()}
               onTaskComplete={refresh}
               onButlerBusyChange={setButlerBusy}
               onViewDeliverable={(jobId) => {

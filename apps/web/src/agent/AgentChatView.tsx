@@ -19,6 +19,7 @@ import {
 import { butlerResultToToast, TaskCompletionToast, type TaskCompletionToastState } from "../marketplace/CreateTaskModal.tsx";
 import { formatWorkflowError } from "../format.ts";
 import { IconPlus, IconSend } from "../icons.tsx";
+import { useIsMobile } from "../use-mobile.ts";
 
 const MAX_ATTACH_BYTES = 48_000;
 const ACCEPTED_EXTENSIONS = ".sol,.vy,.txt,.md,.json";
@@ -84,16 +85,23 @@ const QUALITY_LABEL: Record<QualityTier, string> = {
 export function AgentChatView({
   canRun,
   payerReason,
+  needsGatewayFund,
+  gatewayFunding,
+  onFundGateway,
   onTaskComplete,
   onButlerBusyChange,
   onViewDeliverable,
 }: {
   canRun: boolean;
   payerReason?: string;
+  needsGatewayFund?: boolean;
+  gatewayFunding?: boolean;
+  onFundGateway?: () => void;
   onTaskComplete?: () => void;
   onButlerBusyChange?: (busy: boolean) => void;
   onViewDeliverable?: (jobId: string) => void;
 }) {
+  const isMobile = useIsMobile();
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -548,6 +556,23 @@ export function AgentChatView({
               {s}
             </button>
           ))}
+        </div>
+      )}
+
+      {isMobile && needsGatewayFund && (
+        <div className="agent-fund-prompt" role="status">
+          <div className="agent-fund-prompt-copy">
+            <strong>Gateway $0.00</strong>
+            <span className="muted small">Fund your account to run tasks</span>
+          </div>
+          <button
+            type="button"
+            className="btn primary sm agent-fund-prompt-btn"
+            disabled={gatewayFunding}
+            onClick={() => onFundGateway?.()}
+          >
+            {gatewayFunding ? "Funding…" : "Fund account"}
+          </button>
         </div>
       )}
 
