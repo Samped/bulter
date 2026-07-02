@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { resolveExpressBrief, resolveDeepWorkRouting } from "../brief-intent.ts";
+import { resolveExecutionShape, resolveExpressBrief, resolveDeepWorkRouting } from "@butler/core";
 import {
   buildTaskBriefWithPreferences,
   formatUsdc,
@@ -201,12 +201,25 @@ export function AgentChatView({
     setCompletionToast(null);
 
     const deepWork = resolveDeepWorkRouting(task);
-    const express = deepWork || qualityTier === "full" ? null : resolveExpressBrief(task);
-    const effectiveTier = express ? ("brief" as QualityTier) : deepWork ? deepWork.qualityTier : qualityTier;
+    const express = deepWork ? null : resolveExpressBrief(task);
+    const shape = resolveExecutionShape(task);
+    const effectiveTier = express
+      ? ("brief" as QualityTier)
+      : deepWork
+        ? deepWork.qualityTier
+        : shape.shape === "single" && qualityTier === "full"
+          ? ("standard" as QualityTier)
+          : qualityTier;
     const taskOptions = {
       qualityTier: effectiveTier,
       maxBudgetUsdc: maxBudgetUsdc.trim() || undefined,
-      auctionMode: express ? ("single" as AuctionMode) : deepWork ? deepWork.auctionMode : auctionMode,
+      auctionMode: express
+        ? ("single" as AuctionMode)
+        : deepWork
+          ? deepWork.auctionMode
+          : shape.shape === "single"
+            ? ("single" as AuctionMode)
+            : auctionMode,
     };
 
     try {

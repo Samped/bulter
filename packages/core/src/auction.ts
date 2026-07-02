@@ -1,4 +1,4 @@
-import { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, resolveExpressBrief, wantsDeepBrief } from "./brief-intent.ts";
+import { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, isHolderInfoBrief, resolveExpressBrief, resolveExecutionShape, wantsDeepBrief } from "./brief-intent.ts";
 import { getMarketplaceAgent, listMarketplaceAgents, type AgentCreditScore } from "./agent-registry.ts";
 import { etfAgentsApproved, isAgentApproved } from "./agent-approvals.ts";
 import { buildQuote, MARKETPLACE_ETFS, pickAuctionWinner, scoreEtfForBrief, type AuctionBid, type AuctionEvent, type MarketplaceCategory, type QualityTier, type ReverseAuction } from "./marketplace.ts";
@@ -32,7 +32,21 @@ const QUALITY_TIER_AGENTS: Record<QualityTier, string[] | null> = {
     "bill-agent",
   ],
   standard: null,
-  full: ["research-agent", "report-agent", "macro-agent", "defi-agent"],
+  full: [
+    "research-agent",
+    "report-agent",
+    "macro-agent",
+    "defi-agent",
+    "onchain-agent",
+    "token-research-agent",
+    "chart-agent",
+    "news-agent",
+    "market-agent",
+    "sentiment-agent",
+    "wallet-reputation-agent",
+    "portfolio-risk-agent",
+    "crypto-news-intelligence-agent",
+  ],
 };
 
 function bidWithinBudget(priceUsdc: string, maxBudgetUsdc?: string): boolean {
@@ -483,7 +497,12 @@ export function resolveTaskCategory(
   if (express) return express.category;
   if (isHeadlineOnlyBrief(brief)) return "news";
   const cat = userCategory ?? inferAuctionCategory(brief);
-  if (qualityTier === "full" && (cat === "research" || cat === "news" || cat === "market-data")) {
+  const narrowSpecialist =
+    isOnchainOnlyBrief(brief) ||
+    isHolderInfoBrief(brief) ||
+    isChartOnlyBrief(brief) ||
+    isHeadlineOnlyBrief(brief);
+  if (qualityTier === "full" && (cat === "research" || cat === "news") && !narrowSpecialist) {
     return "reporting";
   }
   return cat;
@@ -491,8 +510,14 @@ export function resolveTaskCategory(
 
 export function defaultAuctionMode(
   qualityTier?: QualityTier,
-  explicit?: ReverseAuction["auctionMode"]
+  explicit?: ReverseAuction["auctionMode"],
+  brief?: string
 ): NonNullable<ReverseAuction["auctionMode"]> {
+  if (brief) {
+    const shape = resolveExecutionShape(brief);
+    if (shape.shape === "single" && shape.confidence !== "low") return "single";
+    if (shape.shape === "multi" && shape.confidence === "high") return "etf";
+  }
   if (qualityTier === "brief") return "single";
   if (explicit === "etf" && qualityTier !== "full") return "single";
   if (explicit) return explicit;

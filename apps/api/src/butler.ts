@@ -34,6 +34,7 @@ import { agentRunReadiness } from "./agent-runner.ts";
 import { executeAuctionAward } from "./auction-engine.ts";
 import { planTaskForRun, runMarketplaceTask, buildJobSummary, finalizeCompletedJob, jobFromPlan, planToJobPlan } from "./marketplace-task.ts";
 import { getOpenAiPlannerStatus } from "./openai-planner.ts";
+import { resolveTaskExecutionShape } from "./task-intelligence.ts";
 import { buildDirectJob, buildEtfJob, runMarketplaceWorkflow } from "./marketplace-orchestrator.ts";
 import {
   discoverOpenAgents,
@@ -452,16 +453,32 @@ export async function runButler(opts: {
   }
 
   const express = resolveExpressBrief(brief);
-  const deepWork = resolveDeepWorkRouting(brief);
-  const btcRoute = resolveBtcPipelineRouting(brief);
-  const qualityTier = express ? "brief" : deepWork ? deepWork.qualityTier : (opts.qualityTier ?? "standard");
-  const category = express?.category ?? resolveTaskCategory(brief, opts.category, qualityTier);
+  const executionShape = await resolveTaskExecutionShape(brief, {
+    qualityTier: opts.qualityTier,
+    auctionMode: opts.auctionMode,
+    category: opts.category,
+  });
+  const deepWork =
+    executionShape.shape === "multi" && wantsDeepBrief(brief) ? resolveDeepWorkRouting(brief) : null;
+  const btcRoute =
+    executionShape.shape === "multi" && !express ? resolveBtcPipelineRouting(brief) : null;
+  const qualityTier = express
+    ? "brief"
+    : deepWork
+      ? deepWork.qualityTier
+      : executionShape.shape === "single" && opts.qualityTier === "full"
+        ? "standard"
+        : (opts.qualityTier ?? "standard");
+  const category =
+    express?.category ??
+    executionShape.suggestedCategory ??
+    resolveTaskCategory(brief, opts.category, qualityTier);
   const auctionMode =
-    express || qualityTier === "brief"
+    express || executionShape.shape === "single"
       ? "single"
       : deepWork
         ? deepWork.auctionMode
-        : defaultAuctionMode(qualityTier, opts.auctionMode);
+        : defaultAuctionMode(qualityTier, opts.auctionMode, brief);
   const maxBudgetUsdc = opts.maxBudgetUsdc?.trim() || undefined;
 
   const readiness = agentRunReadiness();
@@ -528,12 +545,12 @@ export async function runButler(opts: {
     at: now(),
     message:
       auctionMode === "etf"
-        ? `Catalog: ${quotes.length} ETF pipeline(s) for ${category} (${listMarketplaceAgents().filter((a) => a.origin === "external").length} external)`
-        : `Catalog: ${quotes.length} agents eligible for ${category} (${listMarketplaceAgents().filter((a) => a.origin === "external").length} external)`,
+        ? `Analyzed task — multi-agent (${executionShape.reason}). ${quotes.length} ETF pipeline(s) for ${category}`
+        : `Analyzed task — single specialist (${executionShape.reason}). ${quotes.length} agents eligible for ${category}`,
     quotes,
   });
 
-  if (strategy === "auction" && aiPlannerEnabled()) {
+  if (strategy === "auction" && aiPlannerEnabled() && auctionMode === "etf" && wantsDeepBrief(brief)) {
     const plan = await planTaskForRun({
       task: brief,
       mode: "auto",

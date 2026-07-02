@@ -112,7 +112,8 @@ export function registerAuctionRoutes(opts: AuctionRoutesOpts): () => void {
     const maxBudgetUsdc = req.body?.maxBudgetUsdc != null ? String(req.body.maxBudgetUsdc).trim() : undefined;
     const auctionMode = defaultAuctionMode(
       qualityTier,
-      req.body?.auctionMode === "etf" ? "etf" : req.body?.auctionMode === "single" ? "single" : undefined
+      req.body?.auctionMode === "etf" ? "etf" : req.body?.auctionMode === "single" ? "single" : undefined,
+      brief
     );
     const userCategory = req.body?.category as ReverseAuction["category"] | undefined;
     const auction = stampAuctionOwner(

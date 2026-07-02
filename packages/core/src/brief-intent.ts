@@ -115,7 +115,9 @@ export function isTokenResearchBrief(brief: string): boolean {
   return (
     /token research|token analysis|analyze token|tokenomics|unlock schedule|vesting schedule|holder distribution/.test(
       t
-    ) || (/analyze\b/.test(t) && /\b(token|coin)\b/.test(t))
+    ) ||
+    (/analyze\b/.test(t) && /\b(token|coin)\b/.test(t)) ||
+    (isHolderInfoBrief(brief) && /distribution|tokenomics|concentration|top\s+holder|supply/.test(t))
   );
 }
 
@@ -166,14 +168,96 @@ export function isBillOnlyBrief(brief: string): boolean {
   );
 }
 
+/** Holder concentration / distribution — Token Research or On-Chain Agent, not news. */
+export function isHolderInfoBrief(brief: string): boolean {
+  if (wantsDeepBrief(brief) || isHeadlineOnlyBrief(brief)) return false;
+  const t = brief.toLowerCase();
+  const wantsHolders =
+    /\bholders?\b/.test(t) &&
+    (/information|info|data|stats|statistics|distribution|concentration|top\s+holders?|holder\s+count|holder\s+supply|who\s+holds/.test(
+      t
+    ) ||
+      (/\b(btc|eth|sol|bitcoin|ethereum|solana|token|coin)\b/.test(t) && /holder/.test(t)));
+  return wantsHolders && !/news|headline|comprehensive|full report|thesis|multi.?agent|market-moving/.test(t);
+}
+
+export type ExecutionShape = "single" | "multi";
+
+export interface ExecutionShapeResult {
+  shape: ExecutionShape;
+  confidence: "high" | "medium" | "low";
+  reason: string;
+  suggestedAgentId?: string;
+  suggestedCategory?: MarketplaceCategory;
+}
+
+/** Decide single specialist vs multi-agent before auction/planning. */
+export function resolveExecutionShape(brief: string): ExecutionShapeResult {
+  if (wantsDeepBrief(brief)) {
+    return {
+      shape: "multi",
+      confidence: "high",
+      reason: "Comprehensive or multi-agent report requested",
+    };
+  }
+
+  const express = resolveExpressBrief(brief);
+  if (express) {
+    return {
+      shape: "single",
+      confidence: "high",
+      reason: `Specialist task — ${express.label}`,
+      suggestedAgentId: express.agentId,
+      suggestedCategory: express.category,
+    };
+  }
+
+  const t = brief.toLowerCase();
+  if (/headline|headlines|news/.test(t) && /price|quote|market/.test(t)) {
+    return { shape: "multi", confidence: "high", reason: "Combined news and market price workflow" };
+  }
+  if (/full report|comprehensive|investment report|multi.?agent|all agents|due diligence/.test(t)) {
+    return { shape: "multi", confidence: "high", reason: "Explicit multi-agent deliverable" };
+  }
+  if (/defi/.test(t) && /wallet|reputation|token research|due diligence|portfolio risk/.test(t)) {
+    return { shape: "multi", confidence: "medium", reason: "DeFi due diligence spans multiple specialists" };
+  }
+  if (/news|headline/.test(t) && !/research|thesis|report|onchain|on-chain|holder/.test(t)) {
+    return {
+      shape: "single",
+      confidence: "medium",
+      reason: "News-focused brief",
+      suggestedAgentId: "news-agent",
+      suggestedCategory: "news",
+    };
+  }
+  if (/onchain|on-chain|whale|holder|exchange flow|network activity/.test(t)) {
+    return {
+      shape: "single",
+      confidence: "medium",
+      reason: "On-chain or holder activity brief",
+      suggestedAgentId: "onchain-agent",
+      suggestedCategory: "market-data",
+    };
+  }
+
+  return {
+    shape: "single",
+    confidence: "low",
+    reason: "Defaulting to single-agent reverse auction",
+  };
+}
+
 /** On-chain / whale activity — On-Chain Agent only. */
 export function isOnchainOnlyBrief(brief: string): boolean {
   if (isAuditOnlyBrief(brief) || isSoliditySourceBrief(brief)) return false;
   const t = brief.toLowerCase();
   const wantsOnchain =
+    /on[- ]?chain\s+activit|onchain\s+activit|on[- ]?chain\s+data|on[- ]?chain\s+analysis/.test(t) ||
     /on[- ]?chain|whale|exchange inflow|exchange outflow|exchange flows?|large transfers?|holder trends?|network activity/.test(
       t
     ) ||
+    (isHolderInfoBrief(brief) && /activit|flow|transfer|whale|exchange/.test(t)) ||
     ((/inflow|outflow/.test(t) || /\btransfer(s)?\b/.test(t)) &&
       /\b(exchange|btc|bitcoin|eth|ethereum|solana|crypto|whale)\b/.test(t) &&
       !/pragma\s+solidity|smart contract/.test(t));
@@ -194,6 +278,9 @@ export function resolveExpressBrief(brief: string): ExpressBrief | null {
   }
   if (isTokenResearchBrief(brief)) {
     return { category: "research", agentId: "token-research-agent", label: "token research" };
+  }
+  if (isHolderInfoBrief(brief)) {
+    return { category: "market-data", agentId: "onchain-agent", label: "holder / on-chain data" };
   }
   if (isPortfolioRiskBrief(brief)) {
     return { category: "reporting", agentId: "portfolio-risk-agent", label: "portfolio risk" };

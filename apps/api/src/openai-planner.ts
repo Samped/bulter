@@ -22,6 +22,13 @@ interface LlmRouteResponse {
   reason?: string;
 }
 
+interface LlmShapeResponse {
+  shape?: "single" | "multi";
+  reason?: string;
+  suggestedAgentId?: string | null;
+  suggestedCategory?: string | null;
+}
+
 function catalogForPrompt(credits: AgentCreditScore[]): string {
   const creditById = new Map(credits.map((c) => [c.agentId, c]));
   const agents = MARKETPLACE_AGENTS.map((a) => ({
@@ -54,12 +61,12 @@ Rules:
 - For deep research, papers, analysis, or investment research (not just headlines), use research-agent alone or an ETF that includes research-agent + report-agent.
 - news-agent returns headlines only; research-agent returns full research briefs with executive summary, papers, and findings.
 - For security audits, Solidity, or smart-contract review, always use audit-agent (direct) unless bill-audit-bundle ETF is explicitly about bills/subscriptions.
-- defi-agent for yields/TVL/protocol analysis; macro-agent for Fed/CPI/rates; onchain-agent for whale/flow narratives; competitor-agent for moats; risk-agent for portfolio risk; portfolio-risk-agent for DeFi liquidation/VaR/hedging; crypto-news-intelligence-agent for multi-source market-moving news reports; wallet-reputation-agent for scam/whale/sybil scores before copy-trading; token-research-agent for tokenomics/unlocks/holders/TVL/competitors; bill-agent and subscription-agent for utility/recurring spend.
+- defi-agent for yields/TVL/protocol analysis; macro-agent for Fed/CPI/rates; onchain-agent for on-chain activity, whale flows, exchange transfers — NOT news; token-research-agent for holder information, tokenomics, unlocks, vesting — NOT news-agent; competitor-agent for moats; risk-agent for portfolio risk; portfolio-risk-agent for DeFi liquidation/VaR/hedging; crypto-news-intelligence-agent for multi-source market-moving news reports; wallet-reputation-agent for scam/whale/sybil scores before copy-trading; bill-agent and subscription-agent for utility/recurring spend.
 - ETF picks: defi-due-diligence-etf for wallet + token + portfolio risk before copying trades; btc-full-thesis-etf for comprehensive BTC investment theses (~1 min, single thesis agent); btc-onchain-etf for lighter BTC on-chain; defi-alpha-etf for DeFi; macro-radar-etf for macro; bill-audit-bundle for bills/subscriptions.
 - Prefer btc-full-thesis-etf when the user asks for bull/base/bear scenarios, whale flows, DeFi exposure, and executive report on BTC.
 - For comprehensive investment reports on a stock/company, prefer an ETF that includes research-agent + report-agent.
-- When quality tier is "full" or auction mode is "etf", prefer a bundled ETF workflow over a single agent unless the task is narrowly scoped (headlines only, price only, etc.).
-- When quality tier is "brief", prefer a single fast specialist agent (direct) over multi-agent ETFs.
+- When quality tier is "full" or auction mode is "etf", prefer a bundled ETF workflow ONLY when the task truly needs multiple specialists (investment report, due diligence, news+price combo). Do NOT use ETF for narrow tasks: headlines only, on-chain activity, holder data, price quote, chart analysis, token research, wallet reputation, bills, audits.
+- When quality tier is "brief" OR the task is a single specialist scope, prefer "direct" with one agent — never ETF.
 - Only use agent and ETF ids from the catalog. Never invent ids.
 - Optimize for task fit, then reputation, then total cost.
 
@@ -163,6 +170,89 @@ export async function planTaskWithOpenAi(
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.warn("[openai-planner] failed:", msg);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const SHAPE_SYSTEM_PROMPT = `You classify whether a Butler task needs ONE specialist agent or MULTIPLE agents.
+
+Rules:
+- "single" for: headlines, price quote, chart/technicals, on-chain activity, whale flows, holder information, token research, wallet reputation, audit, bills, sentiment — one deliverable from one specialist.
+- "multi" for: full investment reports, comprehensive due diligence, explicit multi-agent requests, combined news+price workflows, deep dives across news+market+on-chain+report.
+- Holder information / holder distribution → single (token-research-agent or onchain-agent), NOT news-agent.
+- On-chain activity / whale transfers / exchange flows → single (onchain-agent), NOT news-agent.
+- Only suggest agent ids from: news-agent, market-agent, chart-agent, onchain-agent, token-research-agent, research-agent, report-agent, sentiment-agent, audit-agent, bill-agent, wallet-reputation-agent, portfolio-risk-agent, crypto-news-intelligence-agent, defi-agent, macro-agent.
+
+Respond JSON only:
+{
+  "shape": "single" | "multi",
+  "reason": "short explanation",
+  "suggestedAgentId": "agent-id or null",
+  "suggestedCategory": "news|market-data|research|reporting|sentiment|audit|bills or null"
+}`;
+
+export async function classifyExecutionShapeWithOpenAi(
+  task: string,
+  context?: { qualityTier?: string; auctionMode?: string; category?: string }
+): Promise<{
+  shape: "single" | "multi";
+  reason: string;
+  suggestedAgentId?: string;
+  suggestedCategory?: string;
+} | null> {
+  const key = process.env.OPENAI_API_KEY?.trim();
+  if (!key) return null;
+
+  const model = process.env.OPENAI_MODEL?.trim() || DEFAULT_MODEL;
+  const timeoutMs = Number(process.env.OPENAI_SHAPE_TIMEOUT_MS ?? 12_000);
+  const contextLines = [
+    context?.qualityTier ? `User quality tier: ${context.qualityTier}` : null,
+    context?.auctionMode ? `User auction mode: ${context.auctionMode}` : null,
+    context?.category ? `User category hint: ${context.category}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const userContent = contextLines ? `${contextLines}\n\nTask:\n${task}` : task;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(OPENAI_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.1,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: SHAPE_SYSTEM_PROMPT },
+          { role: "user", content: userContent },
+        ],
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    const content = body.choices?.[0]?.message?.content;
+    if (!content) return null;
+    const trimmed = content.trim();
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const raw = fenced?.[1]?.trim() ?? trimmed;
+    const parsed = JSON.parse(raw) as LlmShapeResponse;
+    if (parsed.shape !== "single" && parsed.shape !== "multi") return null;
+    return {
+      shape: parsed.shape,
+      reason: parsed.reason?.trim() || "Classified by OpenAI",
+      suggestedAgentId: parsed.suggestedAgentId?.trim() || undefined,
+      suggestedCategory: parsed.suggestedCategory?.trim() || undefined,
+    };
+  } catch {
     return null;
   } finally {
     clearTimeout(timer);

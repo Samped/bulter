@@ -4,7 +4,7 @@ import {
   type MarketplaceAgent,
 } from "./agent-registry.ts";
 import { getMarketplaceEtf, MARKETPLACE_ETFS } from "./marketplace.ts";
-import { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, resolveExpressBrief, wantsDeepBrief } from "./brief-intent.ts";
+import { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, isHolderInfoBrief, resolveExpressBrief, wantsDeepBrief } from "./brief-intent.ts";
 
 export type TaskStrategy = "etf" | "workflow" | "direct";
 
@@ -104,6 +104,9 @@ function matchEtf(task: string): TaskPlan | null {
   }
 
   if (/btc|bitcoin|onchain|on-chain/.test(t) && !isResearchLiteratureBrief(task)) {
+    if (isOnchainOnlyBrief(task) || isHolderInfoBrief(task)) {
+      return null;
+    }
     const wantsFullThesis =
       /thesis|investment|bull|bear|whale|defi|aave|uniswap|support|resistance|executive|deep|comprehensive|scenario|risk|macro|sentiment/.test(
         t
