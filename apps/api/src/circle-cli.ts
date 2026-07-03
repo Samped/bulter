@@ -485,9 +485,13 @@ export function scheduleGatewayBalanceRefresh(address: string): void {
 }
 
 export function circleCliInstalled(): boolean {
-  const globalCli = resolve(ROOT, ".circle-cli-global/node_modules/@circle-fin/cli/dist/index.js");
-  const vendorCli = resolve(ROOT, ".vendor/circle-cli/dist/index.js");
-  return existsSync(globalCli) || existsSync(vendorCli);
+  const candidates = [
+    resolve(ROOT, "node_modules/@circle-fin/cli/dist/index.js"),
+    resolve(ROOT, "apps/api/node_modules/@circle-fin/cli/dist/index.js"),
+    resolve(ROOT, ".circle-cli-global/node_modules/@circle-fin/cli/dist/index.js"),
+    resolve(ROOT, ".vendor/circle-cli/dist/index.js"),
+  ];
+  return candidates.some((p) => existsSync(p));
 }
 
 export function circleCliRunnable(): boolean {

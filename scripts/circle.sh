@@ -20,6 +20,16 @@ smoke() {
   NODE_PATH="$nm" node "$js" --version >/dev/null 2>&1
 }
 
+NPM_JS="$ROOT/node_modules/@circle-fin/cli/dist/index.js"
+NPM_NM="$ROOT/node_modules"
+if [[ ! -f "$NPM_JS" ]]; then
+  NPM_JS="$ROOT/apps/api/node_modules/@circle-fin/cli/dist/index.js"
+  NPM_NM="$ROOT/apps/api/node_modules"
+fi
+if [[ -f "$NPM_JS" ]] && smoke "$NPM_JS" "$NPM_NM"; then
+  run_cli "$NPM_JS" "$NPM_NM" "$@"
+fi
+
 CLI="$ROOT/.vendor/circle-cli/dist/index.js"
 VENDOR_NM="$ROOT/.vendor/circle-cli/node_modules"
 if [[ -f "$CLI" ]] && smoke "$CLI" "$VENDOR_NM"; then

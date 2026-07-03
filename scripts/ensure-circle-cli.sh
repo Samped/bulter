@@ -6,6 +6,12 @@ cd "$ROOT"
 
 vendor_cli="$ROOT/.vendor/circle-cli/dist/index.js"
 vendor_nm="$ROOT/.vendor/circle-cli/node_modules"
+npm_cli="$ROOT/node_modules/@circle-fin/cli/dist/index.js"
+npm_nm="$ROOT/node_modules"
+if [[ ! -f "$npm_cli" ]]; then
+  npm_cli="$ROOT/apps/api/node_modules/@circle-fin/cli/dist/index.js"
+  npm_nm="$ROOT/apps/api/node_modules"
+fi
 global_cli="$ROOT/.circle-cli-global/node_modules/@circle-fin/cli/dist/index.js"
 global_nm="$ROOT/.circle-cli-global/node_modules"
 
@@ -15,6 +21,11 @@ cli_smoke() {
   [[ -f "$js" ]] || return 1
   NODE_PATH="$nm${NODE_PATH:+:$NODE_PATH}" node "$js" --version >/dev/null 2>&1
 }
+
+if [[ -f "$npm_cli" ]] && cli_smoke "$npm_cli" "$npm_nm"; then
+  echo "==> Circle CLI ready (npm dependency)"
+  exit 0
+fi
 
 if [[ -f "$vendor_cli" ]] && cli_smoke "$vendor_cli" "$vendor_nm"; then
   echo "==> Circle CLI ready (vendor)"

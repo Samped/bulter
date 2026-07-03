@@ -535,7 +535,7 @@ export async function pollCircleLoginJob(
   opts?: { onPending?: (elapsedMs: number) => void }
 ): Promise<CircleLoginInitResult> {
   const startedAt = Date.now();
-  const deadline = startedAt + (IS_LOCAL_API ? 120_000 : 180_000);
+  const deadline = startedAt + (IS_LOCAL_API ? 120_000 : 240_000);
   let delay = 1_500;
   let jobMissingRetries = 0;
   while (Date.now() < deadline) {
@@ -615,7 +615,7 @@ export async function beginLoginCodeSend(
     onProgress?: (elapsedSec: number) => void;
   }
 ): Promise<CircleLoginInitResult & { email: string; jobId: string }> {
-  const deadline = Date.now() + (IS_LOCAL_API ? 90_000 : 180_000);
+  const deadline = Date.now() + (IS_LOCAL_API ? 90_000 : 240_000);
   await tryWakeApiForLogin(IS_LOCAL_API ? 8_000 : 20_000);
 
   let started: Awaited<ReturnType<typeof startCircleLoginJob>> | null = null;

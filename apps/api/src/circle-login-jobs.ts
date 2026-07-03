@@ -101,13 +101,6 @@ function runLoginJob(jobId: string, email: string, testnet: boolean, sessionId?:
           fail(jobId, "Circle CLI not installed on the server. Redeploy the API on Render.");
           return;
         }
-        if (!circleCliRunnable()) {
-          fail(
-            jobId,
-            "Circle CLI is installed but not working on the server (broken dependencies). Redeploy the API — the build will reinstall it."
-          );
-          return;
-        }
         const result = await circleLoginInitAsync(email, testnet, 120_000);
         if (result.ok && result.requestId) {
           const { backupLoginRequestSession } = await import("./circle-login-session.ts");

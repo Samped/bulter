@@ -14,6 +14,7 @@
     "@butler/arc": "*",
     "@butler/core": "*",
     "@butler/delegation": "*",
+    "@circle-fin/cli": "0.0.5",
     "@circle-fin/x402-batching": "^3.2.0",
     "@x402/core": "2.16.0",
     "@x402/evm": "2.16.0",
