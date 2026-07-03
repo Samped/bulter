@@ -5,21 +5,7 @@ import { getUserSessionPaths } from "./user-session.ts";
 /** Minimal login routes — registered before heavy imports so init/verify respond immediately. */
 export function registerCircleLoginRoutes(app: Express): void {
   app.post("/api/circle/login/init", (req, res) => {
-    try {
-      const email = String(req.body?.email ?? "").trim();
-      if (!email.includes("@")) {
-        res.status(400).json({ error: "Valid email required" });
-        return;
-      }
-      const testnet = req.body?.testnet !== false;
-      const sessionId = getUserSessionPaths()?.sessionId;
-      const jobId = startCircleLoginInitJob(email, testnet, sessionId);
-      res.status(202).json({ pending: true, jobId, email });
-    } catch (error) {
-      res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to send OTP",
-      });
-    }
+    void handleLoginInit(req, res);
   });
 
   app.get("/api/circle/login/init/:jobId", (req, res) => {
@@ -55,6 +41,60 @@ export function registerCircleLoginRoutes(app: Express): void {
   app.post("/api/circle/login/verify", (req, res) => {
     void handleLoginVerify(req, res);
   });
+}
+
+async function handleLoginInit(
+  req: { body?: Record<string, unknown> },
+  res: {
+    status: (code: number) => { json: (body: unknown) => void };
+    json: (body: unknown) => void;
+  }
+): Promise<void> {
+  try {
+    const email = String(req.body?.email ?? "").trim();
+    if (!email.includes("@")) {
+      res.status(400).json({ error: "Valid email required" });
+      return;
+    }
+    const testnet = req.body?.testnet !== false;
+    const useSync =
+      process.env.BUTLER_SYNC_LOGIN_INIT === "true" ||
+      process.env.RENDER === "true";
+
+    if (useSync) {
+      const { circleCliInstalled, circleLoginInitAsync } = await import("./circle-cli.ts");
+      if (!circleCliInstalled()) {
+        res.status(500).json({ error: "Circle CLI not installed on the server. Redeploy the API." });
+        return;
+      }
+      const result = await circleLoginInitAsync(email, testnet, 120_000);
+      if (!result.ok || !result.requestId) {
+        res.status(500).json({ error: result.error ?? "Failed to send OTP" });
+        return;
+      }
+      const { backupLoginRequestSession } = await import("./circle-login-session.ts");
+      backupLoginRequestSession(result.requestId);
+      res.json({
+        ok: true,
+        requestId: result.requestId,
+        email: result.email ?? email,
+        message: result.message,
+        otpPrefix: result.otpPrefix,
+        hint: result.otpPrefix
+          ? `Enter ${result.otpPrefix}-123456 or the 6 digits from your email (one verify attempt per code).`
+          : "Check your email for a code like B1X-123456 (6 digits also works). One verify attempt per code.",
+      });
+      return;
+    }
+
+    const sessionId = getUserSessionPaths()?.sessionId;
+    const jobId = startCircleLoginInitJob(email, testnet, sessionId);
+    res.status(202).json({ pending: true, jobId, email });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to send OTP",
+    });
+  }
 }
 
 async function handleLoginVerify(

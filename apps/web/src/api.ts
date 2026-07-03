@@ -357,7 +357,7 @@ export async function tryWakeApiForLogin(maxWaitMs = IS_LOCAL_API ? 8_000 : 12_0
   while (Date.now() - started < maxWaitMs) {
     try {
       const h = await getHealthQuick();
-      if (h.ok && h.mode !== "starting") return true;
+      if (h.mode !== "starting") return true;
     } catch {
       /* retry */
     }
@@ -385,7 +385,9 @@ export async function waitForApiReady(maxWaitMs = IS_LOCAL_API ? 15_000 : 180_00
   while (Date.now() - started < maxWaitMs) {
     try {
       const h = await getHealth();
-      if (h.ok && h.mode !== "starting") return h;
+      if (h.mode !== "starting" && (h.ok || h.mode === "booting" || h.mode === "loading" || h.mode === "live")) {
+        return h;
+      }
     } catch {
       /* retry */
     }
@@ -437,16 +439,43 @@ export type CircleLoginInitResult = {
 
 export async function startCircleLoginJob(email: string) {
   /** Never retry POST init — each attempt sends another Circle OTP email. */
-  return request<{ pending?: boolean; jobId: string; email: string }>(
+  const res = await request<{
+    pending?: boolean;
+    jobId?: string;
+    requestId?: string;
+    email: string;
+    message?: string;
+    hint?: string;
+    otpPrefix?: string;
+    ok?: boolean;
+    error?: string;
+  }>(
     "/api/circle/login/init",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, testnet: true }),
     },
-    IS_LOCAL_API ? 20_000 : 45_000,
+    IS_LOCAL_API ? 20_000 : 130_000,
     1
   );
+
+  if (res.requestId) {
+    return {
+      direct: true as const,
+      requestId: res.requestId,
+      email: res.email ?? email,
+      message: res.message,
+      hint: res.hint,
+      otpPrefix: res.otpPrefix,
+    };
+  }
+
+  if (!res.jobId) {
+    throw new Error(res.error ?? "Circle did not start login — try again.");
+  }
+
+  return { direct: false as const, jobId: res.jobId, email: res.email ?? email };
 }
 
 const LOGIN_POLL_TIMEOUT = IS_LOCAL_API ? 15_000 : 25_000;
@@ -478,6 +507,7 @@ export async function pollCircleLoginJob(
   const startedAt = Date.now();
   const deadline = startedAt + (IS_LOCAL_API ? 120_000 : 180_000);
   let delay = 1_500;
+  let jobMissingRetries = 0;
   while (Date.now() < deadline) {
     let status: {
       status: string;
@@ -499,7 +529,16 @@ export async function pollCircleLoginJob(
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Poll failed";
       if (/job not found|expired/i.test(msg)) {
-        throw new Error("Server restarted while sending the code. Tap Resend, then enter the new code.");
+        if (!IS_LOCAL_API && jobMissingRetries < 6) {
+          jobMissingRetries += 1;
+          opts?.onPending?.(Date.now() - startedAt);
+          await tryWakeApiForLogin(20_000);
+          await new Promise((r) => setTimeout(r, 2_500));
+          continue;
+        }
+        throw new Error(
+          "API restarted while sending the code. Tap Resend, wait for the new email, then verify."
+        );
       }
       if (/502|503|504|Cannot reach API|timed out|waking up|Bad Gateway|unavailable/i.test(msg)) {
         opts?.onPending?.(Date.now() - startedAt);
@@ -550,7 +589,19 @@ export async function beginLoginCodeSend(
   await tryWakeApiForLogin(IS_LOCAL_API ? 8_000 : 15_000);
 
   const started = await startCircleLoginJob(email);
-  opts?.onJobStarted?.(started);
+  if (started.direct) {
+    return {
+      ok: true,
+      requestId: started.requestId,
+      email: started.email,
+      message: started.message,
+      hint: started.hint,
+      otpPrefix: started.otpPrefix,
+      jobId: "",
+    };
+  }
+
+  opts?.onJobStarted?.({ jobId: started.jobId, email: started.email });
 
   let lastErr: Error | null = null;
   while (Date.now() < deadline) {
