@@ -200,9 +200,19 @@ function sessionHeaders(init?: RequestInit, withSession = true): Headers {
   return headers;
 }
 
-const rawApi = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+const RENDER_API = "https://butler-api-x7lh.onrender.com";
+
+function resolveApiBase(): string {
+  const raw = (import.meta.env.VITE_API_URL as string | undefined)?.trim() ?? "";
+  if (import.meta.env.DEV) return raw || "http://localhost:3001";
+  // Stale Vercel builds still point at the dead Oracle VM — use Render instead.
+  if (/129\.151\.164\.101/.test(raw)) return RENDER_API;
+  return raw;
+}
+
+const rawApi = resolveApiBase();
 /** Prod on Vercel: empty → same-origin /api/* (proxied in vercel.json). Dev: localhost:3001. */
-const API = rawApi || (import.meta.env.DEV ? "http://localhost:3001" : "");
+const API = rawApi;
 /** Empty API in prod = Vercel proxy — not local dev. */
 export const IS_LOCAL_API =
   import.meta.env.DEV ||
