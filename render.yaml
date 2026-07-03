@@ -38,11 +38,11 @@ services:
         value: https://rpc.testnet.arc.network
       - key: GATEWAY_FACILITATOR_URL
         value: https://gateway-api-testnet.circle.com
+      - key: WEB_URL
+        value: "https://getbutler.xyz"
+      - key: BUTLER_API_URL
+        value: "https://butler-api-x7lh.onrender.com"
       - key: BUTLER_SELLER_ADDRESS
         sync: false
       - key: OPENAI_API_KEY
-        sync: false
-      - key: WEB_URL
-        sync: false
-      - key: BUTLER_API_URL
         sync: false

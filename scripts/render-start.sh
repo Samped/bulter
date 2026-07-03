@@ -7,6 +7,8 @@ LOG="${BUTLER_START_LOG:-/tmp/butler-api-start.log}"
 export BUTLER_LITE_API="${BUTLER_LITE_API:-true}"
 export BUTLER_ROOT="${BUTLER_ROOT:-$ROOT}"
 export RENDER="${RENDER:-true}"
+export PORT="${PORT:-3001}"
+export BUTLER_INTERNAL_API_URL="${BUTLER_INTERNAL_API_URL:-http://127.0.0.1:${PORT}}"
 
 log() { echo "$(date -Is) $*" | tee -a "$LOG"; }
 
