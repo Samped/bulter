@@ -286,7 +286,7 @@ async function request<T>(
           res.status === 502 || res.status === 503 || res.status === 504
             ? IS_LOCAL_API
               ? `API is waking up (${res.status}). Wait 30s and try again.`
-              : `Backend offline (${res.status}). If /api/health shows "ok":true, tap Resend and try again. Otherwise run oracle-recover.sh on the VM.`
+              : `API temporarily unavailable (${res.status}). Wait 30–60s for Render to wake up, then tap Resend.`
             : res.status === 429
               ? "Circle is rate-limiting logins. Wait 10–15 minutes, request a new code, then verify once."
               : `${res.status} ${path}`;
@@ -314,7 +314,7 @@ async function request<T>(
             const h = await getHealthQuick();
             if (h.ok) {
               detail =
-                "Login hit a temporary 502 while the API is online. Tap Resend for a fresh code, then Verify again.";
+                "Login hit a temporary error while the API is online. Wait a few seconds, tap Resend, then verify again.";
             }
           } catch {
             /* keep detail */
@@ -456,8 +456,8 @@ export async function startCircleLoginJob(email: string) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, testnet: true }),
     },
-    IS_LOCAL_API ? 20_000 : 130_000,
-    1
+    IS_LOCAL_API ? 20_000 : 45_000,
+    IS_LOCAL_API ? 1 : 8
   );
 
   if (res.requestId) {
@@ -586,9 +586,29 @@ export async function beginLoginCodeSend(
   }
 ): Promise<CircleLoginInitResult & { email: string; jobId: string }> {
   const deadline = Date.now() + (IS_LOCAL_API ? 90_000 : 180_000);
-  await tryWakeApiForLogin(IS_LOCAL_API ? 8_000 : 15_000);
+  await tryWakeApiForLogin(IS_LOCAL_API ? 8_000 : 20_000);
 
-  const started = await startCircleLoginJob(email);
+  let started: Awaited<ReturnType<typeof startCircleLoginJob>> | null = null;
+  let startErr: Error | null = null;
+  while (Date.now() < deadline && !started) {
+    try {
+      started = await startCircleLoginJob(email);
+      startErr = null;
+      break;
+    } catch (err) {
+      startErr = err instanceof Error ? err : new Error(String(err));
+      const retryable = /502|503|504|waking up|unavailable|Cannot reach API|Bad Gateway/i.test(
+        startErr.message
+      );
+      if (!retryable || Date.now() + 15_000 >= deadline) break;
+      opts?.onProgress?.(0);
+      await tryWakeApiForLogin(20_000);
+      await new Promise((r) => setTimeout(r, 2_500));
+    }
+  }
+  if (!started) {
+    throw startErr ?? new Error("Could not start login — tap Resend.");
+  }
   if (started.direct) {
     return {
       ok: true,

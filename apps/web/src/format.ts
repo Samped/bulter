@@ -32,7 +32,7 @@ export function formatWorkflowError(raw: string): string {
     }
   }
   if (/cannot reach api|backend server may be offline|backend offline/i.test(text)) {
-    return "Cannot reach Butler API while running your task. If /api/health shows \"ok\":true, wait 30s and retry — the server may be busy with payments. Otherwise run oracle-recover.sh on the VM.";
+    return "Cannot reach Butler API while running your task. If /api/health shows \"ok\":true, wait 30s and retry — the server may be busy with payments.";
   }
   if (/signal is aborted/i.test(text)) {
     return "Request was cancelled or timed out. Keep this tab open while Butler runs (auctions can take 1–3 minutes).";

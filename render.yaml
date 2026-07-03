@@ -28,6 +28,8 @@ services:
         value: "120000"
       - key: BUTLER_SKIP_GATEWAY_WARM
         value: "true"
+      - key: BUTLER_SYNC_LOGIN_INIT
+        value: "false"
       - key: NODE_VERSION
         value: "20"
       - key: BUTLER_USE_CIRCLE_CLI

@@ -231,7 +231,7 @@ export function AgentChatView({
         pushMessage({
           role: "assistant",
           content:
-            "Butler API is offline or still loading routes. Wait 30 seconds and retry. If this persists, the server needs a restart (oracle-recover.sh on the VM).",
+            "Butler API is offline or still loading routes. Wait 30 seconds and retry.",
           error: true,
         });
         return;

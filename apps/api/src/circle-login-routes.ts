@@ -57,9 +57,7 @@ async function handleLoginInit(
       return;
     }
     const testnet = req.body?.testnet !== false;
-    const useSync =
-      process.env.BUTLER_SYNC_LOGIN_INIT === "true" ||
-      process.env.RENDER === "true";
+    const useSync = process.env.BUTLER_SYNC_LOGIN_INIT === "true";
 
     if (useSync) {
       const { circleCliInstalled, circleLoginInitAsync } = await import("./circle-cli.ts");
