@@ -14,6 +14,10 @@ log() { echo "$(date -Is) $*" | tee -a "$LOG"; }
 
 log "Butler API start (ROOT=$ROOT, lite=${BUTLER_LITE_API}, render=${RENDER})"
 
+if ! bash "$ROOT/scripts/ensure-circle-cli.sh" >>"$LOG" 2>&1; then
+  log "WARN: Circle CLI install failed at boot — login may not work"
+fi
+
 DIST="$ROOT/apps/api/dist/server.mjs"
 if [[ -f "$DIST" ]]; then
   log "exec node dist/server.mjs"

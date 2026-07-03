@@ -47,7 +47,12 @@ export function StackStatusPanel({ embedded = false }: { embedded?: boolean }) {
       )}
       {!circleInstalled && (
         <p className="muted stack-hint">
-          Run <code>npm run circle:install</code> on the API server.
+          Circle CLI is not installed on the API server. Redeploy Render after the latest build.
+        </p>
+      )}
+      {circleInstalled && stack.circleCli.runnable === false && (
+        <p className="muted stack-hint">
+          Circle CLI is present but not working (broken install). Redeploy the API on Render.
         </p>
       )}
       {!embedded && (

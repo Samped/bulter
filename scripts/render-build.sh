@@ -8,12 +8,12 @@ node scripts/set-workspaces-render.js
 npm install --omit=dev
 npm run build:render -w @butler/api || echo "WARN: dist build failed — lite API runs from tsx source"
 
-# Small VMs OOM if we boot Circle CLI twice during deploy; installer already runs --version once.
-export BUTLER_SKIP_CLI_SMOKE=1
+echo "==> Installing Circle CLI (required for login)"
 if bash scripts/ensure-circle-cli.sh; then
   echo "==> Circle CLI ready"
 else
-  echo "WARN: Circle CLI install failed — login may not work until fixed" >&2
+  echo "ERROR: Circle CLI install failed — login will not work" >&2
+  exit 1
 fi
 
 echo "==> Render build complete"

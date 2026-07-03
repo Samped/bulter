@@ -60,10 +60,18 @@ export function agentRunReadiness(): { canRun: boolean; reason?: string; mode?: 
             "Circle CLI is slow or unreachable. Ensure `scripts/circle.sh wallet status` works, then retry — or set BUTLER_EXECUTOR_PRIVATE_KEY for headless x402.",
         };
     }
+    if (circleCliInstalled()) {
+      return {
+        canRun: false,
+        mode: "circle-cli",
+        reason:
+          "Circle CLI is installed but not working on the API server. Redeploy Render to reinstall it.",
+      };
+    }
     return {
       canRun: false,
       mode: "circle-cli",
-      reason: "Circle CLI not installed. Run npm run circle:install on the API server.",
+      reason: "Circle CLI not installed. Redeploy the API on Render.",
     };
   }
 
