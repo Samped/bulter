@@ -55,6 +55,13 @@ app.get("/api/health", (_req, res) => {
 
 app.use(
   cors({
+    origin: [
+      WEB_URL,
+      "https://getbutler.xyz",
+      "https://www.getbutler.xyz",
+      "http://localhost:5174",
+      "http://localhost:5173",
+    ].filter((v, i, a) => v && a.indexOf(v) === i),
     allowedHeaders: ["Content-Type", "Authorization", "X-Butler-Session"],
   })
 );

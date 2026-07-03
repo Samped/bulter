@@ -223,7 +223,7 @@ function apiUnreachableMessage(): string {
     return `Cannot reach API at ${apiDisplayUrl()} — is npm run dev:api running?`;
   }
   if (!API && typeof window !== "undefined") {
-    return `Cannot reach API at ${window.location.origin}/api — the backend server may be offline. Wait a moment and try again, or open /api/health in a new tab.`;
+    return `Cannot reach API at ${window.location.origin}/api — the backend may be waking up (Render free tier). Wait 30–60 seconds and try again, or open /api/health.`;
   }
   return `Cannot reach API at ${apiDisplayUrl()} — wait a moment and try again, or open /api/health in a new tab.`;
 }
