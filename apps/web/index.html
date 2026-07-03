@@ -12,6 +12,33 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet" />
+    <script>
+      (function () {
+        var RENDER = "https://butler-api-x7lh.onrender.com";
+        var host = location.hostname;
+        var prod =
+          host === "getbutler.xyz" ||
+          host === "www.getbutler.xyz" ||
+          host.slice(-10) === "vercel.app";
+        if (!prod) return;
+        window.__BUTLER_API_URL__ = RENDER;
+        var dead = /https?:\/\/129\.151\.164\.101(?::\d+)?/g;
+        var origFetch = window.fetch;
+        if (typeof origFetch === "function") {
+          window.fetch = function (input, init) {
+            if (typeof input === "string" && dead.test(input)) {
+              dead.lastIndex = 0;
+              return origFetch.call(this, input.replace(dead, RENDER), init);
+            }
+            if (input && typeof input === "object" && "url" in input && dead.test(input.url)) {
+              dead.lastIndex = 0;
+              return origFetch.call(this, input.url.replace(dead, RENDER), init);
+            }
+            return origFetch.call(this, input, init);
+          };
+        }
+      })();
+    </script>
   </head>
   <body style="margin:0;background:#09090b;color:#fafafa;">
     <div id="root"></div>

@@ -201,13 +201,31 @@ function sessionHeaders(init?: RequestInit, withSession = true): Headers {
 }
 
 const RENDER_API = "https://butler-api-x7lh.onrender.com";
+const DEAD_VM_RE = /129\.151\.164\.101/;
+
+declare global {
+  interface Window {
+    __BUTLER_API_URL__?: string;
+  }
+}
 
 function resolveApiBase(): string {
+  if (typeof window !== "undefined" && window.__BUTLER_API_URL__) {
+    return window.__BUTLER_API_URL__.replace(/\/$/, "");
+  }
   const raw = (import.meta.env.VITE_API_URL as string | undefined)?.trim() ?? "";
-  if (import.meta.env.DEV) return raw || "http://localhost:3001";
-  // Stale Vercel builds still point at the dead Oracle VM — use Render instead.
-  if (/129\.151\.164\.101/.test(raw)) return RENDER_API;
-  return raw;
+  if (import.meta.env.DEV) {
+    if (DEAD_VM_RE.test(raw)) return RENDER_API;
+    return raw || "http://localhost:3001";
+  }
+  if (DEAD_VM_RE.test(raw)) return RENDER_API;
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host === "getbutler.xyz" || host === "www.getbutler.xyz" || host.endsWith(".vercel.app")) {
+      return raw && !DEAD_VM_RE.test(raw) ? raw.replace(/\/$/, "") : RENDER_API;
+    }
+  }
+  return raw.replace(/\/$/, "");
 }
 
 const rawApi = resolveApiBase();
@@ -223,6 +241,8 @@ function defaultTimeoutMs(): number {
 }
 
 function apiDisplayUrl(): string {
+  const base = API || (typeof window !== "undefined" ? window.location.origin : "");
+  if (DEAD_VM_RE.test(base)) return RENDER_API;
   if (API) return API;
   if (typeof window !== "undefined") return window.location.origin;
   return "the API";
