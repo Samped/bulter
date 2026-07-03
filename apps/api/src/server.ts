@@ -41,7 +41,7 @@ app.get("/api/health", (_req, res) => {
   const loader = getRouteLoaderStatus();
   const executeReady = loader.executeRoutes > 0;
   res.json({
-    ok: ready && taskRoutesReady,
+    ok: ready && taskRoutesReady && executeReady,
     mode: !ready ? "starting" : !taskRoutesReady ? "booting" : !executeReady ? "loading" : "live",
     chain: ARC_EIP155,
     seller: SELLER,
@@ -148,7 +148,7 @@ app.listen(PORT, "0.0.0.0", () => {
 
   setImmediate(() => {
     if (process.env.BUTLER_LITE_API === "true") {
-      const bootCapMs = Number(process.env.BUTLER_TASK_BOOT_CAP_MS ?? 45_000);
+      const bootCapMs = Number(process.env.BUTLER_TASK_BOOT_CAP_MS ?? (process.env.RENDER === "true" ? 120_000 : 45_000));
       void Promise.race([
         import("./load-task-routes.ts"),
         new Promise<never>((_, reject) =>

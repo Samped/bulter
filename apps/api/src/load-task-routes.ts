@@ -77,13 +77,26 @@ async function registerMarketplaceExecuteRoutes(
   const { setExecuteLoadError, setBootPhase } = await import("./route-loader-status.ts");
   setBootPhase("execute-import");
 
+  const onRender = process.env.RENDER === "true" || process.env.BUTLER_LITE_API === "true";
+  const importTimeoutMs = onRender ? 120_000 : 60_000;
+
   try {
     const mod = await Promise.race([
       importPromise,
-      sleep(60_000).then(() => {
-        throw new Error("marketplace-execute import timed out after 60s");
+      sleep(importTimeoutMs).then(() => {
+        throw new Error(`marketplace-execute import timed out after ${importTimeoutMs / 1000}s`);
       }),
     ]);
+
+    /** Render free tier — skip Gateway warm (often OOM / timeout); lite x402 routes still work. */
+    if (onRender && process.env.BUTLER_SKIP_GATEWAY_WARM !== "false") {
+      setBootPhase("execute-register");
+      mod.registerAgentExecuteRoutes(app, null, opts);
+      mod.prefetchAgentServices();
+      setBootPhase("live-lite");
+      console.log("  x402 execute routes: lite mode (Render — no Gateway middleware warm)");
+      return;
+    }
 
     setBootPhase("execute-gateway");
     let gateway: Awaited<ReturnType<typeof mod.createMarketplaceGateway>> | null = null;
@@ -103,13 +116,13 @@ async function registerMarketplaceExecuteRoutes(
 
     mod.registerAgentExecuteRoutes(app, gateway, opts);
     mod.prefetchAgentServices();
-    setBootPhase("live");
+    setBootPhase(gateway ? "live" : "live-lite");
   } catch (error) {
     const message = error instanceof Error ? error.message : "Execute routes failed to load";
     setExecuteLoadError(message);
     console.error("Butler API execute routes failed:", message);
     try {
-      const mod = await Promise.race([importPromise, sleep(60_000)]);
+      const mod = await Promise.race([importPromise, sleep(importTimeoutMs)]);
       mod.registerAgentExecuteRoutes(app, null, opts);
       mod.prefetchAgentServices();
       setBootPhase("live-lite");
@@ -296,10 +309,12 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
     await handleListDeliverables(req, res, STATE_PATH, SELLER);
   });
 
+  setBootPhase("execute-queued");
+  console.log("  task routes: registering x402 execute endpoints…");
+  await registerMarketplaceExecuteRoutes(app, marketplaceExecuteImport);
+
   setBootPhase("shell-done");
   console.log(
-    "  task routes: policy · trace · agent/status · butler/run · auctions · deliverables (lite mode)"
+    "  task routes: policy · trace · agent/status · butler/run · auctions · deliverables · execute (lite mode)"
   );
-
-  void registerMarketplaceExecuteRoutes(app, marketplaceExecuteImport);
 }

@@ -24,6 +24,10 @@ services:
         value: /opt/render/project/src
       - key: NODE_OPTIONS
         value: "--max-old-space-size=460"
+      - key: BUTLER_TASK_BOOT_CAP_MS
+        value: "120000"
+      - key: BUTLER_SKIP_GATEWAY_WARM
+        value: "true"
       - key: NODE_VERSION
         value: "20"
       - key: BUTLER_USE_CIRCLE_CLI
