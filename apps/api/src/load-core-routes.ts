@@ -61,14 +61,15 @@ export function loadCoreRoutes(app: Express): void {
     try {
       const cfg = loadCircleConfig();
       const probe = probeCircleCli();
+      const installed = circleCliInstalled();
       let executor = resolveCircleExecutorAddress();
       if (!executor && probe.loggedIn) {
         void Promise.resolve().then(() => ensureCircleExecutor());
       }
       const gatewayBalanceUsdc = getGatewayBalanceForApi(executor);
       res.json({
-        installed: circleCliInstalled(),
-        runnable: probe.runnable,
+        installed,
+        runnable: installed || probe.runnable,
         loggedIn: probe.loggedIn,
         testnet: probe.testnet ?? true,
         version: circleVersion(),

@@ -330,11 +330,11 @@ function scheduleRunnableCheck(): void {
 }
 
 export function circleCliQuickRunnable(): boolean {
-  if (!circleCliInstalled()) return false;
+  if (circleCliInstalled()) return true;
   const now = Date.now();
   if (runnableCache && now - runnableCache.at < 300_000) return runnableCache.ok;
   scheduleRunnableCheck();
-  return runnableCache?.ok ?? true;
+  return runnableCache?.ok ?? false;
 }
 
 function quickCircleRunnable(): boolean {
@@ -450,7 +450,7 @@ export function probeCircleCli(preferTestnet = true): CircleProbeResult {
   scheduleProbeRefresh(preferTestnet);
   scheduleRunnableCheck();
   const fallback: CircleProbeResult = {
-    runnable: runnableCache?.ok ?? circleCliInstalled(),
+    runnable: circleCliInstalled(),
     loggedIn: false,
     testnet: preferTestnet,
   };
@@ -601,6 +601,7 @@ export function circleCliInstalled(): boolean {
 }
 
 export function circleCliRunnable(): boolean {
+  if (circleCliInstalled()) return true;
   return probeCircleCli().runnable;
 }
 
@@ -851,22 +852,31 @@ export function circleGatewayBalance(address: string, chain?: string): { ok: boo
 export function circleVersion(): string | null {
   const now = Date.now();
   if (versionCache && now - versionCache.at < CACHE_MS) return versionCache.v;
-  if (!circleCliAvailable()) {
+  const target = resolveCircleCliTarget();
+  if (!target) {
     versionCache = { at: now, v: null };
     return null;
   }
-  if (!versionCheckInflight) {
+  const r = spawnSync(process.execPath, [target.js, "--version"], {
+    encoding: "utf8",
+    env: circleTargetEnv(target),
+    cwd: ROOT,
+    timeout: 10_000,
+  });
+  const v = r.status === 0 ? (r.stdout?.trim().split(/\s/)[0] || null) : null;
+  versionCache = { at: now, v };
+  if (!versionCheckInflight && !v) {
     versionCheckInflight = true;
-    void runCircleAsync(["--version"], 5_000)
+    void runCircleAsync(["--version"], 8_000)
       .then(({ ok, stdout, stderr }) => {
-        const v = ok ? (stdout.trim() || stderr.trim() || null) : null;
-        versionCache = { at: Date.now(), v };
+        const asyncV = ok ? (stdout.trim().split(/\s/)[0] || stderr.trim() || null) : null;
+        if (asyncV) versionCache = { at: Date.now(), v: asyncV };
       })
       .finally(() => {
         versionCheckInflight = false;
       });
   }
-  return versionCache?.v ?? null;
+  return v;
 }
 
 export function arcCanteenAvailable(): boolean {
