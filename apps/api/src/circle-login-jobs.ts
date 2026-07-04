@@ -96,12 +96,13 @@ function runLoginJob(jobId: string, email: string, testnet: boolean, sessionId?:
   void (async () => {
     const run = async () => {
       try {
-        const { circleCliInstalled, circleCliRunnable, circleLoginInitAsync } = await import("./circle-cli.ts");
+        const { circleCliInstalled, circleLoginInitAsync } = await import("./circle-cli.ts");
         if (!circleCliInstalled()) {
           fail(jobId, "Circle CLI not installed on the server. Redeploy the API on Render.");
           return;
         }
-        const result = await circleLoginInitAsync(email, testnet, 120_000);
+        const initTimeout = process.env.RENDER === "true" ? 90_000 : 120_000;
+        const result = await circleLoginInitAsync(email, testnet, initTimeout);
         if (result.ok && result.requestId) {
           const { backupLoginRequestSession } = await import("./circle-login-session.ts");
           backupLoginRequestSession(result.requestId);
@@ -135,6 +136,10 @@ export function resumePendingLoginJobs(): void {
       const age = Date.now() - job.startedAt;
       if (age > 130_000) {
         fail(jobId, "Login was interrupted. Tap Send login code again.");
+        continue;
+      }
+      if (process.env.RENDER === "true" && age > 45_000) {
+        fail(jobId, "Login was interrupted when the server restarted. Tap Resend.");
         continue;
       }
       if (age > 3_000 && !jobs.has(jobId)) {

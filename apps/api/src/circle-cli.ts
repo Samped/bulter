@@ -17,6 +17,79 @@ import {
 } from "./circle-login-session.ts";
 
 const ROOT = process.env.BUTLER_ROOT?.trim() || resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const ON_RENDER = process.env.RENDER === "true";
+
+type CircleCliTarget = { js: string; nodeModules: string };
+
+function circleCliCandidatePaths(): CircleCliTarget[] {
+  const all: CircleCliTarget[] = [
+    { js: resolve(ROOT, "node_modules/@circle-fin/cli/dist/index.js"), nodeModules: resolve(ROOT, "node_modules") },
+    {
+      js: resolve(ROOT, "apps/api/node_modules/@circle-fin/cli/dist/index.js"),
+      nodeModules: resolve(ROOT, "apps/api/node_modules"),
+    },
+    {
+      js: resolve(ROOT, ".circle-cli-global/node_modules/@circle-fin/cli/dist/index.js"),
+      nodeModules: resolve(ROOT, ".circle-cli-global/node_modules"),
+    },
+  ];
+  if (!ON_RENDER) {
+    all.push({
+      js: resolve(ROOT, ".vendor/circle-cli/dist/index.js"),
+      nodeModules: resolve(ROOT, ".vendor/circle-cli/node_modules"),
+    });
+  }
+  return all.filter((c) => existsSync(c.js));
+}
+
+function circleTargetEnv(target: CircleCliTarget): NodeJS.ProcessEnv {
+  return {
+    ...circleChildEnv(),
+    NODE_PATH: target.nodeModules,
+    // Leave headroom on Render free tier for the API process while the CLI child runs.
+    NODE_OPTIONS: ON_RENDER ? "--max-old-space-size=192" : process.env.NODE_OPTIONS,
+  };
+}
+
+function cliSmokeSync(target: CircleCliTarget): boolean {
+  const r = spawnSync(process.execPath, [target.js, "--version"], {
+    encoding: "utf8",
+    env: circleTargetEnv(target),
+    cwd: ROOT,
+    timeout: 12_000,
+  });
+  const text = `${r.stdout ?? ""}\n${r.stderr ?? ""}`;
+  return (
+    r.status === 0 &&
+    !text.includes("ERR_MODULE_NOT_FOUND") &&
+    !text.includes("Circle CLI not installed")
+  );
+}
+
+let cachedCliTarget: CircleCliTarget | null | undefined;
+
+function resolveCircleCliTarget(): CircleCliTarget | null {
+  if (cachedCliTarget !== undefined) return cachedCliTarget;
+  for (const c of circleCliCandidatePaths()) {
+    if (cliSmokeSync(c)) {
+      cachedCliTarget = c;
+      return c;
+    }
+  }
+  cachedCliTarget = null;
+  return null;
+}
+
+let circleOpChain: Promise<void> = Promise.resolve();
+
+function enqueueCircleOp<T>(fn: () => Promise<T>): Promise<T> {
+  const run = circleOpChain.then(fn);
+  circleOpChain = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
 
 function circleHomeDir(): string {
   const sessionHome = getUserSessionPaths()?.circleHome;
@@ -39,9 +112,18 @@ export function resolveCircleBin(): string {
 }
 
 function runCircle(args: string[], opts?: { timeout?: number }): ReturnType<typeof spawnSync> {
+  const timeout = opts?.timeout ?? (ON_RENDER || process.env.BUTLER_LITE_API ? 60_000 : 30_000);
+  const target = resolveCircleCliTarget();
+  if (target) {
+    return spawnSync(process.execPath, [target.js, ...args], {
+      encoding: "utf8",
+      env: circleTargetEnv(target),
+      timeout,
+      cwd: ROOT,
+    });
+  }
   const bin = resolveCircleBin();
   const isScript = bin.endsWith(".sh");
-  const timeout = opts?.timeout ?? (process.env.RENDER || process.env.BUTLER_LITE_API ? 60_000 : 30_000);
   return spawnSync(isScript ? "bash" : bin, isScript ? [bin, ...args] : args, {
     encoding: "utf8",
     env: circleChildEnv(),
@@ -230,6 +312,7 @@ function parseWalletSession(
 let runnableCheckInflight = false;
 
 function scheduleRunnableCheck(): void {
+  if (ON_RENDER) return;
   if (runnableCheckInflight || !circleCliInstalled()) return;
   runnableCheckInflight = true;
   void runCircleAsync(["--version"], 15_000)
@@ -286,6 +369,7 @@ function refreshProbeFromCli(preferTestnet: boolean): CircleProbeResult {
 let probeRefreshInflight = false;
 
 function scheduleProbeRefresh(preferTestnet = true): void {
+  if (ON_RENDER && !hasActiveUserSession()) return;
   if (probeRefreshInflight) return;
   probeRefreshInflight = true;
   void runCircleAsync(["wallet", "status", "--output", "json"], 90_000)
@@ -319,8 +403,9 @@ function scheduleProbeRefresh(preferTestnet = true): void {
 export function probeCircleCli(preferTestnet = true): CircleProbeResult {
   const now = Date.now();
   if (!hasActiveUserSession()) {
+    const installed = circleCliInstalled();
     const probe: CircleProbeResult = {
-      runnable: circleCliInstalled() && quickCircleRunnable(),
+      runnable: installed,
       loggedIn: false,
       testnet: preferTestnet,
     };
@@ -395,47 +480,74 @@ function circlePayTimeoutMs(): number {
   return process.env.RENDER || process.env.BUTLER_LITE_API ? 300_000 : 180_000;
 }
 
-let circlePayChain: Promise<void> = Promise.resolve();
-
-/** One Circle CLI pay at a time — parallel ETF steps must not spawn competing `services pay` processes. */
+/** One Circle CLI process at a time — parallel spawns OOM Render free tier during login/pay. */
 function enqueueCirclePay<T>(fn: () => Promise<T>): Promise<T> {
-  const run = circlePayChain.then(fn);
-  circlePayChain = run.then(
-    () => undefined,
-    () => undefined
-  );
-  return run;
+  return enqueueCircleOp(fn);
 }
 
 function runCircleAsync(args: string[], timeout = 45_000): Promise<{ ok: boolean; stdout: string; stderr: string }> {
-  const effectiveTimeout =
-    timeout === 45_000 && (process.env.RENDER || process.env.BUTLER_LITE_API) ? 120_000 : timeout;
-  return new Promise((resolve) => {
-    const bin = resolveCircleBin();
-    const isScript = bin.endsWith(".sh");
-    const child = spawn(isScript ? "bash" : bin, isScript ? [bin, ...args] : args, {
-      env: circleChildEnv(),
-      cwd: ROOT,
-    });
-    let stdout = "";
-    let stderr = "";
-    const timer = setTimeout(() => {
-      child.kill();
-      resolve({ ok: false, stdout, stderr: `${stderr}\nCircle CLI timed out`.trim() });
-    }, effectiveTimeout);
-    child.stdout?.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-    child.stderr?.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      resolve({ ok: code === 0, stdout, stderr });
-    });
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      resolve({ ok: false, stdout, stderr: error.message });
+  return enqueueCircleOp(() => {
+    const effectiveTimeout =
+      timeout === 45_000 && (ON_RENDER || process.env.BUTLER_LITE_API) ? 120_000 : timeout;
+    return new Promise((resolve) => {
+      const target = resolveCircleCliTarget();
+      if (!target) {
+        const bin = resolveCircleBin();
+        const isScript = bin.endsWith(".sh");
+        if (!isScript && bin === "circle") {
+          resolve({ ok: false, stdout: "", stderr: "Circle CLI not installed" });
+          return;
+        }
+        const child = spawn(isScript ? "bash" : bin, isScript ? [bin, ...args] : args, {
+          env: circleChildEnv(),
+          cwd: ROOT,
+        });
+        let stdout = "";
+        let stderr = "";
+        const timer = setTimeout(() => {
+          child.kill();
+          resolve({ ok: false, stdout, stderr: `${stderr}\nCircle CLI timed out`.trim() });
+        }, effectiveTimeout);
+        child.stdout?.on("data", (chunk) => {
+          stdout += String(chunk);
+        });
+        child.stderr?.on("data", (chunk) => {
+          stderr += String(chunk);
+        });
+        child.on("close", (code) => {
+          clearTimeout(timer);
+          resolve({ ok: code === 0, stdout, stderr });
+        });
+        child.on("error", (error) => {
+          clearTimeout(timer);
+          resolve({ ok: false, stdout, stderr: error.message });
+        });
+        return;
+      }
+      const child = spawn(process.execPath, [target.js, ...args], {
+        env: circleTargetEnv(target),
+        cwd: ROOT,
+      });
+      let stdout = "";
+      let stderr = "";
+      const timer = setTimeout(() => {
+        child.kill();
+        resolve({ ok: false, stdout, stderr: `${stderr}\nCircle CLI timed out`.trim() });
+      }, effectiveTimeout);
+      child.stdout?.on("data", (chunk) => {
+        stdout += String(chunk);
+      });
+      child.stderr?.on("data", (chunk) => {
+        stderr += String(chunk);
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        resolve({ ok: code === 0, stdout, stderr });
+      });
+      child.on("error", (error) => {
+        clearTimeout(timer);
+        resolve({ ok: false, stdout, stderr: error.message });
+      });
     });
   });
 }
@@ -485,13 +597,7 @@ export function scheduleGatewayBalanceRefresh(address: string): void {
 }
 
 export function circleCliInstalled(): boolean {
-  const candidates = [
-    resolve(ROOT, "node_modules/@circle-fin/cli/dist/index.js"),
-    resolve(ROOT, "apps/api/node_modules/@circle-fin/cli/dist/index.js"),
-    resolve(ROOT, ".circle-cli-global/node_modules/@circle-fin/cli/dist/index.js"),
-    resolve(ROOT, ".vendor/circle-cli/dist/index.js"),
-  ];
-  return candidates.some((p) => existsSync(p));
+  return resolveCircleCliTarget() !== null;
 }
 
 export function circleCliRunnable(): boolean {
@@ -574,6 +680,12 @@ function parseCircleLoginInitResult(
 ): CircleLoginInitResult {
   if (!ok) {
     const text = `${err}\n${raw}`.trim();
+    if (/killed|enomem|heap out of memory|memory limit/i.test(text)) {
+      return {
+        ok: false,
+        error: "Server ran out of memory while sending the code. Wait 30 seconds, then tap Resend.",
+      };
+    }
     if (text.includes("timed out") || text.includes("ETIMEDOUT")) {
       return { ok: false, error: "Circle login timed out — try again in a moment." };
     }

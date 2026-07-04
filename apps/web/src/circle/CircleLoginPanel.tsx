@@ -585,11 +585,11 @@ export function CircleLoginPanel({
                 {sendElapsed > 0 ? ` (${sendElapsed}s)` : ""}.
                 <br />
                 <span className="muted">Enter the code below as soon as it arrives — you can type while we connect.</span>
-                {sendElapsed > 120 ? (
+                {sendElapsed > 90 ? (
                   <>
                     <br />
                     <span className="muted">
-                      Still waiting — tap Resend for a fresh code, or enter the code if you already received the email.
+                      Still waiting — Render free tier can be slow. Wait 30s and tap Resend, or enter the code if you already received the email.
                     </span>
                   </>
                 ) : null}

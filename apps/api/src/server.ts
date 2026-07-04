@@ -73,7 +73,11 @@ app.get("/api/ledger", (req, res) => {
   void handleGetLedger(req, res, resolveButlerStatePath(), SELLER, resolveMarketplaceStatePath());
 });
 
-warmLedgerCaches(resolveButlerStatePath(), SELLER, resolveMarketplaceStatePath());
+if (process.env.RENDER !== "true") {
+  warmLedgerCaches(resolveButlerStatePath(), SELLER, resolveMarketplaceStatePath());
+} else {
+  console.log("Butler API: skipping ledger warm on Render (save memory for Circle login)");
+}
 
 /** Login routes — never blocked by heavy route imports. */
 registerCircleLoginRoutes(app);
@@ -153,7 +157,11 @@ app.listen(PORT, "0.0.0.0", () => {
     resolveRoutesReady();
   };
 
-  setImmediate(() => {
+  const deferTaskBootMs = Number(
+    process.env.BUTLER_DEFER_TASK_BOOT_MS ?? (process.env.RENDER === "true" ? 45_000 : 0)
+  );
+
+  const bootTaskRoutes = () => {
     if (process.env.BUTLER_LITE_API === "true") {
       const bootCapMs = Number(process.env.BUTLER_TASK_BOOT_CAP_MS ?? (process.env.RENDER === "true" ? 120_000 : 45_000));
       void Promise.race([
@@ -196,6 +204,15 @@ app.listen(PORT, "0.0.0.0", () => {
         console.error("Butler API failed to load heavy routes (login still works):", error);
         markTaskRoutesReady();
       });
+  };
+
+  setImmediate(() => {
+    if (deferTaskBootMs > 0) {
+      console.log(`Butler API: deferring task routes ${deferTaskBootMs}ms (Render memory)`);
+      setTimeout(bootTaskRoutes, deferTaskBootMs);
+    } else {
+      bootTaskRoutes();
+    }
   });
 });
 

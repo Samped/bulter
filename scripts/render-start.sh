@@ -14,8 +14,17 @@ log() { echo "$(date -Is) $*" | tee -a "$LOG"; }
 
 log "Butler API start (ROOT=$ROOT, lite=${BUTLER_LITE_API}, render=${RENDER})"
 
-if ! bash "$ROOT/scripts/ensure-circle-cli.sh" >>"$LOG" 2>&1; then
-  log "WARN: Circle CLI install failed at boot — login may not work"
+# Smoke-check only — do not npm install at boot (OOM on 512MB free tier).
+npm_cli="$ROOT/node_modules/@circle-fin/cli/dist/index.js"
+npm_nm="$ROOT/node_modules"
+if [[ ! -f "$npm_cli" ]]; then
+  npm_cli="$ROOT/apps/api/node_modules/@circle-fin/cli/dist/index.js"
+  npm_nm="$ROOT/apps/api/node_modules"
+fi
+if [[ -f "$npm_cli" ]] && NODE_PATH="$npm_nm" node "$npm_cli" --version >>"$LOG" 2>&1; then
+  log "Circle CLI npm package OK"
+else
+  log "WARN: Circle CLI npm package missing or broken — redeploy required for login"
 fi
 
 DIST="$ROOT/apps/api/dist/server.mjs"
