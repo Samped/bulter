@@ -23,7 +23,7 @@ services:
       - key: BUTLER_ROOT
         value: /opt/render/project/src
       - key: NODE_OPTIONS
-        value: "--max-old-space-size=300"
+        value: "--max-old-space-size=280"
       - key: BUTLER_DEFER_TASK_BOOT_MS
         value: "45000"
       - key: BUTLER_TASK_BOOT_CAP_MS

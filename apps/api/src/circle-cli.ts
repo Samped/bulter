@@ -4,6 +4,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveCircleExecutorAddress, resolveCircleChain, saveCircleConfig, loadCircleConfig } from "./circle-config.ts";
@@ -21,33 +22,84 @@ const ON_RENDER = process.env.RENDER === "true";
 
 type CircleCliTarget = { js: string; nodeModules: string };
 
+function readPinnedCliPaths(): CircleCliTarget | null {
+  try {
+    const js = readFileSync(resolve(ROOT, ".data/circle-cli-js.path"), "utf8").trim();
+    const nm = readFileSync(resolve(ROOT, ".data/circle-cli-nm.path"), "utf8").trim();
+    if (js && existsSync(js)) {
+      return { js, nodeModules: nm || resolve(js, "../../..") };
+    }
+  } catch {
+    /* optional build artifact */
+  }
+  return null;
+}
+
+function circleCliTargetFromEnv(): CircleCliTarget | null {
+  const js = process.env.CIRCLE_CLI_JS?.trim();
+  if (!js || !existsSync(js)) return null;
+  const nm = process.env.CIRCLE_CLI_NODE_PATH?.trim() || resolve(js, "../../..");
+  return { js, nodeModules: nm };
+}
+
+function resolveCircleCliViaNodeResolve(): CircleCliTarget | null {
+  for (const pkgJson of [resolve(ROOT, "package.json"), resolve(ROOT, "apps/api/package.json")]) {
+    if (!existsSync(pkgJson)) continue;
+    try {
+      const req = createRequire(pkgJson);
+      const pkgDir = dirname(req.resolve("@circle-fin/cli/package.json"));
+      const js = resolve(pkgDir, "dist/index.js");
+      if (!existsSync(js)) continue;
+      return { js, nodeModules: resolve(pkgDir, "../..") };
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
 function circleCliCandidatePaths(): CircleCliTarget[] {
-  const all: CircleCliTarget[] = [
-    { js: resolve(ROOT, "node_modules/@circle-fin/cli/dist/index.js"), nodeModules: resolve(ROOT, "node_modules") },
-    {
-      js: resolve(ROOT, "apps/api/node_modules/@circle-fin/cli/dist/index.js"),
-      nodeModules: resolve(ROOT, "apps/api/node_modules"),
-    },
-    {
-      js: resolve(ROOT, ".circle-cli-global/node_modules/@circle-fin/cli/dist/index.js"),
-      nodeModules: resolve(ROOT, ".circle-cli-global/node_modules"),
-    },
-  ];
+  const seen = new Set<string>();
+  const out: CircleCliTarget[] = [];
+  const add = (c: CircleCliTarget | null | undefined) => {
+    if (!c?.js || !existsSync(c.js) || seen.has(c.js)) return;
+    seen.add(c.js);
+    out.push(c);
+  };
+
+  add(circleCliTargetFromEnv());
+  add(readPinnedCliPaths());
+  add(resolveCircleCliViaNodeResolve());
+  add({
+    js: resolve(ROOT, "node_modules/@circle-fin/cli/dist/index.js"),
+    nodeModules: resolve(ROOT, "node_modules"),
+  });
+  add({
+    js: resolve(ROOT, "apps/api/node_modules/@circle-fin/cli/dist/index.js"),
+    nodeModules: resolve(ROOT, "apps/api/node_modules"),
+  });
+  add({
+    js: resolve(ROOT, ".circle-cli-global/node_modules/@circle-fin/cli/dist/index.js"),
+    nodeModules: resolve(ROOT, ".circle-cli-global/node_modules"),
+  });
   if (!ON_RENDER) {
-    all.push({
+    add({
       js: resolve(ROOT, ".vendor/circle-cli/dist/index.js"),
       nodeModules: resolve(ROOT, ".vendor/circle-cli/node_modules"),
     });
   }
-  return all.filter((c) => existsSync(c.js));
+  return out;
 }
 
 function circleTargetEnv(target: CircleCliTarget): NodeJS.ProcessEnv {
+  const home = circleHomeDir();
+  const { NODE_OPTIONS: _drop, ...env } = process.env;
   return {
-    ...circleChildEnv(),
+    ...env,
+    HOME: home,
+    FORCE_COLOR: "0",
+    CIRCLE_ACCEPT_TERMS: "1",
     NODE_PATH: target.nodeModules,
-    // Leave headroom on Render free tier for the API process while the CLI child runs.
-    NODE_OPTIONS: ON_RENDER ? "--max-old-space-size=192" : process.env.NODE_OPTIONS,
   };
 }
 
@@ -70,11 +122,24 @@ let cachedCliTarget: CircleCliTarget | null | undefined;
 
 function resolveCircleCliTarget(): CircleCliTarget | null {
   if (cachedCliTarget !== undefined) return cachedCliTarget;
-  for (const c of circleCliCandidatePaths()) {
+  const candidates = circleCliCandidatePaths();
+  const trusted =
+    ON_RENDER &&
+    (process.env.CIRCLE_CLI_JS || existsSync(resolve(ROOT, ".data/circle-cli-js.path")));
+  if (trusted && candidates[0]) {
+    cachedCliTarget = candidates[0];
+    return cachedCliTarget;
+  }
+  for (const c of candidates) {
     if (cliSmokeSync(c)) {
       cachedCliTarget = c;
       return c;
     }
+  }
+  if (ON_RENDER && candidates[0]) {
+    console.warn("[circle-cli] smoke failed; using pinned path:", candidates[0].js);
+    cachedCliTarget = candidates[0];
+    return cachedCliTarget;
   }
   cachedCliTarget = null;
   return null;

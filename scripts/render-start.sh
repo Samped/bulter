@@ -21,10 +21,16 @@ if [[ ! -f "$npm_cli" ]]; then
   npm_cli="$ROOT/apps/api/node_modules/@circle-fin/cli/dist/index.js"
   npm_nm="$ROOT/apps/api/node_modules"
 fi
-if [[ -f "$npm_cli" ]] && NODE_PATH="$npm_nm" node "$npm_cli" --version >>"$LOG" 2>&1; then
-  log "Circle CLI npm package OK"
+if [[ -f "$npm_cli" ]]; then
+  export CIRCLE_CLI_JS="$npm_cli"
+  export CIRCLE_CLI_NODE_PATH="$npm_nm"
+  if NODE_PATH="$npm_nm" node "$npm_cli" --version >>"$LOG" 2>&1; then
+    log "Circle CLI npm package OK ($npm_cli)"
+  else
+    log "WARN: Circle CLI smoke failed at boot — API will still try pinned path"
+  fi
 else
-  log "WARN: Circle CLI npm package missing or broken — redeploy required for login"
+  log "WARN: Circle CLI npm package missing — redeploy required for login"
 fi
 
 DIST="$ROOT/apps/api/dist/server.mjs"
