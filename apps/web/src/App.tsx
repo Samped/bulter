@@ -167,8 +167,15 @@ export function App() {
 
       const csRes = pick(cs, "circle/status");
       if (csRes) {
-        setCircleStatus(csRes);
-        savePayerDisplayCache(csRes);
+        setCircleStatus((prev) => {
+          const cacheLoggedIn = !!loadPayerDisplayCache()?.loggedIn;
+          if (!csRes.loggedIn && (prev?.loggedIn || cacheLoggedIn)) {
+            return prev ?? csRes;
+          }
+          savePayerDisplayCache(csRes);
+          return csRes;
+        });
+        if (csRes.loggedIn) savePayerDisplayCache(csRes);
       }
       const asRes = pick(as, "agent/status");
       if (asRes) {
@@ -306,17 +313,32 @@ export function App() {
     ]
   );
 
-  const handlePayerLoginSuccess = useCallback(() => {
-    void refresh();
+  const handlePayerLoginSuccess = useCallback((info?: { executorAddress: string | null }) => {
+    setCircleStatus((prev) => {
+      const next = {
+        installed: true,
+        runnable: true,
+        loggedIn: true,
+        testnet: true,
+        version: prev?.version ?? null,
+        chain: prev?.chain ?? "ARC-TESTNET",
+        email: prev?.email,
+        executorAddress: info?.executorAddress ?? prev?.executorAddress ?? null,
+        gatewayBalanceUsdc: prev?.gatewayBalanceUsdc ?? null,
+      };
+      savePayerDisplayCache(next);
+      return next;
+    });
+    void refresh({ quiet: true });
     void (async () => {
       for (let i = 0; i < 10; i++) {
         await new Promise((r) => window.setTimeout(r, 3_000));
         const cs = await getCircleStatusQuick().catch(() => null);
-        if (cs) {
-          setCircleStatus(cs);
-          savePayerDisplayCache(cs);
-          if (Number(cs.gatewayBalanceUsdc ?? 0) > 0) return;
-        }
+        if (!cs) continue;
+        if (!cs.loggedIn) continue;
+        setCircleStatus(cs);
+        savePayerDisplayCache(cs);
+        if (Number(cs.gatewayBalanceUsdc ?? 0) > 0) return;
       }
       await maybeAutoFundGateway(true);
     })();

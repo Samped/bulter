@@ -787,7 +787,7 @@ export async function circleLoginVerify(
       wallets?: CircleAgentWallet[];
       executorAddress?: string | null;
       needsNewCode?: boolean;
-    }>("/api/circle/login/verify", init, timeout, IS_LOCAL_API ? 2 : 5);
+    }>("/api/circle/login/verify", init, timeout, 1);
     return {
       ok: true as const,
       email: body.email,
@@ -801,8 +801,23 @@ export async function circleLoginVerify(
     const rateLimited = /429|rate.?limit|too many requests|<!doctype/i.test(lastErr.message);
     if (rateLimited || needsNewCode) throw lastErr;
     if (/timed out|Request timed out/i.test(lastErr.message)) {
+      opts?.onProgress?.("Verify is slow — checking if login already went through…");
+      try {
+        const s = await getCircleStatus();
+        if (s.loggedIn) {
+          return {
+            ok: true as const,
+            email: s.email ?? email,
+            message: "Logged in",
+            wallets: [],
+            executorAddress: s.executorAddress ?? null,
+          };
+        }
+      } catch {
+        /* still timed out */
+      }
       throw new Error(
-        "Verify timed out. Check /api/health, then tap Verify once more with the same code (codes expire quickly)."
+        "Verify timed out. If you are still signed out, tap Verify once more with the same code, or Resend for a new one."
       );
     }
     if (/502|503|504|Backend offline/i.test(lastErr.message)) {

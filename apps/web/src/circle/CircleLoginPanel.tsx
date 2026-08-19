@@ -443,16 +443,18 @@ export function CircleLoginPanel({
       const loggedInEmail = res.email ?? email;
       const address = res.executorAddress ?? res.wallets?.[0]?.address ?? null;
       setWallets(res.wallets ?? []);
-      setStatus((prev) => ({
-        installed: prev?.installed ?? true,
-        runnable: prev?.runnable ?? true,
+      const nextStatus: CircleStatus = {
+        installed: true,
+        runnable: true,
         loggedIn: true,
-        testnet: prev?.testnet ?? true,
-        version: prev?.version ?? null,
-        chain: prev?.chain ?? "ARC-TESTNET",
+        testnet: true,
+        version: null,
+        chain: "ARC-TESTNET",
         email: loggedInEmail,
         executorAddress: address,
-      }));
+      };
+      setStatus(nextStatus);
+      savePayerDisplayCache(nextStatus);
       clearSession();
       setStep("email");
       setOtp("");
