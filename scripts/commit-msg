@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
-# Strip Cursor co-author trailers (install: ln -sf ../../scripts/commit-msg .git/hooks/commit-msg)
+# Strip Cursor co-author / Made-with trailers. Never leave agent attribution in git.
+# Install: ln -sf ../../scripts/commit-msg .git/hooks/commit-msg
 msg_file="${1:?}"
 tmp="$(mktemp)"
-grep -viE '^(Co-authored-by|Made-with):.*cursor' "$msg_file" > "$tmp"
+grep -viE '^(Co-authored-by|Made-with):.*cursor' "$msg_file" \
+  | grep -viE 'cursoragent@cursor\.com' \
+  > "$tmp"
 mv "$tmp" "$msg_file"
+if grep -qiE '^(Co-authored-by|Made-with):.*cursor|cursoragent@cursor\.com' "$msg_file"; then
+  echo "commit-msg: Cursor attribution is not allowed in this repo." >&2
+  exit 1
+fi
