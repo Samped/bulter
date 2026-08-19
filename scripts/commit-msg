@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Reject Cursor co-author trailers (install: ln -sf ../../scripts/commit-msg .git/hooks/commit-msg)
+# Strip Cursor co-author trailers (install: ln -sf ../../scripts/commit-msg .git/hooks/commit-msg)
 msg_file="${1:?}"
-if grep -qiE '^(Co-authored-by|Made-with):.*cursor' "$msg_file"; then
-  echo "commit-msg: remove Cursor attribution trailers before committing." >&2
-  exit 1
-fi
+tmp="$(mktemp)"
+grep -viE '^(Co-authored-by|Made-with):.*cursor' "$msg_file" > "$tmp"
+mv "$tmp" "$msg_file"
