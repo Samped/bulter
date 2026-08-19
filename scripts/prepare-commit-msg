@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Strip Cursor attribution before the editor / commit-msg hook sees the message.
+# Strip Cursor attribution before commit-msg runs.
+# Install: ln -sf ../../scripts/prepare-commit-msg .git/hooks/prepare-commit-msg
 msg_file="${1:?}"
 tmp="$(mktemp)"
 grep -viE '^(Co-authored-by|Made-with):.*cursor' "$msg_file" \
   | grep -viE 'cursoragent@cursor\.com' \
   > "$tmp"
-# Drop trailing blank lines left after stripping trailers
-sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$tmp" 2>/dev/null || true
 mv "$tmp" "$msg_file"
