@@ -13,6 +13,8 @@ apps/web/dist/
 coverage/
 .turbo/
 .cursor/
+!.cursor/rules/
+!.cursor/rules/no-cursor-attribution.mdc
 packages/contracts/lib/
 packages/contracts/out/
 packages/contracts/cache/
