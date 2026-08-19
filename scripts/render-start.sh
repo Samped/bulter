@@ -14,9 +14,15 @@ log() { echo "$(date -Is) $*" | tee -a "$LOG"; }
 
 log "Butler API start (ROOT=$ROOT, lite=${BUTLER_LITE_API}, render=${RENDER})"
 
-# Smoke-check only — do not npm install at boot (OOM on 512MB free tier).
-npm_cli="$ROOT/node_modules/@circle-fin/cli/dist/index.js"
-npm_nm="$ROOT/node_modules"
+# Bundled Circle CLI lives beside dist/server.mjs (see apps/api/build.mjs).
+bundled_cli="$ROOT/apps/api/dist/circle-bundle/node_modules/@circle-fin/cli/dist/index.js"
+bundled_nm="$ROOT/apps/api/dist/circle-bundle/node_modules"
+npm_cli="$bundled_cli"
+npm_nm="$bundled_nm"
+if [[ ! -f "$npm_cli" ]]; then
+  npm_cli="$ROOT/node_modules/@circle-fin/cli/dist/index.js"
+  npm_nm="$ROOT/node_modules"
+fi
 if [[ ! -f "$npm_cli" ]]; then
   npm_cli="$ROOT/apps/api/node_modules/@circle-fin/cli/dist/index.js"
   npm_nm="$ROOT/apps/api/node_modules"
