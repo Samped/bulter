@@ -12,7 +12,7 @@ apps/web/dist/
 .data/
 coverage/
 .turbo/
-.cursor/
+.cursor/*
 !.cursor/rules/
 !.cursor/rules/no-cursor-attribution.mdc
 packages/contracts/lib/
