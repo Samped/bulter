@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { getCircleLoginInitJob, startCircleLoginInitJob } from "./circle-login-jobs.ts";
-import { getUserSessionPaths } from "./user-session.ts";
+import { getUserSessionPaths, parseSessionId, runWithUserSessionAsync } from "./user-session.ts";
 
 /** Minimal login routes — registered before heavy imports so init/verify respond immediately. */
 export function registerCircleLoginRoutes(app: Express): void {
@@ -43,8 +43,13 @@ export function registerCircleLoginRoutes(app: Express): void {
   });
 }
 
+function sessionIdFromBodyOrHeader(req: { body?: Record<string, unknown>; headers?: Record<string, unknown> }): string | null {
+  const header = req.headers?.["x-butler-session"] ?? req.headers?.["X-Butler-Session"];
+  return parseSessionId(header) ?? parseSessionId(req.body?.sessionId);
+}
+
 async function handleLoginInit(
-  req: { body?: Record<string, unknown> },
+  req: { body?: Record<string, unknown>; headers?: Record<string, unknown> },
   res: {
     status: (code: number) => { json: (body: unknown) => void };
     json: (body: unknown) => void;
@@ -85,7 +90,7 @@ async function handleLoginInit(
       return;
     }
 
-    const sessionId = getUserSessionPaths()?.sessionId;
+    const sessionId = getUserSessionPaths()?.sessionId ?? sessionIdFromBodyOrHeader(req);
     const jobId = startCircleLoginInitJob(email, testnet, sessionId);
     res.status(202).json({ pending: true, jobId, email });
   } catch (error) {
@@ -96,13 +101,14 @@ async function handleLoginInit(
 }
 
 async function handleLoginVerify(
-  req: { body?: Record<string, unknown> },
+  req: { body?: Record<string, unknown>; headers?: Record<string, unknown> },
   res: {
     status: (code: number) => { json: (body: unknown) => void };
     json: (body: unknown) => void;
   }
 ): Promise<void> {
-  try {
+  const sessionId = sessionIdFromBodyOrHeader(req);
+  const work = async () => {
     const requestId = String(req.body?.requestId ?? "").trim();
     const otp = String(req.body?.otp ?? "").trim();
     if (!requestId || !otp) {
@@ -116,7 +122,7 @@ async function handleLoginVerify(
     const { saveCircleConfig, resolveCircleExecutorAddress, resolveCircleChain } = await import(
       "./circle-config.ts"
     );
-    const verifyTimeout = 55_000;
+    const verifyTimeout = 45_000;
     const result = await circleLoginVerifyAsync(
       requestId,
       otp,
@@ -136,21 +142,18 @@ async function handleLoginVerify(
     const savedEmail = result.email ?? (emailHint.includes("@") ? emailHint : undefined);
     if (savedEmail) saveCircleConfig({ email: savedEmail });
     const chain = resolveCircleChain();
-    const wallets = await circleListAgentWalletsAsync(chain, 20_000);
+    // Return as soon as Circle accepts the OTP. Wallet list/funding can OOM or hang on Render.
+    let wallets: Awaited<ReturnType<typeof circleListAgentWalletsAsync>> = [];
+    try {
+      wallets = await circleListAgentWalletsAsync(chain, 8_000);
+    } catch (err) {
+      console.warn("[circle/login/verify] wallet list skipped", err instanceof Error ? err.message : err);
+    }
     const first = wallets[0]?.address as `0x${string}` | undefined;
     if (first) {
       saveCircleConfig({ executorAddress: first, chain });
     }
     const executor = resolveCircleExecutorAddress() ?? first ?? null;
-    if (executor) {
-      const { fundCircleAgentAfterLogin, getGatewayBalanceForApi } = await import("./circle-cli.ts");
-      const balance = getGatewayBalanceForApi(executor);
-      if (balance == null || Number(balance) === 0) {
-        void fundCircleAgentAfterLogin(executor, chain).catch((err) => {
-          console.error("[circle/login/auto-fund]", err instanceof Error ? err.message : err);
-        });
-      }
-    }
     res.json({
       ok: true,
       email: savedEmail ?? result.email,
@@ -158,10 +161,34 @@ async function handleLoginVerify(
       wallets,
       executorAddress: executor,
     });
+    if (executor) {
+      const sid = getUserSessionPaths()?.sessionId ?? sessionId;
+      void (async () => {
+        const { fundCircleAgentAfterLogin, getGatewayBalanceForApi } = await import("./circle-cli.ts");
+        const fund = async () => {
+          const balance = getGatewayBalanceForApi(executor);
+          if (balance == null || Number(balance) === 0) {
+            await fundCircleAgentAfterLogin(executor, chain);
+          }
+        };
+        try {
+          if (sid) await runWithUserSessionAsync(sid, fund);
+          else await fund();
+        } catch (err) {
+          console.error("[circle/login/auto-fund]", err instanceof Error ? err.message : err);
+        }
+      })();
+    }
+  };
+  try {
+    if (sessionId) await runWithUserSessionAsync(sessionId, work);
+    else await work();
   } catch (error) {
+    const msg = error instanceof Error ? error.message : "Login verify failed";
+    const consumed = /otp.*(not matched|invalid|expired)|invalid or expired request/i.test(msg);
     res.status(500).json({
-      error: error instanceof Error ? error.message : "Login verify failed",
-      needsNewCode: true,
+      error: msg,
+      needsNewCode: consumed,
     });
   }
 }

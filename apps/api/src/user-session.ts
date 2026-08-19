@@ -45,13 +45,21 @@ export function runWithUserSession<T>(sessionId: string, fn: () => T): T {
   return storage.run({ sessionId }, fn);
 }
 
+export function runWithUserSessionAsync<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
+  mkdirSync(join(SESSIONS_DIR, sessionId, "circle-home"), { recursive: true });
+  return storage.run({ sessionId }, fn);
+}
+
 /** Attach per-browser Circle session from X-Butler-Session header. */
 export function userSessionMiddleware(req: Request, _res: Response, next: NextFunction): void {
   const sessionId = sessionIdFromRequest(req);
-  if (sessionId) {
-    runWithUserSession(sessionId, () => next());
+  if (!sessionId) {
+    next();
     return;
   }
+  mkdirSync(join(SESSIONS_DIR, sessionId, "circle-home"), { recursive: true });
+  // enterWith keeps ALS across Express async handlers (run()+next() drops it).
+  storage.enterWith({ sessionId });
   next();
 }
 

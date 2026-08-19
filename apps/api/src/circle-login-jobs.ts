@@ -116,10 +116,10 @@ function runLoginJob(jobId: string, email: string, testnet: boolean, sessionId?:
       }
     };
     if (sessionId) {
-      const { runWithUserSession } = await import("./user-session.ts");
-      runWithUserSession(sessionId, () => void run());
+      const { runWithUserSessionAsync } = await import("./user-session.ts");
+      await runWithUserSessionAsync(sessionId, run);
     } else {
-      void run();
+      await run();
     }
   })();
 }

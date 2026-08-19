@@ -22,6 +22,26 @@ const ON_RENDER = process.env.RENDER === "true";
 
 type CircleCliTarget = { js: string; nodeModules: string };
 
+/** Circle CLI copied into dist/circle-bundle at build time — always beside server.mjs on Render. */
+function readBundledDistCli(): CircleCliTarget | null {
+  const distDir = dirname(fileURLToPath(import.meta.url));
+  const stampPath = resolve(distDir, "build-stamp.json");
+  if (!existsSync(stampPath)) return null;
+  try {
+    const stamp = JSON.parse(readFileSync(stampPath, "utf8")) as {
+      circleCliRelJs?: string;
+      circleCliRelNm?: string;
+    };
+    if (!stamp.circleCliRelJs) return null;
+    const js = resolve(distDir, stamp.circleCliRelJs);
+    const nm = resolve(distDir, stamp.circleCliRelNm ?? "circle-bundle/node_modules");
+    if (!existsSync(js)) return null;
+    return { js, nodeModules: nm };
+  } catch {
+    return null;
+  }
+}
+
 function readPinnedCliPaths(): CircleCliTarget | null {
   try {
     const js = readFileSync(resolve(ROOT, ".data/circle-cli-js.path"), "utf8").trim();
@@ -67,6 +87,7 @@ function circleCliCandidatePaths(): CircleCliTarget[] {
     out.push(c);
   };
 
+  add(readBundledDistCli());
   add(circleCliTargetFromEnv());
   add(readPinnedCliPaths());
   add(resolveCircleCliViaNodeResolve());
@@ -122,6 +143,13 @@ let cachedCliTarget: CircleCliTarget | null | undefined;
 
 function resolveCircleCliTarget(): CircleCliTarget | null {
   if (cachedCliTarget !== undefined) return cachedCliTarget;
+
+  const bundled = readBundledDistCli();
+  if (bundled) {
+    cachedCliTarget = bundled;
+    return bundled;
+  }
+
   const candidates = circleCliCandidatePaths();
   const trusted =
     ON_RENDER &&
@@ -914,6 +942,16 @@ export function circleGatewayBalance(address: string, chain?: string): { ok: boo
   return { ok: true, raw: (r.stdout ?? "").trim() };
 }
 
+function circleVersionFromPkg(target: CircleCliTarget): string | null {
+  try {
+    const pkgPath = resolve(target.js, "../../package.json");
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string };
+    return pkg.version?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 export function circleVersion(): string | null {
   const now = Date.now();
   if (versionCache && now - versionCache.at < CACHE_MS) return versionCache.v;
@@ -921,6 +959,11 @@ export function circleVersion(): string | null {
   if (!target) {
     versionCache = { at: now, v: null };
     return null;
+  }
+  const fromPkg = circleVersionFromPkg(target);
+  if (fromPkg) {
+    versionCache = { at: now, v: fromPkg };
+    return fromPkg;
   }
   const r = spawnSync(process.execPath, [target.js, "--version"], {
     encoding: "utf8",
