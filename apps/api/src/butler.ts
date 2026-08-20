@@ -565,31 +565,7 @@ export async function runButler(opts: {
     quotes,
   });
 
-  if (strategy === "auction" && remoteRouterEnabled() && auctionMode === "etf" && wantsDeepBrief(brief)) {
-    const plan = await planTaskForRun({
-      task: brief,
-      mode: "auto",
-      credits,
-      qualityTier,
-      auctionMode,
-      category,
-    });
-    if (plan.router === "remote") {
-      return settleFromTaskPlan({
-        plan,
-        brief,
-        category,
-        apiBase: opts.apiBase,
-        statePath: opts.statePath,
-        sellerAddress: opts.sellerAddress,
-        forceX402: opts.forceX402,
-        sessionId: opts.sessionId,
-        phases,
-        now,
-      });
-    }
-  }
-
+  // Pin Deep Dive / BTC pipelines before the remote catalog can pick a smaller ETF.
   if (strategy === "auction" && (deepWork?.etfId || btcRoute?.etfId) && !express) {
     const etfId = deepWork?.etfId ?? btcRoute!.etfId!;
     const etf = getMarketplaceEtf(etfId);
@@ -619,6 +595,31 @@ export async function runButler(opts: {
         statePath: opts.statePath,
         sellerAddress: opts.sellerAddress,
         bid,
+        forceX402: opts.forceX402,
+        sessionId: opts.sessionId,
+        phases,
+        now,
+      });
+    }
+  }
+
+  if (strategy === "auction" && remoteRouterEnabled() && auctionMode === "etf" && wantsDeepBrief(brief)) {
+    const plan = await planTaskForRun({
+      task: brief,
+      mode: "auto",
+      credits,
+      qualityTier,
+      auctionMode,
+      category,
+    });
+    if (plan.router === "remote") {
+      return settleFromTaskPlan({
+        plan,
+        brief,
+        category,
+        apiBase: opts.apiBase,
+        statePath: opts.statePath,
+        sellerAddress: opts.sellerAddress,
         forceX402: opts.forceX402,
         sessionId: opts.sessionId,
         phases,
