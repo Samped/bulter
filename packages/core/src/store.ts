@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { ButlerPolicy, SpendRecord } from "./types.ts";
-import { createDefaultPolicy } from "./policy.ts";
+import { createDefaultPolicy, DEFAULT_MERCHANTS } from "./policy.ts";
 
 export interface ButlerState {
   policy: ButlerPolicy;
@@ -17,6 +17,17 @@ function readRawStateFile(path: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+/** Ensure newly shipped merchants (e.g. travel-search) appear in existing policies. */
+function mergeDefaultMerchants(policy: ButlerPolicy): { policy: ButlerPolicy; changed: boolean } {
+  const have = new Set((policy.merchants ?? []).map((m) => m.id));
+  const missing = DEFAULT_MERCHANTS.filter((m) => !have.has(m.id));
+  if (missing.length === 0) return { policy, changed: false };
+  return {
+    policy: { ...policy, merchants: [...policy.merchants, ...missing] },
+    changed: true,
+  };
 }
 
 export function loadState(path = DEFAULT_PATH, owner: `0x${string}` = "0x0000000000000000000000000000000000000001"): ButlerState {
@@ -35,9 +46,11 @@ export function loadState(path = DEFAULT_PATH, owner: `0x${string}` = "0x0000000
   try {
     const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<ButlerState>;
     const records = Array.isArray(raw.records) ? raw.records : [];
-    const policy = isValidPolicy(raw.policy) ? raw.policy : createDefaultPolicy(owner);
+    let policy = isValidPolicy(raw.policy) ? raw.policy : createDefaultPolicy(owner);
+    const merged = mergeDefaultMerchants(policy);
+    policy = merged.policy;
     const state = { policy, records };
-    if (!isValidPolicy(raw.policy)) {
+    if (!isValidPolicy(raw.policy) || merged.changed) {
       saveState(state, path);
     }
     return state;
