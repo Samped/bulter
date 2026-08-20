@@ -38,14 +38,18 @@ export type BtcPipelineRouting = {
   etfId?: string;
 };
 
-/** BTC on-chain + DeFi briefs — single thesis agent unless user asked for a full multi-agent report. */
+/** BTC on-chain / DeFi research — multi-agent ETF (not a single on-chain specialist). */
 export function resolveBtcPipelineRouting(brief: string): BtcPipelineRouting | null {
   const t = brief.toLowerCase();
   if (!/\b(btc|bitcoin)\b/.test(t)) return null;
   if (!/on[- ]?chain|onchain|whale|exchange flow|defi|decentralized finance/.test(t)) return null;
   if (isChartOnlyBrief(brief) || isMarketQuoteBrief(brief)) return null;
   if (wantsDeepBrief(brief)) return { qualityTier: "full", auctionMode: "etf" };
-  return { qualityTier: "standard", auctionMode: "etf", etfId: "btc-full-thesis-etf" };
+  // Explicit thesis / investment report → compact thesis ETF; otherwise full on-chain pipeline.
+  if (/investment thesis|investment report|btc thesis|bitcoin thesis/.test(t) && !/defi exposure|on[- ]?chain flows?/.test(t)) {
+    return { qualityTier: "standard", auctionMode: "etf", etfId: "btc-full-thesis-etf" };
+  }
+  return { qualityTier: "standard", auctionMode: "etf", etfId: "btc-onchain-etf" };
 }
 
 /** Academic / industry literature review — Research Agent, not ETF or thesis. */
@@ -201,6 +205,18 @@ export function resolveExecutionShape(brief: string): ExecutionShapeResult {
     };
   }
 
+  const btcPipeline = resolveBtcPipelineRouting(brief);
+  if (btcPipeline) {
+    return {
+      shape: "multi",
+      confidence: "high",
+      reason:
+        btcPipeline.etfId === "btc-full-thesis-etf"
+          ? "BTC investment thesis pipeline"
+          : "BTC on-chain + DeFi multi-agent pipeline",
+    };
+  }
+
   const express = resolveExpressBrief(brief);
   if (express) {
     return {
@@ -232,6 +248,13 @@ export function resolveExecutionShape(brief: string): ExecutionShapeResult {
     };
   }
   if (/onchain|on-chain|whale|holder|exchange flow|network activity/.test(t)) {
+    if (/\bdefi\b|decentralized finance|defi exposure/.test(t)) {
+      return {
+        shape: "multi",
+        confidence: "high",
+        reason: "On-chain flows with DeFi exposure",
+      };
+    }
     return {
       shape: "single",
       confidence: "medium",

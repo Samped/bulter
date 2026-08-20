@@ -43,7 +43,10 @@ export function resolveBtcPipelineRouting(brief: string): BtcPipelineRouting | n
   if (!/on[- ]?chain|onchain|whale|exchange flow|defi|decentralized finance/.test(t)) return null;
   if (isChartOnlyBrief(brief) || isMarketQuoteBrief(brief)) return null;
   if (wantsDeepBrief(brief)) return { qualityTier: "full", auctionMode: "etf" };
-  return { qualityTier: "standard", auctionMode: "etf", etfId: "btc-full-thesis-etf" };
+  if (/investment thesis|investment report|btc thesis|bitcoin thesis/.test(t) && !/defi exposure|on[- ]?chain flows?/.test(t)) {
+    return { qualityTier: "standard", auctionMode: "etf", etfId: "btc-full-thesis-etf" };
+  }
+  return { qualityTier: "standard", auctionMode: "etf", etfId: "btc-onchain-etf" };
 }
 
 export function isHeadlineOnlyBrief(brief: string): boolean {

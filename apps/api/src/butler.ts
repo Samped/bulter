@@ -460,10 +460,9 @@ export async function runButler(opts: {
     auctionMode: opts.auctionMode,
     category: opts.category,
   });
+  const btcRoute = !express ? resolveBtcPipelineRouting(brief) : null;
   const deepWork =
-    executionShape.shape === "multi" && wantsDeepBrief(brief) ? resolveDeepWorkRouting(brief) : null;
-  const btcRoute =
-    executionShape.shape === "multi" && !express ? resolveBtcPipelineRouting(brief) : null;
+    !express && (wantsDeepBrief(brief) || !!btcRoute) ? resolveDeepWorkRouting(brief) : null;
   const qualityTier = express
     ? "brief"
     : deepWork
@@ -476,11 +475,13 @@ export async function runButler(opts: {
     executionShape.suggestedCategory ??
     resolveTaskCategory(brief, opts.category, qualityTier);
   const auctionMode =
-    express || executionShape.shape === "single"
+    express
       ? "single"
-      : deepWork
-        ? deepWork.auctionMode
-        : defaultAuctionMode(qualityTier, opts.auctionMode, brief);
+      : deepWork || btcRoute
+        ? "etf"
+        : executionShape.shape === "single"
+          ? "single"
+          : defaultAuctionMode(qualityTier, opts.auctionMode, brief);
   const maxBudgetUsdc = opts.maxBudgetUsdc?.trim() || undefined;
 
   const readiness = agentRunReadiness();
