@@ -228,6 +228,39 @@ const AGENT_SERVICES: Record<string, AgentServiceDef> = {
       return buildBillPayload(briefFrom(req));
     },
   },
+  "flight-search-agent": {
+    price: "$0.02",
+    merchantId: "travel-search",
+    category: "apis",
+    policyAgent: "research",
+    etaSeconds: 14,
+    payload: async (req) => {
+      const { buildFlightSearchPayload } = await import("./travel-agents.ts");
+      return buildFlightSearchPayload(briefFrom(req), contextFrom(req));
+    },
+  },
+  "hotel-search-agent": {
+    price: "$0.02",
+    merchantId: "travel-search",
+    category: "apis",
+    policyAgent: "research",
+    etaSeconds: 12,
+    payload: async (req) => {
+      const { buildHotelSearchPayload } = await import("./travel-agents.ts");
+      return buildHotelSearchPayload(briefFrom(req), contextFrom(req));
+    },
+  },
+  "itinerary-agent": {
+    price: "$0.03",
+    merchantId: "travel-search",
+    category: "apis",
+    policyAgent: "research",
+    etaSeconds: 16,
+    payload: async (req) => {
+      const { buildItineraryPayload } = await import("./travel-agents.ts");
+      return buildItineraryPayload(briefFrom(req), contextFrom(req));
+    },
+  },
   "subscription-agent": {
     price: "$0.03",
     merchantId: "subscription-check",

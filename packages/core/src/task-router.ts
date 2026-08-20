@@ -62,6 +62,9 @@ function scoreAgent(agent: MarketplaceAgent, task: string): number {
     "token-research-agent": ["token", "tokenomics", "unlock", "vesting", "holders", "tvl"],
     "bill-agent": ["utility", "bill", "invoice", "electricity", "energy"],
     "subscription-agent": ["subscription", "saas", "recurring", "netflix", "spending"],
+    "flight-search-agent": ["flight", "flights", "airfare", "airport", "fly"],
+    "hotel-search-agent": ["hotel", "hotels", "stay", "lodging", "accommodation"],
+    "itinerary-agent": ["itinerary", "trip", "vacation", "travel plan", "day-by-day"],
   };
   for (const kw of hints[agent.id] ?? []) {
     if (t.includes(kw)) score += 3;
@@ -97,6 +100,20 @@ function matchEtf(task: string): TaskPlan | null {
         etfId: etf.id,
         agentIds: etf.agentIds,
         reason: `Matched workflow "${etf.name}" for this task.`,
+        estimatedUsdc: etf.bundlePriceUsdc,
+        etaSeconds: etf.etaSeconds,
+      };
+    }
+  }
+
+  if (/flight|hotel|itinerary|trip to|vacation|airfare|travel to/.test(t)) {
+    const etf = getMarketplaceEtf("travel-etf");
+    if (etf) {
+      return {
+        strategy: "etf",
+        etfId: etf.id,
+        agentIds: etf.agentIds,
+        reason: `Matched workflow "${etf.name}" for travel search and itinerary.`,
         estimatedUsdc: etf.bundlePriceUsdc,
         etaSeconds: etf.etaSeconds,
       };

@@ -11,6 +11,7 @@ export function wantsDeepBrief(brief: string): boolean {
   const t = brief.toLowerCase();
   if (isLightLiteratureBrief(brief)) return false;
   if (isSoliditySourceBrief(brief)) return false;
+  if (isTravelBrief(brief)) return false;
   // Keep audits/bills on their specialist paths unless the user explicitly asks for a deep report.
   if (
     (/\baudit\b|solidity|smart contract/.test(t) || /\bbill\b|subscription|utility invoice/.test(t)) &&
@@ -50,6 +51,18 @@ function isLightLiteratureBrief(brief: string): boolean {
 
 /** Force full-tier all-specialist Deep Dive ETF (not express / single-agent). */
 export function resolveDeepWorkRouting(brief: string): BtcPipelineRouting | null {
+  if (isTravelBrief(brief)) {
+    // Single-leg travel stays express; multi-leg uses Travel ETF.
+    const t = brief.toLowerCase();
+    const wantsFlights = /\b(flight|flights|airfare|fly to|fly from|airport)\b/.test(t);
+    const wantsHotels = /\b(hotel|hotels|stay|lodging|accommodation)\b/.test(t);
+    const wantsItinerary = /\b(itinerary|day.?by.?day|plan (a )?trip|trip plan)\b/.test(t);
+    const multi =
+      [wantsFlights, wantsHotels, wantsItinerary].filter(Boolean).length >= 2 ||
+      /\b(trip to|vacation|getaway|travel package)\b/.test(t);
+    if (!multi) return null;
+    return resolveTravelPipelineRouting(brief);
+  }
   if (wantsDeepBrief(brief)) {
     return { qualityTier: "full", auctionMode: "etf", etfId: "deep-dive-etf" };
   }
@@ -61,6 +74,24 @@ export type BtcPipelineRouting = {
   auctionMode: "etf";
   etfId?: string;
 };
+
+/** Travel search + itinerary — Travel ETF (not crypto Deep Dive). */
+export function resolveTravelPipelineRouting(brief: string): BtcPipelineRouting | null {
+  if (!isTravelBrief(brief)) return null;
+  return { qualityTier: "standard", auctionMode: "etf", etfId: "travel-etf" };
+}
+
+export function isTravelBrief(brief: string): boolean {
+  const t = brief.toLowerCase();
+  if (/\b(btc|bitcoin|ethereum|defi|on[- ]?chain|solidity|smart contract)\b/.test(t) && !/\b(flight|hotel|itinerary|trip to)\b/.test(t)) {
+    return false;
+  }
+  return (
+    /\b(flight|flights|airfare|airport|hotel|hotels|itinerary|vacation|getaway)\b/.test(t) ||
+    /\b(trip to|travel to|fly to|book (a )?flight|find (a )?flight|plan (a )?trip)\b/.test(t) ||
+    (/\btravel\b/.test(t) && /\b(book|search|plan|itinerary|hotel|flight)\b/.test(t))
+  );
+}
 
 /** BTC on-chain / DeFi research — multi-agent ETF (not a single on-chain specialist). */
 export function resolveBtcPipelineRouting(brief: string): BtcPipelineRouting | null {
@@ -221,6 +252,15 @@ export interface ExecutionShapeResult {
 
 /** Decide single specialist vs multi-agent before auction/planning. */
 export function resolveExecutionShape(brief: string): ExecutionShapeResult {
+  if (isTravelBrief(brief)) {
+    return {
+      shape: "multi",
+      confidence: "high",
+      reason: "Travel search + itinerary pipeline",
+      suggestedCategory: "travel",
+    };
+  }
+
   if (wantsDeepBrief(brief)) {
     return {
       shape: "multi",
@@ -314,6 +354,18 @@ export function isOnchainOnlyBrief(brief: string): boolean {
 
 /** Route simple tasks to one cheap agent (brief tier, skip ETF). */
 export function resolveExpressBrief(brief: string): ExpressBrief | null {
+  if (isTravelBrief(brief)) {
+    const t = brief.toLowerCase();
+    const wantsFlights = /\b(flight|flights|airfare|fly to|fly from|airport)\b/.test(t);
+    const wantsHotels = /\b(hotel|hotels|stay|lodging|accommodation)\b/.test(t);
+    const wantsItinerary = /\b(itinerary|day.?by.?day|plan (a )?trip|trip plan)\b/.test(t);
+    const multi = [wantsFlights, wantsHotels, wantsItinerary].filter(Boolean).length >= 2 || /\b(trip to|vacation|getaway|travel package)\b/.test(t);
+    if (multi) return null;
+    if (wantsItinerary) return { category: "travel", agentId: "itinerary-agent", label: "itinerary" };
+    if (wantsHotels) return { category: "travel", agentId: "hotel-search-agent", label: "hotel search" };
+    if (wantsFlights) return { category: "travel", agentId: "flight-search-agent", label: "flight search" };
+    return null;
+  }
   if (isAuditOnlyBrief(brief)) {
     return { category: "audit", agentId: "audit-agent", label: "contract audit" };
   }

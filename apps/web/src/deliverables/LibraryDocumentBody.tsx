@@ -2,12 +2,22 @@ import type { MarketplaceDeliverable } from "../api.ts";
 import { CombinedDeliverableBody, DeliverableSummary } from "./DeliverableContent.tsx";
 import { IntelDeliverableBody } from "./defi-agents.tsx";
 import { isIntelPayload } from "./intel-payload.ts";
+import { TravelDeliverableBody, isTravelPayload, renderTravelBlocks } from "./travel.tsx";
 import { parseDeliverablePayload, resolveDeliverablePayload } from "./payload.ts";
 
 /** Single render path for Library document content — never dump raw JSON for intel agents. */
 export function LibraryDocumentBody({ job }: { job: MarketplaceDeliverable }) {
   const payload = resolveDeliverablePayload(job);
   const doneSteps = job.steps.filter((s) => s.status === "done" && s.output != null);
+
+  if (payload && isTravelPayload(payload)) {
+    return <TravelDeliverableBody payload={payload} />;
+  }
+
+  const travelBlocks = renderTravelBlocks(doneSteps);
+  if (travelBlocks.length > 0) {
+    return <div className="paper-intel-root">{travelBlocks}</div>;
+  }
 
   if (payload && isIntelPayload(payload)) {
     return <IntelDeliverableBody payload={payload} brief={job.brief} />;

@@ -54,9 +54,9 @@ interface ChatMessage {
 
 const STARTERS = [
   "Research a stock and create an investment report",
+  "Plan a trip from NYC to London with flights and hotels",
   "Audit my Solidity contract for vulnerabilities",
   "Research BTC on-chain flows and DeFi exposure",
-  "Macro outlook: Fed rates, CPI, and market impact",
 ];
 
 const QUALITY_OPTIONS: { id: QualityTier; label: string; sub: string }[] = [
@@ -71,6 +71,7 @@ const CATEGORIES = [
   { value: "market-data", label: "Market" },
   { value: "news", label: "News" },
   { value: "sentiment", label: "Sentiment" },
+  { value: "travel", label: "Travel" },
   { value: "audit", label: "Audit" },
   { value: "bills", label: "Bills" },
 ];

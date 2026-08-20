@@ -1,6 +1,6 @@
 /** Browser-safe copy — keep in sync with packages/core/src/brief-intent.ts */
 
-export type ExpressCategory = "news" | "market-data" | "sentiment" | "research" | "audit" | "bills";
+export type ExpressCategory = "news" | "market-data" | "sentiment" | "research" | "audit" | "bills" | "travel";
 
 export interface ExpressBrief {
   category: ExpressCategory;
@@ -8,10 +8,23 @@ export interface ExpressBrief {
   label: string;
 }
 
+export function isTravelBrief(brief: string): boolean {
+  const t = brief.toLowerCase();
+  if (/\b(btc|bitcoin|ethereum|defi|on[- ]?chain|solidity|smart contract)\b/.test(t) && !/\b(flight|hotel|itinerary|trip to)\b/.test(t)) {
+    return false;
+  }
+  return (
+    /\b(flight|flights|airfare|airport|hotel|hotels|itinerary|vacation|getaway)\b/.test(t) ||
+    /\b(trip to|travel to|fly to|book (a )?flight|find (a )?flight|plan (a )?trip)\b/.test(t) ||
+    (/\btravel\b/.test(t) && /\b(book|search|plan|itinerary|hotel|flight)\b/.test(t))
+  );
+}
+
 export function wantsDeepBrief(brief: string): boolean {
   const t = brief.toLowerCase();
   if (isLightLiteratureBrief(brief)) return false;
   if (isSoliditySourceBrief(brief)) return false;
+  if (isTravelBrief(brief)) return false;
   if (
     (/\baudit\b|solidity|smart contract/.test(t) || /\bbill\b|subscription|utility invoice/.test(t)) &&
     !/deep dive|full report|comprehensive|multi.?agent|all agents|investment report/.test(t)
@@ -47,6 +60,17 @@ function isLightLiteratureBrief(brief: string): boolean {
 }
 
 export function resolveDeepWorkRouting(brief: string): BtcPipelineRouting | null {
+  if (isTravelBrief(brief)) {
+    const t = brief.toLowerCase();
+    const wantsFlights = /\b(flight|flights|airfare|fly to|fly from|airport)\b/.test(t);
+    const wantsHotels = /\b(hotel|hotels|stay|lodging|accommodation)\b/.test(t);
+    const wantsItinerary = /\b(itinerary|day.?by.?day|plan (a )?trip|trip plan)\b/.test(t);
+    const multi =
+      [wantsFlights, wantsHotels, wantsItinerary].filter(Boolean).length >= 2 ||
+      /\b(trip to|vacation|getaway|travel package)\b/.test(t);
+    if (!multi) return null;
+    return { qualityTier: "standard", auctionMode: "etf", etfId: "travel-etf" };
+  }
   if (wantsDeepBrief(brief)) {
     return { qualityTier: "full", auctionMode: "etf", etfId: "deep-dive-etf" };
   }

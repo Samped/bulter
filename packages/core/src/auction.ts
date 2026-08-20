@@ -17,6 +17,7 @@ const BID_POOLS: Record<string, MarketplaceCategory[]> = {
   sentiment: ["sentiment", "research", "news"],
   reporting: ["reporting", "research"],
   bills: ["bills", "reporting", "sentiment"],
+  travel: ["travel"],
 };
 
 /** Agent IDs allowed per quality tier (standard = use category pool only). */
@@ -30,6 +31,8 @@ const QUALITY_TIER_AGENTS: Record<QualityTier, string[] | null> = {
     "research-agent",
     "audit-agent",
     "bill-agent",
+    "flight-search-agent",
+    "hotel-search-agent",
   ],
   standard: null,
   full: [
@@ -70,6 +73,15 @@ export function etfsEligibleForAuction(
         etfAgentsApproved(etf.agentIds) &&
         bidWithinBudget(etf.bundlePriceUsdc, auction.maxBudgetUsdc) &&
         etf.id === "deep-dive-etf"
+    );
+  }
+
+  if (auction.category === "travel" || /flight|hotel|itinerary|trip to|vacation/.test(t)) {
+    return MARKETPLACE_ETFS.filter(
+      (etf) =>
+        etfAgentsApproved(etf.agentIds) &&
+        bidWithinBudget(etf.bundlePriceUsdc, auction.maxBudgetUsdc) &&
+        etf.id === "travel-etf"
     );
   }
 
@@ -461,7 +473,7 @@ export function initializeAuction(params: {
 }
 
 /** Headlines-only tasks should not run multi-agent ETF pipelines. */
-export { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, resolveExpressBrief, resolveDeepWorkRouting, resolveBtcPipelineRouting, wantsDeepBrief } from "./brief-intent.ts";
+export { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, resolveExpressBrief, resolveDeepWorkRouting, resolveBtcPipelineRouting, resolveTravelPipelineRouting, isTravelBrief, wantsDeepBrief } from "./brief-intent.ts";
 
 export function inferAuctionCategory(brief: string): MarketplaceCategory {
   const t = brief.toLowerCase();
@@ -473,6 +485,7 @@ export function inferAuctionCategory(brief: string): MarketplaceCategory {
     (/research/.test(t) && !/technical analysis|chart analysis/.test(t)) ||
     (/analysis/.test(t) && !/technical analysis|chart analysis|sentiment analysis/.test(t));
   if (/audit|security|contract|solidity|slither/.test(t)) return "audit";
+  if (/flight|flights|hotel|hotels|itinerary|vacation|trip to|airfare|airport/.test(t)) return "travel";
   if (/bill|subscription|utility|invoice|recurring/.test(t)) return "bills";
   if (/defi|yield|tvl|uniswap|aave|liquidity pool/.test(t)) return "market-data";
   if (/macro|fed\b|rates|cpi|inflation|economy/.test(t)) return "research";

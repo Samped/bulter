@@ -11,6 +11,8 @@ import {
   wantsDeepBrief,
   isAuditOnlyBrief,
   isBillOnlyBrief,
+  isTravelBrief,
+  resolveTravelPipelineRouting,
   listMarketplaceAgents,
   loadMarketplaceState,
   pickAuctionWinner,
@@ -463,16 +465,20 @@ export async function runButler(opts: {
     category: opts.category,
   });
   const btcRoute = !express ? resolveBtcPipelineRouting(brief) : null;
+  const travelRoute = !express ? resolveTravelPipelineRouting(brief) : null;
   const deepRequested =
     !express &&
     !isAuditOnlyBrief(brief) &&
     !isBillOnlyBrief(brief) &&
+    !isTravelBrief(brief) &&
     (wantsDeepBrief(brief) || opts.qualityTier === "full");
   const deepWork = deepRequested
     ? { qualityTier: "full" as const, auctionMode: "etf" as const, etfId: "deep-dive-etf" as const }
-    : !express && btcRoute
-      ? resolveDeepWorkRouting(brief)
-      : null;
+    : travelRoute
+      ? travelRoute
+      : !express && btcRoute
+        ? resolveDeepWorkRouting(brief)
+        : null;
   const qualityTier = express
     ? "brief"
     : deepWork
@@ -482,19 +488,20 @@ export async function runButler(opts: {
         : (opts.qualityTier ?? "standard");
   const category =
     express?.category ??
+    (travelRoute ? "travel" : undefined) ??
     executionShape.suggestedCategory ??
     resolveTaskCategory(brief, opts.category, qualityTier);
   const auctionMode =
     express
       ? "single"
-      : deepWork || btcRoute
+      : deepWork || btcRoute || travelRoute
         ? "etf"
         : executionShape.shape === "single"
           ? "single"
           : defaultAuctionMode(qualityTier, opts.auctionMode, brief);
   const maxBudgetUsdc =
     opts.maxBudgetUsdc?.trim() ||
-    (deepWork ? "0.30" : undefined);
+    (deepWork?.etfId === "deep-dive-etf" ? "0.30" : travelRoute ? "0.15" : undefined);
 
   const readiness = agentRunReadiness();
   if (!readiness.canRun) {
@@ -565,9 +572,9 @@ export async function runButler(opts: {
     quotes,
   });
 
-  // Pin Deep Dive / BTC pipelines before the remote catalog can pick a smaller ETF.
-  if (strategy === "auction" && (deepWork?.etfId || btcRoute?.etfId) && !express) {
-    const etfId = deepWork?.etfId ?? btcRoute!.etfId!;
+  // Pin Deep Dive / Travel / BTC pipelines before the remote catalog can pick a smaller ETF.
+  if (strategy === "auction" && (deepWork?.etfId || travelRoute?.etfId || btcRoute?.etfId) && !express) {
+    const etfId = deepWork?.etfId ?? travelRoute?.etfId ?? btcRoute!.etfId!;
     const etf = getMarketplaceEtf(etfId);
     const leadId = etf?.agentIds[0];
     const leadAgent = leadId ? listMarketplaceAgents().find((a) => a.id === leadId) : undefined;

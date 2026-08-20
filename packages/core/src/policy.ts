@@ -46,6 +46,15 @@ export const DEFAULT_MERCHANTS: Merchant[] = [
     priceUsdc: "0.03",
     enabled: true,
   },
+  {
+    id: "travel-search",
+    label: "Travel Search API",
+    category: "apis",
+    kind: "x402",
+    target: "/merchants/travel/search",
+    priceUsdc: "0.02",
+    enabled: true,
+  },
 ];
 
 export const DEFAULT_AGENTS: AgentBudget[] = [

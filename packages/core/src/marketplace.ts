@@ -9,7 +9,8 @@ export type MarketplaceCategory =
   | "sentiment"
   | "reporting"
   | "audit"
-  | "bills";
+  | "bills"
+  | "travel";
 
 export interface AgentCreditScore {
   agentId: string;
@@ -410,6 +411,42 @@ export const MARKETPLACE_AGENTS: MarketplaceAgent[] = [
     policyAgent: "research",
     capabilities: ["tokenomics", "holders", "tvl", "unlocks", "vesting", "competitors", "token-research"],
   },
+  {
+    id: "flight-search-agent",
+    name: "Flight Search Agent",
+    tagline: "Route & fare search for trips (testnet demo quotes)",
+    category: "travel",
+    servicePath: "/marketplace/agents/flight-search-agent/execute",
+    priceUsdc: "0.02",
+    etaSeconds: 14,
+    merchantId: "travel-search",
+    policyAgent: "research",
+    capabilities: ["flight", "flights", "airfare", "airport", "route", "travel"],
+  },
+  {
+    id: "hotel-search-agent",
+    name: "Hotel Search Agent",
+    tagline: "Stay options near your destination (testnet demo quotes)",
+    category: "travel",
+    servicePath: "/marketplace/agents/hotel-search-agent/execute",
+    priceUsdc: "0.02",
+    etaSeconds: 12,
+    merchantId: "travel-search",
+    policyAgent: "research",
+    capabilities: ["hotel", "hotels", "stay", "lodging", "accommodation", "travel"],
+  },
+  {
+    id: "itinerary-agent",
+    name: "Itinerary Agent",
+    tagline: "Day-by-day trip plan from flight + hotel picks",
+    category: "travel",
+    servicePath: "/marketplace/agents/itinerary-agent/execute",
+    priceUsdc: "0.03",
+    etaSeconds: 16,
+    merchantId: "travel-search",
+    policyAgent: "research",
+    capabilities: ["itinerary", "trip", "travel", "schedule", "vacation"],
+  },
 ];
 
 /** Pay once — entire agent workflow executes via chained x402. */
@@ -498,6 +535,14 @@ export const MARKETPLACE_ETFS: AgentEtf[] = [
     agentIds: ["wallet-reputation-agent", "token-research-agent", "portfolio-risk-agent"],
     bundlePriceUsdc: "0.12",
     etaSeconds: 68,
+  },
+  {
+    id: "travel-etf",
+    name: "Travel ETF",
+    description: "Flight search → hotel search → day-by-day itinerary (testnet demo quotes)",
+    agentIds: ["flight-search-agent", "hotel-search-agent", "itinerary-agent"],
+    bundlePriceUsdc: "0.07",
+    etaSeconds: 42,
   },
 ];
 
@@ -623,6 +668,11 @@ export function scoreEtfForBrief(
 
   if (etf.id === "defi-due-diligence-etf" && /wallet|reputation|scam|sybil|copy trade|due diligence|token research|tokenomics/.test(t)) score += 22;
   if (etf.id === "defi-due-diligence-etf" && /0x[a-fA-F0-9]{40}/.test(brief)) score += 15;
+
+  if (etf.id === "travel-etf") {
+    if (/flight|hotel|itinerary|trip to|vacation|airfare|travel/.test(t)) score += 40;
+    else score -= 50;
+  }
 
   if (etf.id === "nvidia-investment-report") {
     if (/nvda|nvidia|tsla|aapl|msft|stock|equity|share/.test(t)) score += 22;

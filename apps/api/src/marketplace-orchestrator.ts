@@ -49,6 +49,13 @@ function snippetFromStepBody(body: unknown): string {
   if (!body || typeof body !== "object") return "";
   const row = body as Record<string, unknown>;
   const data = (row.data ?? row) as Record<string, unknown>;
+  if (
+    data.type === "flight-search" ||
+    data.type === "hotel-search" ||
+    data.type === "travel-itinerary"
+  ) {
+    return JSON.stringify(data).slice(0, 3_500);
+  }
   if (typeof data.summary === "string" && data.summary.length > 20) return data.summary;
   if (Array.isArray(data.findings) && data.findings.length > 0) {
     const first = data.findings[0] as Record<string, unknown>;
