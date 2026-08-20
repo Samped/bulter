@@ -17,6 +17,8 @@ export interface CircleConfig {
   email?: string;
   gatewayBalanceUsdc?: string;
   gatewayBalanceAt?: number;
+  /** Cumulative in-process (internal) agent spends since last fund / real Gateway refresh. */
+  gatewayInternalDebitUsdc?: string;
   updatedAt?: number;
 }
 

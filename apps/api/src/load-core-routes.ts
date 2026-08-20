@@ -18,6 +18,7 @@ import {
   getGatewayBalanceForApi,
   invalidateCircleCache,
   probeCircleCli,
+  resetGatewayInternalDebit,
   scheduleGatewayBalanceRefresh,
 } from "./circle-cli.ts";
 import { getCircleFundJob, startCircleFundJob } from "./circle-fund-jobs.ts";
@@ -125,7 +126,8 @@ export function loadCoreRoutes(app: Express): void {
       const chain = resolveCircleChain();
       const { jobId } = startCircleFundJob(async () => {
         const result = await fundCircleAgentAfterLogin(executor, chain);
-        const gatewayBalanceUsdc = loadCircleConfig().gatewayBalanceUsdc ?? getGatewayBalanceForApi(executor);
+        resetGatewayInternalDebit();
+        const gatewayBalanceUsdc = getGatewayBalanceForApi(executor) ?? loadCircleConfig().gatewayBalanceUsdc;
         const depositOk = result.gatewayDeposit?.ok ?? false;
         const ok = result.walletFund.ok && depositOk;
         const error =

@@ -645,20 +645,57 @@ function runCircleAsync(args: string[], timeout = 45_000): Promise<{ ok: boolean
   });
 }
 
+function usdcToMicro(value: string | null | undefined): bigint {
+  if (value == null || value === "") return 0n;
+  const raw = String(value).trim();
+  if (!/^\d+(\.\d+)?$/.test(raw)) return 0n;
+  const [whole, frac = ""] = raw.split(".");
+  return BigInt(whole || "0") * 1_000_000n + BigInt((frac + "000000").slice(0, 6));
+}
+
+function microToUsdc(micro: bigint): string {
+  if (micro <= 0n) return "0";
+  const whole = micro / 1_000_000n;
+  const frac = (micro % 1_000_000n).toString().padStart(6, "0").replace(/0+$/, "");
+  return frac ? `${whole}.${frac}` : whole.toString();
+}
+
+function applyInternalDebit(realBalance: string | null): string | null {
+  if (realBalance == null) return null;
+  const debit = usdcToMicro(loadCircleConfig().gatewayInternalDebitUsdc);
+  const next = usdcToMicro(realBalance) - debit;
+  return microToUsdc(next > 0n ? next : 0n);
+}
+
+/** Record an in-process agent pay so the dashboard Gateway balance decreases. */
+export function debitGatewayBalanceDisplay(amountUsdc: string): string | null {
+  const amount = usdcToMicro(amountUsdc);
+  if (amount <= 0n) return getGatewayBalanceForApi(resolveCircleExecutorAddress());
+  const cfg = loadCircleConfig();
+  const nextDebit = usdcToMicro(cfg.gatewayInternalDebitUsdc) + amount;
+  saveCircleConfig({ gatewayInternalDebitUsdc: microToUsdc(nextDebit) });
+  return getGatewayBalanceForApi(resolveCircleExecutorAddress());
+}
+
+/** Clear internal spend overlay after a real Gateway fund/deposit. */
+export function resetGatewayInternalDebit(): void {
+  saveCircleConfig({ gatewayInternalDebitUsdc: "0" });
+}
+
 /** Fast read for API handlers — avoids blocking the event loop on Circle CLI. */
 export function getGatewayBalanceForApi(address: string | null | undefined): string | null {
   if (!address) return null;
   const key = address.toLowerCase();
   if (gatewayBalCache && gatewayBalCache.address === key && Date.now() - gatewayBalCache.at < 60_000) {
-    return gatewayBalCache.balance;
+    return applyInternalDebit(gatewayBalCache.balance);
   }
   const cfg = loadCircleConfig();
   if (cfg.executorAddress?.toLowerCase() === key && cfg.gatewayBalanceUsdc != null) {
     scheduleGatewayBalanceRefresh(address);
-    return cfg.gatewayBalanceUsdc;
+    return applyInternalDebit(cfg.gatewayBalanceUsdc);
   }
   scheduleGatewayBalanceRefresh(address);
-  return null;
+  return applyInternalDebit(cfg.gatewayBalanceUsdc ?? null);
 }
 
 export function scheduleGatewayBalanceRefresh(address: string): void {
@@ -1242,12 +1279,14 @@ export async function fundCircleAgentAfterLogin(
 
   if (dep.ok) {
     invalidateCircleCache();
+    resetGatewayInternalDebit();
     scheduleGatewayBalanceRefresh(address);
     const parsed = parseGatewayBalanceUsdc(dep.stdout);
     if (parsed) {
       saveCircleConfig({
         gatewayBalanceUsdc: parsed,
         gatewayBalanceAt: Math.floor(Date.now() / 1000),
+        gatewayInternalDebitUsdc: "0",
       });
     }
   }

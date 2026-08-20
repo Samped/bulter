@@ -418,6 +418,13 @@ export async function executeLocalAgentPay(
   mp = treasuryCredit(mp, amountUsdc);
   saveMp(mp);
 
+  try {
+    const { debitGatewayBalanceDisplay } = await import("./circle-cli.ts");
+    debitGatewayBalanceDisplay(amountUsdc);
+  } catch {
+    /* balance overlay is best-effort for the payer dashboard */
+  }
+
   return {
     ok: true,
     status: 200,

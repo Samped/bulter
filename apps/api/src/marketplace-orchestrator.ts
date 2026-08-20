@@ -97,18 +97,13 @@ async function payAndFetch(
     const circleReady =
       !options.forceX402 &&
       (process.env.BUTLER_USE_CIRCLE_CLI === "true" || (circleCliLoggedIn() && !!circleAddr));
-    const userPaysReal = options.initiator === "user" && circleReady;
-    const useCircle = circleReady;
-    const mayUseInternal =
-      !options.forceX402 &&
-      !userPaysReal &&
-      !!options.internalPay &&
-      process.env.BUTLER_INTERNAL_AGENT_PAY === "true";
+    const internalPayEnabled = process.env.BUTLER_INTERNAL_AGENT_PAY !== "false";
 
-    if (mayUseInternal) {
+    // Local marketplace agents: pay in-process (avoids Circle CLI ↔ API deadlock on small VMs).
+    if (!options.forceX402 && options.internalPay && internalPayEnabled) {
       const { isInternalAgentPayUrl, executeLocalAgentPay } = await import("./marketplace-execute.ts");
       if (isInternalAgentPayUrl(payUrl)) {
-        return executeLocalAgentPay(payUrl, options.internalPay!);
+        return executeLocalAgentPay(payUrl, options.internalPay);
       }
     }
 
@@ -117,7 +112,7 @@ async function payAndFetch(
       return { ok: false, status: 400, error: "dryRun is disabled — all workflows execute real x402 payments" };
     }
 
-    if (useCircle && circleAddr) {
+    if (circleReady && circleAddr) {
       const balance = getGatewayBalanceForApi(circleAddr);
       if (balance === "0" || balance === "0.0" || balance === "0.00") {
         return {

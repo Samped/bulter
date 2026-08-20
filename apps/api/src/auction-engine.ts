@@ -13,7 +13,7 @@ import {
   type ReverseAuction,
 } from "@butler/core";
 import { attachJobPaymentMeta, stampJobFromAuction } from "./job-owner.ts";
-import { runWithUserSession } from "./user-session.ts";
+import { runWithUserSessionAsync } from "./user-session.ts";
 
 let orchestratorModule: typeof import("./marketplace-orchestrator.ts") | null = null;
 let marketplaceTaskModule: typeof import("./marketplace-task.ts") | null = null;
@@ -101,7 +101,7 @@ async function resumeAwardedWorkflow(
         sellerAddress: opts.sellerAddress,
       });
     const result = auction.ownerSessionId
-      ? await runWithUserSession(auction.ownerSessionId, settle)
+      ? await runWithUserSessionAsync(auction.ownerSessionId, settle)
       : await settle();
     const finalized = attachJobPaymentMeta(stampJobFromAuction(finalizeCompletedJob(job, result), auction), {
       sessionId: auction.ownerSessionId,
@@ -270,7 +270,7 @@ export async function executeAuctionAward(opts: {
         sellerAddress: opts.sellerAddress,
       });
     const result = auction.ownerSessionId
-      ? await runWithUserSession(auction.ownerSessionId, settle)
+      ? await runWithUserSessionAsync(auction.ownerSessionId, settle)
       : await settle();
 
     const finalized = attachJobPaymentMeta(stampJobFromAuction(finalizeCompletedJob(job, result), auction), {
@@ -345,7 +345,7 @@ export function startAuctionEngine(opts: {
             auctionId: id,
           });
         const pending = auction?.ownerSessionId
-          ? runWithUserSession(auction.ownerSessionId, run)
+          ? runWithUserSessionAsync(auction.ownerSessionId, run)
           : run();
         void pending.then((res) => {
           if (!res.ok && res.error) {
