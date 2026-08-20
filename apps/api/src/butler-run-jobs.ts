@@ -7,7 +7,8 @@ import type { ButlerResult } from "./butler.ts";
 const JOBS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../.data/butler-run-jobs");
 const JOB_TTL_MS = 2 * 60 * 60 * 1000;
 const DEFAULT_RUN_TIMEOUT_MS = 300_000;
-const ETF_RUN_TIMEOUT_MS = 1_200_000;
+/** Full ETF pipelines on small VMs — keep under 8 minutes so the UI isn't stuck forever. */
+const ETF_RUN_TIMEOUT_MS = 480_000;
 
 function runTimeoutMs(params: ButlerRunParams): number {
   if (params.auctionMode === "etf" || params.qualityTier === "full") return ETF_RUN_TIMEOUT_MS;
@@ -39,6 +40,8 @@ type ButlerRunJob = {
 };
 
 const jobs = new Map<string, ButlerRunJob>();
+/** runIds that currently have an in-process worker */
+const activeWorkers = new Set<string>();
 
 function jobPath(runId: string): string {
   return join(JOBS_DIR, `${runId}.json`);
@@ -77,61 +80,75 @@ function updateJob(runId: string, patch: Partial<ButlerRunJob>): void {
   saveJob(runId, job);
 }
 
+/** Mark orphaned running jobs (no live worker) as errors so the UI stops spinning. */
+function failZombieJob(runId: string, job: ButlerRunJob, reason: string): ButlerRunJob {
+  if (job.status !== "pending" && job.status !== "running") return job;
+  if (activeWorkers.has(runId)) return job;
+  const next = { ...job, status: "error" as const, error: reason };
+  saveJob(runId, next);
+  return next;
+}
+
 function runWorker(runId: string, params: ButlerRunParams): void {
-  const start = () => {
-    void (async () => {
-      updateJob(runId, { status: "running" });
-      try {
-        const { runButler } = await import("./butler.ts");
-        const timeoutMs = runTimeoutMs(params);
-        const timeout = new Promise<never>((_, reject) => {
-          setTimeout(
-            () => reject(new Error(`Butler run timed out after ${Math.round(timeoutMs / 60_000)} minutes`)),
-            timeoutMs
-          );
-        });
-    const result = await Promise.race([
-      runButler({
-        brief: params.brief,
-        apiBase: params.apiBase,
-        statePath: params.statePath,
-        sellerAddress: params.sellerAddress,
-        strategy: params.strategy,
-        category: params.category,
-        minReputation: params.minReputation,
-        ttlSeconds: params.ttlSeconds,
-        qualityTier: params.qualityTier as import("@butler/core").QualityTier | undefined,
-        maxBudgetUsdc: params.maxBudgetUsdc,
-        auctionMode: params.auctionMode,
-        forceX402: params.forceX402,
-        sessionId: params.sessionId,
-      }),
-      timeout,
-    ]);
-        if (!result?.ok) {
-          updateJob(runId, {
-            status: "error",
-            result,
-            error: result?.error ?? "Butler returned no result",
-          });
-          return;
-        }
-        updateJob(runId, { status: "ok", result });
-      } catch (error) {
+  if (activeWorkers.has(runId)) return;
+  activeWorkers.add(runId);
+
+  const work = async () => {
+    updateJob(runId, { status: "running" });
+    try {
+      const { runButler } = await import("./butler.ts");
+      const timeoutMs = runTimeoutMs(params);
+      const timeout = new Promise<never>((_, reject) => {
+        setTimeout(
+          () => reject(new Error(`Butler run timed out after ${Math.round(timeoutMs / 60_000)} minutes`)),
+          timeoutMs
+        );
+      });
+      const result = await Promise.race([
+        runButler({
+          brief: params.brief,
+          apiBase: params.apiBase,
+          statePath: params.statePath,
+          sellerAddress: params.sellerAddress,
+          strategy: params.strategy,
+          category: params.category,
+          minReputation: params.minReputation,
+          ttlSeconds: params.ttlSeconds,
+          qualityTier: params.qualityTier as import("@butler/core").QualityTier | undefined,
+          maxBudgetUsdc: params.maxBudgetUsdc,
+          auctionMode: params.auctionMode,
+          forceX402: params.forceX402,
+          sessionId: params.sessionId,
+        }),
+        timeout,
+      ]);
+      if (!result?.ok) {
         updateJob(runId, {
           status: "error",
-          error: error instanceof Error ? error.message : "Butler failed",
+          result,
+          error: result?.error ?? "Butler returned no result",
         });
+        return;
       }
-    })();
+      updateJob(runId, { status: "ok", result });
+    } catch (error) {
+      updateJob(runId, {
+        status: "error",
+        error: error instanceof Error ? error.message : "Butler failed",
+      });
+    } finally {
+      activeWorkers.delete(runId);
+    }
   };
-  if (params.sessionId) {
-    void import("./user-session.ts").then(({ runWithUserSession }) => {
-      runWithUserSession(params.sessionId!, start);
-    });
-    return;
-  }
-  start();
+
+  void (async () => {
+    if (params.sessionId) {
+      const { runWithUserSessionAsync } = await import("./user-session.ts");
+      await runWithUserSessionAsync(params.sessionId, work);
+    } else {
+      await work();
+    }
+  })();
 }
 
 export function startButlerRunJob(params: ButlerRunParams): string {
@@ -142,10 +159,30 @@ export function startButlerRunJob(params: ButlerRunParams): string {
 }
 
 export function getButlerRunJob(runId: string): ButlerRunJob | undefined {
-  return jobs.get(runId) ?? loadJobFromDisk(runId);
+  const job = jobs.get(runId) ?? loadJobFromDisk(runId);
+  if (!job) return undefined;
+  if (job.status === "pending" || job.status === "running") {
+    const age = Date.now() - job.startedAt;
+    const limit = runTimeoutMs(job.params) + 30_000;
+    if (!activeWorkers.has(runId) && age > 15_000) {
+      return failZombieJob(
+        runId,
+        job,
+        "Task was interrupted when the server restarted. Tap send again to retry."
+      );
+    }
+    if (age > limit) {
+      return failZombieJob(
+        runId,
+        job,
+        `Butler run timed out after ${Math.round(limit / 60_000)} minutes`
+      );
+    }
+  }
+  return job;
 }
 
-/** Drop stale run files on boot. */
+/** On boot: fail orphaned running jobs so the UI doesn't spin forever. */
 export function pruneButlerRunJobs(): void {
   ensureJobsDir();
   const cutoff = Date.now() - JOB_TTL_MS;
@@ -154,13 +191,22 @@ export function pruneButlerRunJobs(): void {
       if (!name.endsWith(".json")) continue;
       const runId = name.replace(/\.json$/, "");
       const job = loadJobFromDisk(runId);
-      if (!job || job.startedAt < cutoff) {
+      if (!job) continue;
+      if (job.startedAt < cutoff) {
         jobs.delete(runId);
         try {
           unlinkSync(jobPath(runId));
         } catch {
           /* ignore */
         }
+        continue;
+      }
+      if (job.status === "pending" || job.status === "running") {
+        failZombieJob(
+          runId,
+          job,
+          "Task was interrupted when the server restarted. Tap send again to retry."
+        );
       }
     }
   } catch {
