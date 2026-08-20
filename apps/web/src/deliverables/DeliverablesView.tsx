@@ -13,7 +13,7 @@ import { exportPaperPdf } from "./pdfExport.ts";
 import { formatRelativeTime, jobStatusLabel, strategyLabel } from "./utils.ts";
 import { auditPaperTitle, isAuditDeliverable } from "./audit.ts";
 import { billPaperTitle, isBillDeliverable } from "./bill.ts";
-import { isIntelPayload } from "./defi-agents.tsx";
+import { isIntelPayload } from "./intel-payload.ts";
 import { loadLibraryCache, mergeLibraryItems, saveLibraryCache } from "./library-cache.ts";
 
 export function DeliverablesView({

@@ -1,4 +1,12 @@
 import type { ReactNode } from "react";
+import {
+  isCryptoNewsPayload,
+  isPortfolioRiskPayload,
+  isTokenResearchPayload,
+  isWalletReputationPayload,
+} from "./intel-payload.ts";
+
+export { isIntelPayload } from "./intel-payload.ts";
 
 function severityClass(severity: unknown): string {
   const s = String(severity ?? "").toLowerCase();
@@ -91,23 +99,19 @@ function walletFromPayload(data: Record<string, unknown>, brief?: string): strin
 }
 
 function isWalletReputation(data: Record<string, unknown>): boolean {
-  return data.type === "wallet-reputation" || typeof data.scamScore === "number";
+  return isWalletReputationPayload(data);
 }
 
 function isTokenResearch(data: Record<string, unknown>): boolean {
-  return (
-    data.type === "token-research" ||
-    typeof data.token === "string" ||
-    typeof data.tokenSymbol === "string"
-  );
+  return isTokenResearchPayload(data);
 }
 
 function isCryptoNews(data: Record<string, unknown>): boolean {
-  return data.type === "crypto-news-intelligence" || Array.isArray(data.marketMovingEvents);
+  return isCryptoNewsPayload(data);
 }
 
 function isPortfolioRisk(data: Record<string, unknown>): boolean {
-  return data.type === "portfolio-risk" || typeof data.portfolioRiskScore === "number";
+  return isPortfolioRiskPayload(data);
 }
 
 export function WalletReputationBlock({
@@ -607,15 +611,6 @@ export function renderDeFiAgentBlocks(
   if (isCryptoNews(data)) blocks.push(<CryptoNewsBlock key="news" data={data} />);
   if (isPortfolioRisk(data)) blocks.push(<PortfolioRiskBlock key="portfolio-risk" data={data} />);
   return blocks;
-}
-
-export function isIntelPayload(data: Record<string, unknown>): boolean {
-  return (
-    isWalletReputation(data) ||
-    isTokenResearch(data) ||
-    isCryptoNews(data) ||
-    isPortfolioRisk(data)
-  );
 }
 
 export function intelDeliverableKicker(data: Record<string, unknown>): string {

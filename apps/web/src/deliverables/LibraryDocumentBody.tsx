@@ -1,6 +1,7 @@
 import type { MarketplaceDeliverable } from "../api.ts";
 import { CombinedDeliverableBody, DeliverableSummary } from "./DeliverableContent.tsx";
-import { IntelDeliverableBody, isIntelPayload } from "./defi-agents.tsx";
+import { IntelDeliverableBody } from "./defi-agents.tsx";
+import { isIntelPayload } from "./intel-payload.ts";
 import { parseDeliverablePayload, resolveDeliverablePayload } from "./payload.ts";
 
 /** Single render path for Library document content — never dump raw JSON for intel agents. */

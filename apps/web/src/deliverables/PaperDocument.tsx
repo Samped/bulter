@@ -4,7 +4,8 @@ import { strategyLabel } from "./utils.ts";
 import { auditPaperTitle, isAuditDeliverable } from "./audit.ts";
 import { billPaperTitle, isBillDeliverable } from "./bill.ts";
 import { resolveDeliverablePayload } from "./payload.ts";
-import { isIntelPayload, intelDeliverableKicker } from "./defi-agents.tsx";
+import { intelDeliverableKicker } from "./defi-agents.tsx";
+import { isIntelPayload } from "./intel-payload.ts";
 
 export const PaperDocument = forwardRef<
   HTMLElement,
