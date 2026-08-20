@@ -1041,7 +1041,8 @@ function butlerPollDeadlineMs(body: {
   qualityTier?: QualityTier;
   auctionMode?: AuctionMode;
 }): number {
-  if (body.auctionMode === "etf" || body.qualityTier === "full") return 1_200_000;
+  // Match server ETF timeout (~8 min) + buffer — don't spin for 20 minutes.
+  if (body.auctionMode === "etf" || body.qualityTier === "full") return 540_000;
   return 300_000;
 }
 
