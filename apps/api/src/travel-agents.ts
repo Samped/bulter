@@ -1,4 +1,13 @@
-/** Testnet travel search + itinerary payloads (demo quotes; swap for Duffel/Amadeus later). */
+/** Travel search + itinerary payloads — live web when OPENAI_API_KEY is set, else demo quotes. */
+
+import {
+  bookingSearchUrl,
+  googleFlightsUrl,
+  liveTravelEnabled,
+  searchLiveItineraryDays,
+  searchLiveTravel,
+  type LiveTravelBundle,
+} from "./travel-live.ts";
 
 export type TravelTrip = {
   origin: string;
@@ -10,6 +19,26 @@ export type TravelTrip = {
   travelers: number;
   cabin: "economy" | "premium" | "business";
 };
+
+const liveCache = new Map<string, Promise<LiveTravelBundle | null>>();
+
+function tripCacheKey(trip: TravelTrip): string {
+  return [trip.originCode, trip.destinationCode, trip.departDate, trip.returnDate, trip.travelers, trip.cabin].join("|");
+}
+
+async function liveBundleFor(trip: TravelTrip): Promise<LiveTravelBundle | null> {
+  if (!liveTravelEnabled()) return null;
+  const key = tripCacheKey(trip);
+  let pending = liveCache.get(key);
+  if (!pending) {
+    pending = searchLiveTravel(trip).finally(() => {
+      // Keep warm briefly so flight + hotel agents in the same ETF share one lookup.
+      setTimeout(() => liveCache.delete(key), 120_000);
+    });
+    liveCache.set(key, pending);
+  }
+  return pending;
+}
 
 const CITY_CODES: Record<string, { name: string; code: string }> = {
   nyc: { name: "New York", code: "JFK" },
@@ -121,6 +150,25 @@ const CARRIERS = [
 
 export async function buildFlightSearchPayload(brief?: string, priorContext?: string) {
   const trip = parseTravelTrip([brief, priorContext].filter(Boolean).join("\n"));
+  const live = await liveBundleFor(trip);
+  if (live?.flights?.length) {
+    const best = live.flights[0]!;
+    return {
+      type: "flight-search",
+      mode: live.mode,
+      provider: live.provider,
+      summary: `${live.flights.length} live flight options ${trip.origin} (${trip.originCode}) → ${trip.destination} (${trip.destinationCode}) on ${trip.departDate}. Best fare ~$${best.priceUsd} on ${best.carrier}.`,
+      trip,
+      currency: "USD",
+      flights: live.flights,
+      searchUrl: googleFlightsUrl(trip),
+      sources: live.sources,
+      disclaimer:
+        "Live web-sourced fares — prices and seats change quickly. Confirm and book on the airline or OTA link before purchase.",
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
   const seed = hashSeed(`${trip.originCode}${trip.destinationCode}${trip.departDate}`);
   const flights = [0, 1, 2].map((i) => {
     const carrier = CARRIERS[(seed + i) % CARRIERS.length]!;
@@ -143,6 +191,7 @@ export async function buildFlightSearchPayload(brief?: string, priorContext?: st
       seatsLeft: 2 + ((seed + i) % 7),
       refundable: i === 0,
       note: stops === 0 ? "Nonstop" : "1 stop",
+      bookUrl: googleFlightsUrl(trip),
     };
   });
 
@@ -156,18 +205,38 @@ export async function buildFlightSearchPayload(brief?: string, priorContext?: st
     trip,
     currency: "USD",
     flights,
-    disclaimer: "Testnet demo quotes — not a live booking. Confirm on a licensed OTA before purchase.",
+    searchUrl: googleFlightsUrl(trip),
+    disclaimer: "Demo quotes (live search unavailable) — open Google Flights to confirm real fares.",
     generatedAt: new Date().toISOString(),
   };
 }
 
 export async function buildHotelSearchPayload(brief?: string, priorContext?: string) {
   const trip = parseTravelTrip([brief, priorContext].filter(Boolean).join("\n"));
-  const seed = hashSeed(`${trip.destinationCode}${trip.departDate}hotel`);
   const nights = Math.max(
     1,
-    Math.round((new Date(trip.returnDate).getTime() - new Date(trip.departDate).getTime()) / 86_400_000)
+    Math.round((new Date(trip.returnDate).getTime() - new Date(trip.departDate).getTime()) / 86_400_000),
   );
+  const live = await liveBundleFor(trip);
+  if (live?.hotels?.length) {
+    const best = live.hotels[0]!;
+    return {
+      type: "hotel-search",
+      mode: live.mode,
+      provider: live.provider,
+      summary: `${live.hotels.length} live stays in ${trip.destination} for ${nights} night(s). Best total ~$${best.totalUsd} at ${best.name}.`,
+      trip,
+      currency: "USD",
+      hotels: live.hotels,
+      searchUrl: bookingSearchUrl(trip),
+      sources: live.sources,
+      disclaimer:
+        "Live web-sourced hotel rates — availability changes. Confirm total and cancellation terms on the booking link.",
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  const seed = hashSeed(`${trip.destinationCode}${trip.departDate}hotel`);
 
   const hotels = [
     {
@@ -204,6 +273,7 @@ export async function buildHotelSearchPayload(brief?: string, priorContext?: str
     nights,
     totalUsd: Number((h.nightlyUsd * nights).toFixed(2)),
     rooms: Math.ceil(trip.travelers / 2),
+    bookUrl: bookingSearchUrl(trip),
   }));
 
   hotels.sort((a, b) => a.totalUsd - b.totalUsd);
@@ -216,7 +286,8 @@ export async function buildHotelSearchPayload(brief?: string, priorContext?: str
     trip,
     currency: "USD",
     hotels,
-    disclaimer: "Testnet demo hotel quotes — availability is simulated.",
+    searchUrl: bookingSearchUrl(trip),
+    disclaimer: "Demo hotel quotes (live search unavailable) — open Booking.com to confirm real rates.",
     generatedAt: new Date().toISOString(),
   };
 }
@@ -251,66 +322,76 @@ export async function buildItineraryPayload(brief?: string, priorContext?: strin
   const hotel = hotelBlock?.hotels?.[0];
   const nights = Math.max(
     1,
-    Math.round((new Date(trip.returnDate).getTime() - new Date(trip.departDate).getTime()) / 86_400_000)
+    Math.round((new Date(trip.returnDate).getTime() - new Date(trip.departDate).getTime()) / 86_400_000),
   );
 
-  const days = Array.from({ length: Math.min(nights + 1, 5) }, (_, i) => {
-    const day = addDays(new Date(`${trip.departDate}T12:00:00Z`), i);
-    const date = isoDate(day);
-    if (i === 0) {
+  const liveDays = await searchLiveItineraryDays(trip, { flight, hotel });
+  const days =
+    liveDays ??
+    Array.from({ length: Math.min(nights + 1, 5) }, (_, i) => {
+      const day = addDays(new Date(`${trip.departDate}T12:00:00Z`), i);
+      const date = isoDate(day);
+      if (i === 0) {
+        return {
+          date,
+          title: `Arrive ${trip.destination}`,
+          items: [
+            flight
+              ? `Land via ${flight.carrier ?? "carrier"} ${flight.flightNumber ?? ""} (${flight.from}→${flight.to})`
+              : `Arrive ${trip.destinationCode}`,
+            hotel ? `Check in — ${hotel.name} (${hotel.neighborhood ?? "city"})` : "Check in to lodging",
+            "Light walk + dinner near hotel",
+          ],
+        };
+      }
+      if (i === nights || i === Math.min(nights, 4)) {
+        return {
+          date,
+          title: "Depart",
+          items: [
+            hotel ? `Checkout — ${hotel.name}` : "Checkout",
+            flight ? `Return flight (~$${flight.priceUsd ?? "—"})` : "Return flight",
+            "Buffer 2h before departure",
+          ],
+        };
+      }
       return {
         date,
-        title: `Arrive ${trip.destination}`,
+        title: `Explore ${trip.destination}`,
         items: [
-          flight
-            ? `Land via ${flight.carrier ?? "carrier"} ${flight.flightNumber ?? ""} (${flight.from}→${flight.to})`
-            : `Arrive ${trip.destinationCode}`,
-          hotel ? `Check in — ${hotel.name} (${hotel.neighborhood ?? "city"})` : "Check in to lodging",
-          "Light walk + dinner near hotel",
+          "Morning: landmark / museum block",
+          "Afternoon: neighborhood food crawl",
+          "Evening: transit rehearsal for departure day",
         ],
       };
-    }
-    if (i === nights || i === Math.min(nights, 4)) {
-      return {
-        date,
-        title: "Depart",
-        items: [
-          hotel ? `Checkout — ${hotel.name}` : "Checkout",
-          flight ? `Return flight (~$${flight.priceUsd ?? "—"})` : "Return flight",
-          "Buffer 2h before departure",
-        ],
-      };
-    }
-    return {
-      date,
-      title: `Explore ${trip.destination}`,
-      items: [
-        "Morning: landmark / museum block",
-        "Afternoon: neighborhood food crawl",
-        "Evening: transit rehearsal for departure day",
-      ],
-    };
-  });
+    });
 
   const flightCost = Number(flight?.priceUsd ?? 0) * trip.travelers;
   const hotelCost = Number(hotel?.totalUsd ?? 0);
   const estimateUsd = Number((flightCost + hotelCost).toFixed(2));
+  const live = liveDays != null;
 
   return {
     type: "travel-itinerary",
-    mode: "testnet-demo",
-    summary: `Itinerary ${trip.origin} → ${trip.destination} (${trip.departDate}–${trip.returnDate}). Est. total $${estimateUsd} for flights + stay (demo).`,
+    mode: live ? "live-web" : "testnet-demo",
+    summary: `Itinerary ${trip.origin} → ${trip.destination} (${trip.departDate}–${trip.returnDate}). Est. total ~$${estimateUsd} for selected flight + stay.`,
     trip,
     selectedFlight: flight ?? null,
     selectedHotel: hotel ?? null,
     days,
     budgetEstimateUsd: estimateUsd,
+    searchUrls: {
+      flights: googleFlightsUrl(trip),
+      hotels: bookingSearchUrl(trip),
+    },
     nextSteps: [
-      "Review flight and hotel options in Library",
-      "Confirm dates and traveler count",
-      "Book on a licensed OTA when ready (Butler testnet does not ticket yet)",
+      "Open the flight book link and confirm seats/fare rules",
+      "Open the hotel book link and confirm cancellation policy",
+      "Recheck passport/visa requirements for Qatar before booking",
     ],
-    disclaimer: "Demo itinerary for Arc testnet — not a confirmed reservation.",
+    disclaimer: live
+      ? "Live web-sourced itinerary sketch — not a ticketed reservation. Verify times and opening hours before travel."
+      : "Demo itinerary — not a confirmed reservation.",
     generatedAt: new Date().toISOString(),
   };
 }

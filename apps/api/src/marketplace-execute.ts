@@ -233,7 +233,7 @@ const AGENT_SERVICES: Record<string, AgentServiceDef> = {
     merchantId: "travel-search",
     category: "apis",
     policyAgent: "research",
-    etaSeconds: 14,
+    etaSeconds: 50,
     payload: async (req) => {
       const { buildFlightSearchPayload } = await import("./travel-agents.ts");
       return buildFlightSearchPayload(briefFrom(req), contextFrom(req));
@@ -244,7 +244,7 @@ const AGENT_SERVICES: Record<string, AgentServiceDef> = {
     merchantId: "travel-search",
     category: "apis",
     policyAgent: "research",
-    etaSeconds: 12,
+    etaSeconds: 50,
     payload: async (req) => {
       const { buildHotelSearchPayload } = await import("./travel-agents.ts");
       return buildHotelSearchPayload(briefFrom(req), contextFrom(req));
@@ -255,7 +255,7 @@ const AGENT_SERVICES: Record<string, AgentServiceDef> = {
     merchantId: "travel-search",
     category: "apis",
     policyAgent: "research",
-    etaSeconds: 16,
+    etaSeconds: 55,
     payload: async (req) => {
       const { buildItineraryPayload } = await import("./travel-agents.ts");
       return buildItineraryPayload(briefFrom(req), contextFrom(req));

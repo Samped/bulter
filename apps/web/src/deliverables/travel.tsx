@@ -44,6 +44,7 @@ export function FlightSearchBlock({ data }: { data: Record<string, unknown> }) {
         : typeof data.summary === "string"
           ? data.summary
           : null;
+  const searchUrl = typeof data.searchUrl === "string" ? data.searchUrl : null;
   return (
     <section className="paper-section">
       <h2 className="paper-section-title">Flight options</h2>
@@ -51,11 +52,19 @@ export function FlightSearchBlock({ data }: { data: Record<string, unknown> }) {
       <p className="paper-inline-meta">
         {String(trip.origin ?? "")} ({String(trip.originCode ?? "")}) → {String(trip.destination ?? "")} (
         {String(trip.destinationCode ?? "")}) · {String(trip.departDate ?? "")}
-        {data.mode === "testnet-demo" ? " · Testnet demo" : ""}
+        {data.mode === "live-web" ? " · Live web" : data.mode === "testnet-demo" ? " · Demo" : ""}
       </p>
+      {searchUrl && (
+        <p className="paper-prose">
+          <a href={searchUrl} target="_blank" rel="noreferrer">
+            Open Google Flights for this trip
+          </a>
+        </p>
+      )}
       <ol className="paper-numbered-list">
         {flights.map((row, i) => {
           const f = row as Record<string, unknown>;
+          const bookUrl = typeof f.bookUrl === "string" ? f.bookUrl : null;
           return (
             <li key={i}>
               <strong>
@@ -64,7 +73,15 @@ export function FlightSearchBlock({ data }: { data: Record<string, unknown> }) {
               <span className="paper-ref-meta">
                 {" "}
                 — <Money n={f.priceUsd} /> · {String(f.note ?? "")} · {String(f.durationHours ?? "?")}h
+                {f.departAt ? ` · dep ${String(f.departAt).replace("T", " ").slice(0, 16)}` : ""}
               </span>
+              {bookUrl && (
+                <div className="paper-ref-meta">
+                  <a href={bookUrl} target="_blank" rel="noreferrer">
+                    Book / confirm
+                  </a>
+                </div>
+              )}
             </li>
           );
         })}
@@ -85,21 +102,40 @@ export function HotelSearchBlock({ data }: { data: Record<string, unknown> }) {
         : typeof data.summary === "string"
           ? data.summary
           : null;
+  const searchUrl = typeof data.searchUrl === "string" ? data.searchUrl : null;
   return (
     <section className="paper-section">
       <h2 className="paper-section-title">Stay options — {String(trip.destination ?? "destination")}</h2>
       {summary && <p className="paper-prose">{summary}</p>}
+      {searchUrl && (
+        <p className="paper-prose">
+          <a href={searchUrl} target="_blank" rel="noreferrer">
+            Open Booking.com for these dates
+          </a>
+        </p>
+      )}
       <ol className="paper-numbered-list">
         {hotels.map((row, i) => {
           const h = row as Record<string, unknown>;
+          const bookUrl = typeof h.bookUrl === "string" ? h.bookUrl : null;
           return (
             <li key={i}>
               <strong>{String(h.name ?? "Hotel")}</strong>
               <span className="paper-ref-meta">
                 {" "}
                 — {String(h.stars ?? "")}★ · {String(h.neighborhood ?? "")} · total <Money n={h.totalUsd} /> (
-                {String(h.nights ?? "?")} nights)
+                {String(h.nights ?? "?")} nights · ~<Money n={h.nightlyUsd} />/night)
               </span>
+              {typeof h.address === "string" && h.address && (
+                <div className="paper-ref-meta">{h.address}</div>
+              )}
+              {bookUrl && (
+                <div className="paper-ref-meta">
+                  <a href={bookUrl} target="_blank" rel="noreferrer">
+                    Book / confirm
+                  </a>
+                </div>
+              )}
             </li>
           );
         })}
