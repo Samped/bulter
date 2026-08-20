@@ -15,6 +15,9 @@ import {
   circleLogout,
   resetBrowserSessionId,
   clearPayerDisplayCache,
+  isolateBrowserSessionForPayer,
+  clearPayerIdentityMarker,
+  clearAllLibraryCaches,
   type AgentStatus,
   type CircleStatus,
   type Health,
@@ -99,7 +102,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [connectSlow, setConnectSlow] = useState(false);
-  const [activityScope, setActivityScope] = useState<ActivityScope>("all");
+  const [activityScope, setActivityScope] = useState<ActivityScope>("mine");
   const [activityRecords, setActivityRecords] = useState<SpendRecord[]>([]);
   const [ledgerTotalCount, setLedgerTotalCount] = useState(0);
   const [activityPayerAddresses, setActivityPayerAddresses] = useState<string[]>([]);
@@ -313,7 +316,12 @@ export function App() {
     ]
   );
 
-  const handlePayerLoginSuccess = useCallback((info?: { executorAddress: string | null }) => {
+  const handlePayerLoginSuccess = useCallback((info?: { executorAddress: string | null; email?: string }) => {
+    isolateBrowserSessionForPayer({
+      email: info?.email ?? loadPayerDisplayCache()?.email,
+      executorAddress: info?.executorAddress ?? null,
+    });
+    setActivityScope("mine");
     setCircleStatus((prev) => {
       const next = {
         installed: true,
@@ -322,7 +330,7 @@ export function App() {
         testnet: true,
         version: prev?.version ?? null,
         chain: prev?.chain ?? "ARC-TESTNET",
-        email: prev?.email,
+        email: info?.email ?? prev?.email,
         executorAddress: info?.executorAddress ?? prev?.executorAddress ?? null,
         gatewayBalanceUsdc: prev?.gatewayBalanceUsdc ?? null,
       };
@@ -336,6 +344,7 @@ export function App() {
         const cs = await getCircleStatusQuick().catch(() => null);
         if (!cs) continue;
         if (!cs.loggedIn) continue;
+        isolateBrowserSessionForPayer({ email: cs.email, executorAddress: cs.executorAddress });
         setCircleStatus(cs);
         savePayerDisplayCache(cs);
         if (Number(cs.gatewayBalanceUsdc ?? 0) > 0) return;
@@ -347,6 +356,8 @@ export function App() {
   const handleSignOut = useCallback(async () => {
     setMobileMenuOpen(false);
     clearPayerDisplayCache();
+    clearPayerIdentityMarker();
+    clearAllLibraryCaches();
     setCircleStatus((prev) =>
       prev ? { ...prev, loggedIn: false, executorAddress: null, email: undefined } : null
     );
@@ -686,9 +697,9 @@ export function App() {
           onOpenChange={setMobileLoginOpen}
           circleStatus={circleStatus}
           onReady={refresh}
-          onLoginSuccess={() => {
+          onLoginSuccess={(info) => {
             setMobileLoginOpen(false);
-            handlePayerLoginSuccess();
+            handlePayerLoginSuccess(info);
           }}
         />
       )}
@@ -889,7 +900,7 @@ export function App() {
                     (primaryPayerLabel
                       ? `Agent & Auctions only · wallet ${shortAddr(primaryPayerLabel)} · ${activityCountLabel}`
                       : `Agent & Auctions payments only · ${activityCountLabel}`)
-                  : `All x402 settlements on this Butler instance · ${activityCountLabel}`
+                  : `All accounts on this Butler instance · ${activityCountLabel}`
               }
               className={activityScope === "mine" ? "activity-panel-mine" : ""}
               action={
@@ -901,6 +912,7 @@ export function App() {
                       aria-selected={activityScope === "all"}
                       className={`activity-scope-btn ${activityScope === "all" ? "active" : ""}`}
                       onClick={() => setActivityScope("all")}
+                      title="Shared instance ledger — every payer on this Butler"
                     >
                       All
                     </button>

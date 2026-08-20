@@ -144,6 +144,59 @@ export function resetBrowserSessionId(): string {
   return id;
 }
 
+const PAYER_IDENTITY_KEY = "butler.payerIdentity";
+
+/**
+ * When a different Circle account signs in on the same browser, rotate the
+ * Butler session id so Library / jobs from the previous account stay isolated.
+ * Returns true if the session was rotated.
+ */
+export function isolateBrowserSessionForPayer(identity: {
+  email?: string | null;
+  executorAddress?: string | null;
+}): boolean {
+  if (typeof window === "undefined") return false;
+  const next = `${(identity.email ?? "").trim().toLowerCase()}|${(identity.executorAddress ?? "").trim().toLowerCase()}`;
+  if (!next || next === "|") return false;
+  try {
+    const prev = localStorage.getItem(PAYER_IDENTITY_KEY);
+    if (prev && prev !== next) {
+      resetBrowserSessionId();
+      clearAllLibraryCaches();
+      localStorage.setItem(PAYER_IDENTITY_KEY, next);
+      return true;
+    }
+    localStorage.setItem(PAYER_IDENTITY_KEY, next);
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+export function clearPayerIdentityMarker(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(PAYER_IDENTITY_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Drop all per-session Library caches (used on account switch / sign-out). */
+export function clearAllLibraryCaches(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith("butler.library.")) keys.push(k);
+    }
+    for (const k of keys) localStorage.removeItem(k);
+  } catch {
+    /* ignore */
+  }
+}
+
 const PAYER_DISPLAY_KEY = "butler.payerDisplay";
 
 export type PayerDisplayCache = {

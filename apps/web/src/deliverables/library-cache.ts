@@ -33,8 +33,16 @@ export function mergeLibraryItems(
   remote: MarketplaceDeliverable[],
   cached: MarketplaceDeliverable[]
 ): MarketplaceDeliverable[] {
+  // Server list is authoritative for account isolation — never resurrect
+  // cached-only jobs from a previous Circle login on this browser.
   const map = new Map<string, MarketplaceDeliverable>();
-  for (const row of cached) map.set(row.id, row);
   for (const row of remote) map.set(row.id, row);
+  for (const row of cached) {
+    const cur = map.get(row.id);
+    if (!cur) continue;
+    if ((!cur.summary || cur.summary.length < 12) && row.summary) {
+      map.set(row.id, { ...cur, summary: row.summary });
+    }
+  }
   return Array.from(map.values()).sort((a, b) => b.at - a.at);
 }

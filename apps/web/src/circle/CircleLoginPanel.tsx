@@ -11,6 +11,9 @@ import {
   pollCircleLoginJob,
   loadPayerDisplayCache,
   resetBrowserSessionId,
+  isolateBrowserSessionForPayer,
+  clearPayerIdentityMarker,
+  clearAllLibraryCaches,
   resolveLoginRequestId,
   savePayerDisplayCache,
   setCircleExecutor,
@@ -136,7 +139,7 @@ export function CircleLoginPanel({
   /** Shared payer state from App — keeps chip in sync with gateway / wallet row. */
   circleStatus?: CircleStatus | null;
   onReady?: () => void;
-  onLoginSuccess?: (info: { executorAddress: string | null }) => void;
+  onLoginSuccess?: (info: { executorAddress: string | null; email?: string }) => void;
   variant?: "sidebar" | "toolbar" | "mobile-sheet";
   /** Controlled open (used by mobile sign-in sheet). */
   open?: boolean;
@@ -442,6 +445,7 @@ export function CircleLoginPanel({
       });
       const loggedInEmail = res.email ?? email;
       const address = res.executorAddress ?? res.wallets?.[0]?.address ?? null;
+      isolateBrowserSessionForPayer({ email: loggedInEmail, executorAddress: address });
       setWallets(res.wallets ?? []);
       const nextStatus: CircleStatus = {
         installed: true,
@@ -460,7 +464,7 @@ export function CircleLoginPanel({
       setOtp("");
       setOpen(false);
       setError(null);
-      onLoginSuccess?.({ executorAddress: address });
+      onLoginSuccess?.({ executorAddress: address, email: loggedInEmail });
       onReady?.();
       void (async () => {
         try {
@@ -515,6 +519,8 @@ export function CircleLoginPanel({
     setStatus((prev) => (prev ? { ...prev, loggedIn: false, executorAddress: null, email: undefined } : null));
     setWallets([]);
     clearPayerDisplayCache();
+    clearPayerIdentityMarker();
+    clearAllLibraryCaches();
     try {
       await circleLogout();
       resetBrowserSessionId();
