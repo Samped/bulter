@@ -15,7 +15,16 @@ export function isTravelItineraryPayload(data: Record<string, unknown>): boolean
 }
 
 export function isTravelPayload(data: Record<string, unknown>): boolean {
-  return isFlightSearchPayload(data) || isHotelSearchPayload(data) || isTravelItineraryPayload(data);
+  if (data.type === "travel-package" || data.type === "travel-itinerary" || data.type === "flight-search" || data.type === "hotel-search") {
+    return true;
+  }
+  return (
+    Array.isArray(data.flights) ||
+    Array.isArray(data.hotels) ||
+    Array.isArray(data.days) ||
+    (data.type === "combined" &&
+      (Array.isArray(data.flights) || Array.isArray(data.hotels) || Array.isArray(data.days)))
+  );
 }
 
 function Money({ n }: { n: unknown }) {
@@ -27,10 +36,18 @@ function Money({ n }: { n: unknown }) {
 export function FlightSearchBlock({ data }: { data: Record<string, unknown> }) {
   const flights = Array.isArray(data.flights) ? data.flights : [];
   const trip = (data.trip ?? {}) as Record<string, unknown>;
+  const summary =
+    typeof data.flightSummary === "string"
+      ? data.flightSummary
+      : data.type === "travel-package"
+        ? null
+        : typeof data.summary === "string"
+          ? data.summary
+          : null;
   return (
     <section className="paper-section">
       <h2 className="paper-section-title">Flight options</h2>
-      {typeof data.summary === "string" && <p className="paper-prose">{data.summary}</p>}
+      {summary && <p className="paper-prose">{summary}</p>}
       <p className="paper-inline-meta">
         {String(trip.origin ?? "")} ({String(trip.originCode ?? "")}) → {String(trip.destination ?? "")} (
         {String(trip.destinationCode ?? "")}) · {String(trip.departDate ?? "")}
@@ -60,10 +77,18 @@ export function FlightSearchBlock({ data }: { data: Record<string, unknown> }) {
 export function HotelSearchBlock({ data }: { data: Record<string, unknown> }) {
   const hotels = Array.isArray(data.hotels) ? data.hotels : [];
   const trip = (data.trip ?? {}) as Record<string, unknown>;
+  const summary =
+    typeof data.hotelSummary === "string"
+      ? data.hotelSummary
+      : data.type === "travel-package"
+        ? null
+        : typeof data.summary === "string"
+          ? data.summary
+          : null;
   return (
     <section className="paper-section">
       <h2 className="paper-section-title">Stay options — {String(trip.destination ?? "destination")}</h2>
-      {typeof data.summary === "string" && <p className="paper-prose">{data.summary}</p>}
+      {summary && <p className="paper-prose">{summary}</p>}
       <ol className="paper-numbered-list">
         {hotels.map((row, i) => {
           const h = row as Record<string, unknown>;
@@ -87,10 +112,18 @@ export function HotelSearchBlock({ data }: { data: Record<string, unknown> }) {
 export function TravelItineraryBlock({ data }: { data: Record<string, unknown> }) {
   const days = Array.isArray(data.days) ? data.days : [];
   const nextSteps = Array.isArray(data.nextSteps) ? data.nextSteps : [];
+  const summary =
+    typeof data.itinerarySummary === "string"
+      ? data.itinerarySummary
+      : data.type === "travel-package"
+        ? null
+        : typeof data.summary === "string"
+          ? data.summary
+          : null;
   return (
     <section className="paper-section">
       <h2 className="paper-section-title">Itinerary</h2>
-      {typeof data.summary === "string" && <p className="paper-prose">{data.summary}</p>}
+      {summary && <p className="paper-prose">{summary}</p>}
       {data.budgetEstimateUsd != null && (
         <p className="paper-inline-meta">
           Est. flights + stay: <Money n={data.budgetEstimateUsd} />

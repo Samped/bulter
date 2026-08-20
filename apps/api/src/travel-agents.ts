@@ -33,6 +33,15 @@ const CITY_CODES: Record<string, { name: string; code: string }> = {
   sydney: { name: "Sydney", code: "SYD" },
   toronto: { name: "Toronto", code: "YYZ" },
   mumbai: { name: "Mumbai", code: "BOM" },
+  qatar: { name: "Doha", code: "DOH" },
+  doha: { name: "Doha", code: "DOH" },
+  "abu dhabi": { name: "Abu Dhabi", code: "AUH" },
+  riyadh: { name: "Riyadh", code: "RUH" },
+  cairo: { name: "Cairo", code: "CAI" },
+  istanbul: { name: "Istanbul", code: "IST" },
+  bahrain: { name: "Manama", code: "BAH" },
+  manama: { name: "Manama", code: "BAH" },
+  kuwait: { name: "Kuwait City", code: "KWI" },
   "hong kong": { name: "Hong Kong", code: "HKG" },
 };
 
@@ -60,12 +69,12 @@ export function parseTravelTrip(brief?: string): TravelTrip {
   const t = (brief ?? "").toLowerCase();
   const fromMatch = t.match(/\b(?:from|depart(?:ing)?\s+from)\s+([a-z\s]+?)(?:\s+to\b|,|$)/i);
   const toMatch =
-    t.match(/\b(?:to|for)\s+([a-z\s]+?)(?:\s+(?:from|next|in|on|for|march|april|may|june|july|august|september|october|november|december|\d)|$)/i) ||
-    t.match(/\btrip to\s+([a-z\s]+)/i) ||
-    t.match(/\bflights?\s+to\s+([a-z\s]+)/i);
+    t.match(/\b(?:travel to|trip to|flights?\s+to)\s+([a-z\s]+?)(?:\s+(?:from|next|in|on|for|with|and|give|me|hotels?|flights?|march|april|may|june|july|august|september|october|november|december|\d)|$)/i) ||
+    t.match(/\b(?:to|for)\s+([a-z\s]+?)(?:\s+(?:from|next|in|on|for|with|and|give|march|april|may|june|july|august|september|october|november|december|\d)|$)/i);
 
   let origin = findCity(fromMatch?.[1] ?? "");
-  let destination = findCity(toMatch?.[1] ?? t);
+  // Prefer explicit destination phrase, then scan whole brief for known cities (skip origin).
+  let destination = findCity(toMatch?.[1] ?? "") ?? findCity(t);
 
   if (!destination) destination = CITY_CODES.paris!;
   if (!origin || origin.code === destination.code) {
@@ -115,7 +124,7 @@ export async function buildFlightSearchPayload(brief?: string, priorContext?: st
   const seed = hashSeed(`${trip.originCode}${trip.destinationCode}${trip.departDate}`);
   const flights = [0, 1, 2].map((i) => {
     const carrier = CARRIERS[(seed + i) % CARRIERS.length]!;
-    const base = 180 + ((seed >> (i * 3)) % 420);
+    const base = 180 + ((seed >>> (i * 3)) % 420);
     const durationHours = 6 + ((seed + i * 5) % 10);
     const stops = i === 0 ? 0 : i === 1 ? 1 : 0;
     const depHour = 7 + ((seed + i * 2) % 12);

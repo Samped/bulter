@@ -158,6 +158,59 @@ export function formatTaskResult(result: unknown): string {
     return [`Utility quote: ${obj.provider} — $${obj.amountDue} due ${obj.dueDate ?? "—"}`, items, obj.notes].filter(Boolean).join("\n");
   }
 
+  if (
+    obj.type === "travel-package" ||
+    obj.type === "flight-search" ||
+    obj.type === "hotel-search" ||
+    obj.type === "travel-itinerary" ||
+    Array.isArray(obj.flights) ||
+    Array.isArray(obj.hotels) ||
+    Array.isArray(obj.days)
+  ) {
+    const trip = (obj.trip ?? {}) as Record<string, unknown>;
+    const route =
+      trip.origin || trip.destination
+        ? `${trip.origin ?? "?"} (${trip.originCode ?? "?"}) → ${trip.destination ?? "?"} (${trip.destinationCode ?? "?"})`
+        : null;
+    const flights = Array.isArray(obj.flights)
+      ? (obj.flights as Record<string, unknown>[])
+          .slice(0, 5)
+          .map(
+            (f) =>
+              `• ${f.carrier ?? "Carrier"} ${f.flightNumber ?? ""} — $${f.priceUsd ?? "?"} · ${f.note ?? ""} · ${f.durationHours ?? "?"}h`,
+          )
+          .join("\n")
+      : null;
+    const hotels = Array.isArray(obj.hotels)
+      ? (obj.hotels as Record<string, unknown>[])
+          .slice(0, 5)
+          .map(
+            (h) =>
+              `• ${h.name ?? "Hotel"} — ${h.stars ?? "?"}★ · ${h.neighborhood ?? ""} · $${h.totalUsd ?? "?"} (${h.nights ?? "?"} nights)`,
+          )
+          .join("\n")
+      : null;
+    const days = Array.isArray(obj.days)
+      ? (obj.days as Record<string, unknown>[])
+          .map((d) => {
+            const items = Array.isArray(d.items) ? (d.items as string[]).map((x) => `  - ${x}`).join("\n") : "";
+            return `• ${d.date ?? ""} — ${d.title ?? "Day"}${items ? `\n${items}` : ""}`;
+          })
+          .join("\n")
+      : null;
+    return [
+      route ? `Trip: ${route}` : "Travel package",
+      trip.departDate ? `Dates: ${trip.departDate} → ${trip.returnDate ?? "?"}` : null,
+      typeof obj.summary === "string" ? `\n${obj.summary}` : null,
+      flights ? `\nFlights\n${flights}` : null,
+      hotels ? `\nHotels\n${hotels}` : null,
+      days ? `\nItinerary\n${days}` : null,
+      obj.budgetEstimateUsd != null ? `\nEst. budget: $${obj.budgetEstimateUsd}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
   if (Array.isArray(obj.papers)) {
     const papers = (obj.papers as Record<string, unknown>[]).map((p) => `- ${p.title ?? "Paper"}`).join("\n");
     return `Research${obj.focus ? ` (${obj.focus})` : ""}:\n${papers}`;

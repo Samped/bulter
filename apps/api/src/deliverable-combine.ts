@@ -87,6 +87,43 @@ export function combineWorkflowResult(steps: { output?: unknown }[]): Record<str
       combined.summary = p.summary ?? combined.summary;
       combined.riskLevel = p.riskLevel;
     }
+    if (p.type === "flight-search" || Array.isArray(p.flights)) {
+      combined.type = "travel-package";
+      combined.flights = p.flights;
+      if (p.trip) combined.trip = p.trip;
+      if (typeof p.summary === "string") {
+        combined.flightSummary = p.summary;
+        combined.summary = combined.summary ? `${combined.summary}\n${p.summary}` : p.summary;
+      }
+      if (p.disclaimer) combined.disclaimer = p.disclaimer;
+      if (p.mode) combined.mode = p.mode;
+    }
+    if (p.type === "hotel-search" || Array.isArray(p.hotels)) {
+      combined.type = "travel-package";
+      combined.hotels = p.hotels;
+      if (p.trip) combined.trip = combined.trip ?? p.trip;
+      if (typeof p.summary === "string") {
+        combined.hotelSummary = p.summary;
+        combined.summary = combined.summary ? `${combined.summary}\n${p.summary}` : p.summary;
+      }
+      if (p.disclaimer) combined.disclaimer = p.disclaimer;
+      if (p.mode) combined.mode = p.mode;
+    }
+    if (p.type === "travel-itinerary" || Array.isArray(p.days)) {
+      combined.type = "travel-package";
+      combined.days = p.days;
+      combined.selectedFlight = p.selectedFlight ?? combined.selectedFlight;
+      combined.selectedHotel = p.selectedHotel ?? combined.selectedHotel;
+      combined.budgetEstimateUsd = p.budgetEstimateUsd ?? combined.budgetEstimateUsd;
+      combined.nextSteps = p.nextSteps ?? combined.nextSteps;
+      if (p.trip) combined.trip = combined.trip ?? p.trip;
+      if (typeof p.summary === "string") {
+        combined.itinerarySummary = p.summary;
+        combined.summary = combined.summary ? `${combined.summary}\n${p.summary}` : p.summary;
+      }
+      if (p.disclaimer) combined.disclaimer = p.disclaimer;
+      if (p.mode) combined.mode = p.mode;
+    }
   }
 
   return combined;
