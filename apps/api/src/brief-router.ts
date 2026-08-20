@@ -37,7 +37,7 @@ function apiKey(): string | undefined {
 }
 
 function modelName(): string {
-  return process.env.OPENAI_MODEL?.trim() || "";
+  return process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
 }
 
 function catalogForPrompt(credits: AgentCreditScore[]): string {

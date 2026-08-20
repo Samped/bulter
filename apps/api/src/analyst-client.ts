@@ -12,7 +12,7 @@ export function analystConfigured(): boolean {
 }
 
 export function analystModel(): string {
-  return process.env.OPENAI_MODEL?.trim() || "";
+  return process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
 }
 
 function parseJsonContent(content: string): unknown {
