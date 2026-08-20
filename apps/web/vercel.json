@@ -13,11 +13,11 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://butler-api-x7lh.onrender.com/api/:path*"
+      "destination": "http://147.5.126.64:3001/api/:path*"
     },
     {
       "source": "/marketplace/:path*",
-      "destination": "https://butler-api-x7lh.onrender.com/marketplace/:path*"
+      "destination": "http://147.5.126.64:3001/marketplace/:path*"
     },
     { "source": "/(.*)", "destination": "/index.html" }
   ]

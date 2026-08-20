@@ -2,11 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
-RENDER_API="https://butler-api-x7lh.onrender.com"
-# Always bake Render into prod builds — ignore stale Vercel dashboard env (Oracle VM, etc.).
-if [[ "${VITE_API_URL:-}" != "$RENDER_API" && "${VITE_API_URL:-}" != "" ]]; then
-  echo "vercel-build: replacing VITE_API_URL=${VITE_API_URL:-<empty>} with ${RENDER_API}"
-fi
-export VITE_API_URL="$RENDER_API"
-echo "vercel-build: VITE_API_URL=${VITE_API_URL}"
+# Same-origin /api → Vercel rewrites to Oracle (avoids HTTPS→HTTP mixed content).
+export VITE_API_URL=""
+echo "vercel-build: VITE_API_URL=<empty> (same-origin proxy → Oracle)"
 npm run build -w @butler/web

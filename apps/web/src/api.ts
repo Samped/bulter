@@ -200,8 +200,9 @@ function sessionHeaders(init?: RequestInit, withSession = true): Headers {
   return headers;
 }
 
-const RENDER_API = "https://butler-api-x7lh.onrender.com";
-const DEAD_VM_RE = /129\.151\.164\.101/;
+/** Oracle Always Free VM — public API. Prefer same-origin Vercel rewrite in prod. */
+const ORACLE_API = "http://147.5.126.64:3001";
+const DEAD_VM_RE = /129\.151\.164\.101|butler-api-x7lh\.onrender\.com/;
 
 declare global {
   interface Window {
@@ -215,17 +216,20 @@ function resolveApiBase(): string {
   }
   const raw = (import.meta.env.VITE_API_URL as string | undefined)?.trim() ?? "";
   if (import.meta.env.DEV) {
-    if (DEAD_VM_RE.test(raw)) return RENDER_API;
+    if (DEAD_VM_RE.test(raw)) return "http://localhost:3001";
     return raw || "http://localhost:3001";
   }
-  if (DEAD_VM_RE.test(raw)) return RENDER_API;
+  // Stale Render / old Oracle IP → use same-origin (Vercel proxies to current Oracle).
+  if (DEAD_VM_RE.test(raw)) return "";
   if (typeof window !== "undefined") {
     const host = window.location.hostname;
     if (host === "getbutler.xyz" || host === "www.getbutler.xyz" || host.endsWith(".vercel.app")) {
-      return raw && !DEAD_VM_RE.test(raw) ? raw.replace(/\/$/, "") : RENDER_API;
+      // Empty = browser calls /api on getbutler.xyz; vercel.json rewrites to Oracle.
+      if (!raw || DEAD_VM_RE.test(raw)) return "";
+      return raw.replace(/\/$/, "");
     }
   }
-  return raw.replace(/\/$/, "");
+  return raw.replace(/\/$/, "") || ORACLE_API;
 }
 
 const rawApi = resolveApiBase();
@@ -242,7 +246,7 @@ function defaultTimeoutMs(): number {
 
 function apiDisplayUrl(): string {
   const base = API || (typeof window !== "undefined" ? window.location.origin : "");
-  if (DEAD_VM_RE.test(base)) return RENDER_API;
+  if (DEAD_VM_RE.test(base)) return typeof window !== "undefined" ? window.location.origin : ORACLE_API;
   if (API) return API;
   if (typeof window !== "undefined") return window.location.origin;
   return "the API";
