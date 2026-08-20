@@ -284,20 +284,15 @@ export function planTaskExecution(params: {
   }
 
   if (wantsDeepBrief(task)) {
-    const thesis =
-      /investment thesis/.test(task.toLowerCase()) && /btc|bitcoin/.test(task.toLowerCase())
-        ? getMarketplaceEtf("btc-full-thesis-etf")
-        : null;
     const deep = getMarketplaceEtf("deep-dive-etf");
-    const etf = thesis ?? deep;
-    if (etf) {
+    if (deep) {
       return {
         strategy: "etf",
-        etfId: etf.id,
-        agentIds: etf.agentIds,
+        etfId: deep.id,
+        agentIds: deep.agentIds,
         reason: `Deep dive — all specialists contribute; Report Agent delivers one unified document.`,
-        estimatedUsdc: etf.bundlePriceUsdc,
-        etaSeconds: etf.etaSeconds,
+        estimatedUsdc: deep.bundlePriceUsdc,
+        etaSeconds: deep.etaSeconds,
       };
     }
   }

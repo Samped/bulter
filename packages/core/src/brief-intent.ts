@@ -6,14 +6,36 @@ export interface ExpressBrief {
   label: string;
 }
 
-/** Multi-agent ETF / full report — single unified deliverable from all specialists. */
+/** Multi-agent ETF / full report — all specialists contribute one unified deliverable. */
 export function wantsDeepBrief(brief: string): boolean {
   const t = brief.toLowerCase();
-  return (
-    /research paper|deep dive|full report|investment report|investment thesis|comprehensive|due diligence|multi.?agent|all agents|in-depth analysis|thorough analysis/.test(
+  if (isLightLiteratureBrief(brief)) return false;
+  if (isSoliditySourceBrief(brief)) return false;
+  // Keep audits/bills on their specialist paths unless the user explicitly asks for a deep report.
+  if (
+    (/\baudit\b|solidity|smart contract/.test(t) || /\bbill\b|subscription|utility invoice/.test(t)) &&
+    !/deep dive|full report|comprehensive|multi.?agent|all agents|investment report/.test(t)
+  ) {
+    return false;
+  }
+  if (
+    /research paper|deep dive|full report|investment report|investment thesis|comprehensive|due diligence|multi.?agent|all agents|in-depth|thorough analysis|extensive (research|analysis|report)|exhaustive|deep research|full analysis/.test(
       t
-    ) && !isLightLiteratureBrief(brief)
-  );
+    )
+  ) {
+    return true;
+  }
+  // "Research X and …" / stock & macro style briefs that need more than one specialist
+  if (
+    /\bresearch\b/.test(t) &&
+    /report|stock|equity|thesis|outlook|exposure|analysis|flows?|market impact|on[- ]?chain|defi|investment/.test(t)
+  ) {
+    return true;
+  }
+  if (/macro outlook|market impact|fed rates|investment analysis|create an investment/.test(t)) {
+    return true;
+  }
+  return false;
 }
 
 /** Short literature executive summary (3 papers/themes) — single Research Agent. */
@@ -26,9 +48,11 @@ function isLightLiteratureBrief(brief: string): boolean {
   );
 }
 
-/** Force full-tier multi-agent ETF pipeline (not express single-agent). */
+/** Force full-tier all-specialist Deep Dive ETF (not express / single-agent). */
 export function resolveDeepWorkRouting(brief: string): BtcPipelineRouting | null {
-  if (wantsDeepBrief(brief)) return { qualityTier: "full", auctionMode: "etf" };
+  if (wantsDeepBrief(brief)) {
+    return { qualityTier: "full", auctionMode: "etf", etfId: "deep-dive-etf" };
+  }
   return resolveBtcPipelineRouting(brief);
 }
 
@@ -44,7 +68,7 @@ export function resolveBtcPipelineRouting(brief: string): BtcPipelineRouting | n
   if (!/\b(btc|bitcoin)\b/.test(t)) return null;
   if (!/on[- ]?chain|onchain|whale|exchange flow|defi|decentralized finance/.test(t)) return null;
   if (isChartOnlyBrief(brief) || isMarketQuoteBrief(brief)) return null;
-  if (wantsDeepBrief(brief)) return { qualityTier: "full", auctionMode: "etf" };
+  if (wantsDeepBrief(brief)) return { qualityTier: "full", auctionMode: "etf", etfId: "deep-dive-etf" };
   // Explicit thesis / investment report → compact thesis ETF; otherwise full on-chain pipeline.
   if (/investment thesis|investment report|btc thesis|bitcoin thesis/.test(t) && !/defi exposure|on[- ]?chain flows?/.test(t)) {
     return { qualityTier: "standard", auctionMode: "etf", etfId: "btc-full-thesis-etf" };

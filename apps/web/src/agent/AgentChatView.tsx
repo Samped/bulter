@@ -62,7 +62,7 @@ const STARTERS = [
 const QUALITY_OPTIONS: { id: QualityTier; label: string; sub: string }[] = [
   { id: "brief", label: "Brief", sub: "Headlines & quotes" },
   { id: "standard", label: "Standard", sub: "Best fit agent" },
-  { id: "full", label: "Full report", sub: "Multi-agent pipeline" },
+  { id: "full", label: "Full report", sub: "All agents · deep dive" },
 ];
 
 const CATEGORIES = [
@@ -105,7 +105,7 @@ export function AgentChatView({
   const [input, setInput] = useState("");
   const [category, setCategory] = useState("research");
   const [qualityTier, setQualityTier] = useState<QualityTier>("full");
-  const [maxBudgetUsdc, setMaxBudgetUsdc] = useState("0.25");
+  const [maxBudgetUsdc, setMaxBudgetUsdc] = useState("0.30");
   const [auctionMode, setAuctionMode] = useState<AuctionMode>("etf");
   const [configOpen, setConfigOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -128,7 +128,7 @@ export function AgentChatView({
   useEffect(() => {
     if (qualityTier === "full") {
       setAuctionMode("etf");
-      setMaxBudgetUsdc((prev) => (!prev || prev === "0.10" || prev === "0.15" ? "0.25" : prev));
+      setMaxBudgetUsdc((prev) => (!prev || Number(prev) < 0.25 ? "0.30" : prev));
     } else if (qualityTier === "brief") {
       setAuctionMode("single");
     }

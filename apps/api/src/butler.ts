@@ -9,6 +9,8 @@ import {
   resolveBtcPipelineRouting,
   getMarketplaceEtf,
   wantsDeepBrief,
+  isAuditOnlyBrief,
+  isBillOnlyBrief,
   listMarketplaceAgents,
   loadMarketplaceState,
   pickAuctionWinner,
@@ -461,8 +463,16 @@ export async function runButler(opts: {
     category: opts.category,
   });
   const btcRoute = !express ? resolveBtcPipelineRouting(brief) : null;
-  const deepWork =
-    !express && (wantsDeepBrief(brief) || !!btcRoute) ? resolveDeepWorkRouting(brief) : null;
+  const deepRequested =
+    !express &&
+    !isAuditOnlyBrief(brief) &&
+    !isBillOnlyBrief(brief) &&
+    (wantsDeepBrief(brief) || opts.qualityTier === "full");
+  const deepWork = deepRequested
+    ? { qualityTier: "full" as const, auctionMode: "etf" as const, etfId: "deep-dive-etf" as const }
+    : !express && btcRoute
+      ? resolveDeepWorkRouting(brief)
+      : null;
   const qualityTier = express
     ? "brief"
     : deepWork
@@ -482,7 +492,9 @@ export async function runButler(opts: {
         : executionShape.shape === "single"
           ? "single"
           : defaultAuctionMode(qualityTier, opts.auctionMode, brief);
-  const maxBudgetUsdc = opts.maxBudgetUsdc?.trim() || undefined;
+  const maxBudgetUsdc =
+    opts.maxBudgetUsdc?.trim() ||
+    (deepWork ? "0.30" : undefined);
 
   const readiness = agentRunReadiness();
   if (!readiness.canRun) {
@@ -578,8 +590,9 @@ export async function runButler(opts: {
     }
   }
 
-  if (strategy === "auction" && btcRoute?.etfId && !express) {
-    const etf = getMarketplaceEtf(btcRoute.etfId);
+  if (strategy === "auction" && (deepWork?.etfId || btcRoute?.etfId) && !express) {
+    const etfId = deepWork?.etfId ?? btcRoute!.etfId!;
+    const etf = getMarketplaceEtf(etfId);
     const leadId = etf?.agentIds[0];
     const leadAgent = leadId ? listMarketplaceAgents().find((a) => a.id === leadId) : undefined;
     if (etf && leadAgent) {

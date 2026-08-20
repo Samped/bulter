@@ -65,14 +65,15 @@ export function etfsEligibleForAuction(
   const tier = auction.qualityTier ?? "standard";
 
   if (wantsDeepBrief(auction.brief)) {
-    if (/investment thesis/.test(t) && /btc|bitcoin/.test(t)) {
-      return MARKETPLACE_ETFS.filter(
-        (etf) =>
-          etfAgentsApproved(etf.agentIds) &&
-          bidWithinBudget(etf.bundlePriceUsdc, auction.maxBudgetUsdc) &&
-          (etf.id === "btc-full-thesis-etf" || etf.id === "deep-dive-etf")
-      );
-    }
+    return MARKETPLACE_ETFS.filter(
+      (etf) =>
+        etfAgentsApproved(etf.agentIds) &&
+        bidWithinBudget(etf.bundlePriceUsdc, auction.maxBudgetUsdc) &&
+        etf.id === "deep-dive-etf"
+    );
+  }
+
+  if (tier === "full") {
     return MARKETPLACE_ETFS.filter(
       (etf) =>
         etfAgentsApproved(etf.agentIds) &&

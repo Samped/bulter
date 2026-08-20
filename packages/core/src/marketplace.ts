@@ -635,8 +635,8 @@ export function scoreEtfForBrief(
   }
 
   if (qualityTier === "full") {
-    if (etf.id === "btc-full-thesis-etf" && /btc|bitcoin/.test(t)) score += 45;
-    else if (etf.agentIds.includes("research-agent") && etf.agentIds.includes("report-agent")) score += 12;
+    if (etf.id === "deep-dive-etf") score += 55;
+    else score -= 25;
   }
 
   for (const agentId of etf.agentIds) {
