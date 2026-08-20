@@ -953,7 +953,7 @@ export function App() {
                       ? canFilterMine
                         ? "Mine shows tasks you run from the Agent tab or Auctions. Dev probes, CLI runs, and older history stay under All."
                         : "Log in with Circle (Payer) to see activity tied to your wallet."
-                      : "Run a task in Agent after logging in with Circle."
+                      : "All is the shared instance ledger — payments from every Circle account on this Butler. Use Mine for only yours."
                   }
                 />
               ) : (
