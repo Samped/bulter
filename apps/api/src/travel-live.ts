@@ -185,8 +185,8 @@ function normalizeFlights(raw: unknown[], trip: TravelTrip, bookFallback: string
       id: str(f.id, `live-flt-${trip.originCode}-${trip.destinationCode}-${i + 1}`),
       carrier: str(f.carrier, "Airline"),
       flightNumber: str(f.flightNumber, ""),
-      from: airportCode(f.from, trip.originCode),
-      to: airportCode(f.to, trip.destinationCode),
+      from: trip.originCode,
+      to: trip.destinationCode,
       departAt: str(f.departAt, `${trip.departDate}T12:00:00`),
       arriveAt: str(f.arriveAt, `${trip.departDate}T23:00:00`),
       durationHours: Number(num(f.durationHours, 12).toFixed(2)),
@@ -252,17 +252,18 @@ Trip:
 - Nights: ${nights}
 
 Requirements:
-1) Find 3–5 real outbound+return (or priced round-trip) flight options with real airline names and realistic USD prices from Google Flights, Kayak, airline sites, or similar.
+1) Find 3–5 real outbound+return (or priced round-trip) flight options for EXACTLY ${trip.originCode} → ${trip.destinationCode} (not any other city pair). Reject results that depart/arrive elsewhere.
 2) Prefer real flight numbers when published (e.g. QR701). Include duration hours and stops.
-3) Find 3–5 real hotels in/near ${trip.destination} with real names, star rating, neighborhood/area, address if available, and realistic nightly USD rates for these dates from Booking.com, Hotels.com, Google Hotels, or official sites.
+3) Find 3–5 real hotels in/near ${trip.destination} (${trip.destinationCode}) ONLY — not in ${trip.origin}. Include real names, star rating, neighborhood/area, address if available, and realistic nightly USD rates for these dates from Booking.com, Hotels.com, Google Hotels, or official sites.
 4) Do NOT invent fake airlines like "Testnet Air" or placeholder hotels like "Gateway Inn".
-5) Prefer bookUrl values that deep-link to Google Flights or Booking.com for this trip. Fallback URLs:
+5) Every flight.from must be ${trip.originCode} and flight.to must be ${trip.destinationCode} (or the destination airport city).
+6) Prefer bookUrl values that deep-link to Google Flights or Booking.com for this trip. Fallback URLs:
    - flights: ${flightsUrl}
    - hotels: ${hotelsUrl}
 
 Return ONLY valid JSON (no markdown) with this shape:
 {
-  "flights":[{"carrier":"","flightNumber":"","from":"","to":"","departAt":"ISO","arriveAt":"ISO","durationHours":0,"stops":0,"cabin":"${trip.cabin}","priceUsd":0,"note":"","bookUrl":""}],
+  "flights":[{"carrier":"","flightNumber":"","from":"${trip.originCode}","to":"${trip.destinationCode}","departAt":"ISO","arriveAt":"ISO","durationHours":0,"stops":0,"cabin":"${trip.cabin}","priceUsd":0,"note":"","bookUrl":""}],
   "hotels":[{"name":"","stars":0,"neighborhood":"","address":"","nightlyUsd":0,"totalUsd":0,"amenities":[""],"bookUrl":""}],
   "sources":["https://..."]
 }`;
@@ -270,9 +271,39 @@ Return ONLY valid JSON (no markdown) with this shape:
   const parsed = await openAiWebJson(prompt);
   if (!parsed) return null;
 
-  const flights = normalizeFlights(Array.isArray(parsed.flights) ? parsed.flights : [], trip, flightsUrl);
-  const hotels = normalizeHotels(Array.isArray(parsed.hotels) ? parsed.hotels : [], trip, nights, hotelsUrl);
+  let flights = normalizeFlights(
+    (Array.isArray(parsed.flights) ? parsed.flights : []).filter((row) => {
+      if (!row || typeof row !== "object") return false;
+      const f = row as Record<string, unknown>;
+      const from = airportCode(f.from, "");
+      const to = airportCode(f.to, "");
+      if (from && from !== trip.originCode) return false;
+      if (to && to !== trip.destinationCode) return false;
+      return true;
+    }),
+    trip,
+    flightsUrl,
+  );
+  let hotels = normalizeHotels(
+    (Array.isArray(parsed.hotels) ? parsed.hotels : []).filter((row) => {
+      if (!row || typeof row !== "object") return true;
+      const h = row as Record<string, unknown>;
+      const blob = `${h.name ?? ""} ${h.neighborhood ?? ""} ${h.address ?? ""} ${h.bookUrl ?? ""}`.toLowerCase();
+      const originOnly =
+        trip.origin.toLowerCase().length > 2 &&
+        blob.includes(trip.origin.toLowerCase()) &&
+        !destHint(trip).some((tok) => blob.includes(tok));
+      return !originOnly;
+    }),
+    trip,
+    nights,
+    hotelsUrl,
+  );
+
   if (flights.length === 0 && hotels.length === 0) return null;
+
+  // Always pin hotel book links to the destination search for these dates.
+  hotels = hotels.map((h) => ({ ...h, bookUrl: hotelsUrl, checkIn: trip.departDate, checkOut: trip.returnDate }));
 
   const sources = Array.isArray(parsed.sources)
     ? parsed.sources.map((s) => String(s)).filter(Boolean).slice(0, 12)
@@ -290,6 +321,14 @@ Return ONLY valid JSON (no markdown) with this shape:
     mode: "live-web",
     provider: "openai-web-search",
   };
+}
+
+function destHint(trip: TravelTrip): string[] {
+  return [trip.destination, trip.destinationCode]
+    .join(" ")
+    .toLowerCase()
+    .split(/\W+/)
+    .filter((w) => w.length > 2);
 }
 
 /** Build a destination-aware day plan from live web context. */

@@ -84,30 +84,111 @@ function addDays(base: Date, days: number): Date {
   return next;
 }
 
-function findCity(text: string): { name: string; code: string } | null {
+function findCity(text: string, opts?: { excludeCodes?: string[] }): { name: string; code: string } | null {
   const t = text.toLowerCase();
+  const exclude = new Set((opts?.excludeCodes ?? []).map((c) => c.toUpperCase()));
   const keys = Object.keys(CITY_CODES).sort((a, b) => b.length - a.length);
   for (const key of keys) {
-    if (t.includes(key)) return CITY_CODES[key]!;
+    if (!t.includes(key)) continue;
+    const city = CITY_CODES[key]!;
+    if (exclude.has(city.code)) continue;
+    return city;
   }
   return null;
+}
+
+function findAllCities(text: string): { name: string; code: string; index: number }[] {
+  const t = text.toLowerCase();
+  const keys = Object.keys(CITY_CODES).sort((a, b) => b.length - a.length);
+  const hits: { name: string; code: string; index: number; keyLen: number }[] = [];
+  const usedRanges: [number, number][] = [];
+  for (const key of keys) {
+    let from = 0;
+    while (from < t.length) {
+      const idx = t.indexOf(key, from);
+      if (idx < 0) break;
+      const end = idx + key.length;
+      const overlaps = usedRanges.some(([a, b]) => idx < b && end > a);
+      if (!overlaps) {
+        const city = CITY_CODES[key]!;
+        hits.push({ name: city.name, code: city.code, index: idx, keyLen: key.length });
+        usedRanges.push([idx, end]);
+      }
+      from = idx + 1;
+    }
+  }
+  hits.sort((a, b) => a.index - b.index || b.keyLen - a.keyLen);
+  // Dedupe same airport if matched twice (e.g. qatar + doha)
+  const seen = new Set<string>();
+  const unique: { name: string; code: string; index: number }[] = [];
+  for (const h of hits) {
+    if (seen.has(h.code)) continue;
+    seen.add(h.code);
+    unique.push({ name: h.name, code: h.code, index: h.index });
+  }
+  return unique;
 }
 
 /** Parse a free-text travel brief into a structured trip (deterministic defaults for testnet). */
 export function parseTravelTrip(brief?: string): TravelTrip {
   const t = (brief ?? "").toLowerCase();
-  const fromMatch = t.match(/\b(?:from|depart(?:ing)?\s+from)\s+([a-z\s]+?)(?:\s+to\b|,|$)/i);
-  const toMatch =
-    t.match(/\b(?:travel to|trip to|flights?\s+to)\s+([a-z\s]+?)(?:\s+(?:from|next|in|on|for|with|and|give|me|hotels?|flights?|march|april|may|june|july|august|september|october|november|december|\d)|$)/i) ||
-    t.match(/\b(?:to|for)\s+([a-z\s]+?)(?:\s+(?:from|next|in|on|for|with|and|give|march|april|may|june|july|august|september|october|november|december|\d)|$)/i);
 
-  let origin = findCity(fromMatch?.[1] ?? "");
-  // Prefer explicit destination phrase, then scan whole brief for known cities (skip origin).
-  let destination = findCity(toMatch?.[1] ?? "") ?? findCity(t);
+  // Strongest: "from Lagos to Qatar" / "Lagos to Doha"
+  const fromTo =
+    t.match(
+      /\b(?:from|depart(?:ing)?\s+from)\s+([a-z\s]+?)\s+to\s+([a-z\s]+?)(?:\s+(?:next|in|on|for|with|and|give|me|hotels?|flights?|march|april|may|june|july|august|september|october|november|december|\d)|$|,|\.|!)/i,
+    ) ||
+    t.match(
+      /\b(?!want|need|like|have|going|able|try|trying|used|ought|supposed)([a-z][a-z\s]{1,40}?)\s+to\s+([a-z\s]+?)(?:\s+(?:next|in|on|for|with|and|give|me|hotels?|flights?|from|march|april|may|june|july|august|september|october|november|december|\d)|$|,|\.|!)/i,
+    );
+
+  let origin = fromTo ? findCity(fromTo[1] ?? "") : null;
+  let destination = fromTo ? findCity(fromTo[2] ?? "") : null;
+
+  // "travel to Qatar from Lagos" / "flights to Doha from LOS"
+  if (!destination || !origin) {
+    const toFrom = t.match(
+      /\b(?:travel to|trip to|flights?\s+to|to)\s+([a-z\s]+?)\s+from\s+([a-z\s]+?)(?:\s|$|,|\.|!)/i,
+    );
+    if (toFrom) {
+      destination = destination ?? findCity(toFrom[1] ?? "");
+      origin = origin ?? findCity(toFrom[2] ?? "");
+    }
+  }
+
+  // "travel to Qatar" / "trip to Doha" — avoid matching "want to" / "to travel"
+  if (!destination) {
+    const toOnly = t.match(
+      /\b(?:travel to|trip to|flights?\s+to|fly to|going to|visit(?:ing)?)\s+([a-z\s]+?)(?:\s+(?:from|next|in|on|for|with|and|give|me|hotels?|flights?|march|april|may|june|july|august|september|october|november|december|\d)|$|,|\.|!)/i,
+    );
+    destination = findCity(toOnly?.[1] ?? "");
+  }
+
+  // Fallback: ordered city mentions in the brief (first = origin-ish, last = destination-ish)
+  const cities = findAllCities(t);
+  if (!destination && cities.length >= 1) {
+    destination = cities.length >= 2 ? cities[cities.length - 1]! : cities[0]!;
+  }
+  if (!origin && cities.length >= 2) {
+    origin = cities[0]!;
+    if (origin.code === destination?.code && cities.length > 2) {
+      origin = cities.find((c) => c.code !== destination!.code) ?? origin;
+    }
+  }
 
   if (!destination) destination = CITY_CODES.paris!;
   if (!origin || origin.code === destination.code) {
-    origin = destination.code === "JFK" ? CITY_CODES.london! : CITY_CODES.nyc!;
+    // Prefer a second distinct city from the brief before defaulting to NYC
+    const other = cities.find((c) => c.code !== destination!.code);
+    if (other) origin = other;
+    else origin = destination.code === "JFK" ? CITY_CODES.london! : CITY_CODES.nyc!;
+  }
+
+  // If "from X" is explicit and differs, keep it even when defaults ran first
+  const fromOnly = t.match(/\b(?:from|depart(?:ing)?\s+from)\s+([a-z\s]+?)(?:\s+to\b|,|$)/i);
+  const fromCity = findCity(fromOnly?.[1] ?? "");
+  if (fromCity && fromCity.code !== destination.code) {
+    origin = fromCity;
   }
 
   const today = new Date();
