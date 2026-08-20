@@ -93,6 +93,9 @@ export interface BatchTxResult {
   batchTx: string | null;
   status?: string;
   error?: string;
+  mode?: string;
+  message?: string;
+  explorerUrl?: string | null;
 }
 
 export interface BatchDecode {

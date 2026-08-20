@@ -60,6 +60,17 @@ export function PaymentTrace({
       setSettlement(s);
       setStep(2);
 
+      if (id.startsWith("internal-") || (s && typeof s === "object" && (s as { mode?: string }).mode === "internal")) {
+        setBatch({
+          batchTx: null,
+          status: "internal",
+          mode: "internal",
+          message: "Internal marketplace pay — no Gateway batch tx",
+        });
+        setStep(3);
+        return;
+      }
+
       const b = await getBatchTx(id);
       setBatch(b);
       setStep(3);

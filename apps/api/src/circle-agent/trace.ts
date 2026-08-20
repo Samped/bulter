@@ -2,20 +2,87 @@
  * Arc 101 payment trace helpers — from the-canteen-dev/circle-agent
  */
 import { ARC_EXPLORER, GATEWAY_FACILITATOR, GATEWAY_WALLET_ARC, PINNED_BATCH_TX } from "@butler/arc";
+import { loadState } from "@butler/core";
+import { resolveButlerStatePath } from "../data-paths.ts";
 
 const GATEWAY_API =
   process.env.GATEWAY_API ??
   process.env.GATEWAY_FACILITATOR_URL ??
   GATEWAY_FACILITATOR;
 
+function isInternalSettlementId(id: string): boolean {
+  return id.startsWith("internal-");
+}
+
+function findInternalSpendRecord(id: string) {
+  const state = loadState(resolveButlerStatePath());
+  return state.records.find((r) => r.settlementId === id) ?? null;
+}
+
+/** Local in-process pays use `internal-<uuid>` — not Circle Gateway transfer IDs. */
+function internalSettlementPayload(id: string) {
+  const record = findInternalSpendRecord(id);
+  if (!record) {
+    return {
+      status: 404,
+      body: JSON.stringify({
+        success: false,
+        mode: "internal",
+        message: "Internal settlement not found in Butler ledger",
+        id,
+      }),
+    };
+  }
+  return {
+    status: 200,
+    body: JSON.stringify({
+      id,
+      status: record.status === "settled" ? "completed" : record.status,
+      mode: "internal",
+      amount: record.amountUsdc,
+      currency: "USDC",
+      merchantId: record.merchantId,
+      agent: record.agent,
+      category: record.category,
+      payerAddress: record.payerAddress,
+      executorAddress: record.executorAddress,
+      initiator: record.initiator,
+      updatedAt: new Date(record.at * 1000).toISOString(),
+      createdAt: new Date(record.at * 1000).toISOString(),
+      message: "In-process marketplace payment (not a Circle Gateway transfer)",
+      recordId: record.id,
+    }),
+  };
+}
+
 export async function fetchSettlement(id: string) {
-  const r = await fetch(`${GATEWAY_API}/v1/x402/transfers/${id}`);
+  const trimmed = id.trim();
+  if (isInternalSettlementId(trimmed)) {
+    return internalSettlementPayload(trimmed);
+  }
+  const r = await fetch(`${GATEWAY_API}/v1/x402/transfers/${trimmed}`);
   const text = await r.text();
   return { status: r.status, body: text };
 }
 
 export async function resolveBatchTx(settlementId: string) {
-  const sr = await fetch(`${GATEWAY_API}/v1/x402/transfers/${settlementId}`);
+  const trimmed = settlementId.trim();
+  if (isInternalSettlementId(trimmed)) {
+    const record = findInternalSpendRecord(trimmed);
+    if (!record) {
+      return { error: "Internal settlement not found", status: 404 };
+    }
+    return {
+      batchTx: null,
+      status: "internal",
+      mode: "internal",
+      explorerUrl: null,
+      amount: record.amountUsdc,
+      merchantId: record.merchantId,
+      message: "Internal pays settle off Gateway — no Arc batch tx",
+    };
+  }
+  const sr = await fetch(`${GATEWAY_API}/v1/x402/transfers/${trimmed}`);
   if (!sr.ok) {
     return { error: await sr.text(), status: sr.status };
   }
@@ -23,7 +90,7 @@ export async function resolveBatchTx(settlementId: string) {
   if (settlement.status !== "completed" && settlement.status !== "confirmed") {
     return { batchTx: null, status: settlement.status };
   }
-  const pinned = PINNED_BATCH_TX[settlementId];
+  const pinned = PINNED_BATCH_TX[trimmed];
   if (pinned) {
     return {
       batchTx: pinned,

@@ -66,6 +66,15 @@ export function ActivityDetail({
       }
       const s = await getSettlement(id);
       setSettlement(s);
+      if (id.startsWith("internal-") || (s && typeof s === "object" && (s as { mode?: string }).mode === "internal")) {
+        setBatch({
+          batchTx: null,
+          status: "internal",
+          mode: "internal",
+          message: "Internal marketplace pay — no Gateway batch tx",
+        } as BatchTxResult);
+        return;
+      }
       const b = await getBatchTx(id);
       setBatch(b);
       if (b.batchTx) {
