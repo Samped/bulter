@@ -120,7 +120,7 @@ export function HotelSearchBlock({ data }: { data: Record<string, unknown> }) {
       <ol className="paper-numbered-list">
         {hotels.map((row, i) => {
           const h = row as Record<string, unknown>;
-          const bookUrl = typeof h.bookUrl === "string" ? h.bookUrl : null;
+          const bookUrl = typeof h.bookUrl === "string" ? h.bookUrl : searchUrl;
           return (
             <li key={i}>
               <strong>{String(h.name ?? "Hotel")}</strong>
@@ -135,7 +135,7 @@ export function HotelSearchBlock({ data }: { data: Record<string, unknown> }) {
               {bookUrl && (
                 <div className="paper-ref-meta">
                   <a href={bookUrl} target="_blank" rel="noreferrer">
-                    Book / confirm
+                    Confirm on Booking.com
                   </a>
                 </div>
               )}
@@ -143,6 +143,20 @@ export function HotelSearchBlock({ data }: { data: Record<string, unknown> }) {
           );
         })}
       </ol>
+      {hotels.length === 0 && (
+        <p className="paper-prose">
+          No verified hotel names for this run
+          {searchUrl ? (
+            <>
+              {" — "}
+              <a href={searchUrl} target="_blank" rel="noreferrer">
+                open Booking.com for live stays
+              </a>
+            </>
+          ) : null}
+          .
+        </p>
+      )}
       {typeof data.disclaimer === "string" && <p className="paper-prose paper-ref-meta">{data.disclaimer}</p>}
     </section>
   );

@@ -268,7 +268,7 @@ export async function buildFlightSearchPayload(brief?: string, priorContext?: st
       provider: live.provider,
       marketFromUsd: market,
       summary: market
-        ? `${live.flights.length} options ${trip.origin} (${trip.originCode}) → ${trip.destination} (${trip.destinationCode}) on ${trip.departDate}. Google Flights/Kayak market from ~$${market}; listed best ~$${best.priceUsd} (${best.carrier}).`
+        ? `${live.flights.length} options ${trip.origin} (${trip.originCode}) → ${trip.destination} (${trip.destinationCode}) on ${trip.departDate}. Google Flights market from ~$${market}; listed best ~$${best.priceUsd} (${best.carrier}).`
         : `${live.flights.length} live round-trip options ${trip.origin} (${trip.originCode}) → ${trip.destination} (${trip.destinationCode}) on ${trip.departDate}. Best RT fare ~$${best.priceUsd} on ${best.carrier}.`,
       trip,
       currency: "USD",
@@ -277,6 +277,23 @@ export async function buildFlightSearchPayload(brief?: string, priorContext?: st
       sources: live.sources,
       disclaimer:
         "Confirm every fare on Google Flights before you buy — listed prices are snapshots and can change.",
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  if (live?.marketFromUsd) {
+    return {
+      type: "flight-search",
+      mode: live.mode,
+      provider: live.provider,
+      marketFromUsd: live.marketFromUsd,
+      summary: `Google Flights shows cheapest from ~$${live.marketFromUsd} for ${trip.originCode} → ${trip.destinationCode} on ${trip.departDate}. Open the link for full live options.`,
+      trip,
+      currency: "USD",
+      flights: live.flights ?? [],
+      searchUrl: googleFlightsUrl(trip),
+      sources: live.sources,
+      disclaimer: "Use Google Flights for booking decisions — do not rely on invented teaser fares.",
       generatedAt: new Date().toISOString(),
     };
   }
@@ -331,20 +348,36 @@ export async function buildHotelSearchPayload(brief?: string, priorContext?: str
     Math.round((new Date(trip.returnDate).getTime() - new Date(trip.departDate).getTime()) / 86_400_000),
   );
   const live = await liveBundleFor(trip);
-  if (live?.hotels?.length) {
-    const best = live.hotels[0]!;
+  if (live) {
+    if (live.hotels.length > 0) {
+      const best = live.hotels[0]!;
+      return {
+        type: "hotel-search",
+        mode: live.mode,
+        provider: live.provider,
+        summary: `${live.hotels.length} live stays in ${trip.destination} for ${nights} night(s). Best stay total ~$${best.totalUsd} (~$${best.nightlyUsd}/night) at ${best.name}.`,
+        trip,
+        currency: "USD",
+        hotels: live.hotels,
+        searchUrl: bookingSearchUrl(trip),
+        sources: live.sources,
+        disclaimer:
+          "Confirm totals and cancellation on Booking.com — rates move with dates and occupancy.",
+        generatedAt: new Date().toISOString(),
+      };
+    }
+    // Live lookup ran but returned no verified properties — do not invent Hotel X/Y/Z.
     return {
       type: "hotel-search",
       mode: live.mode,
       provider: live.provider,
-      summary: `${live.hotels.length} live stays in ${trip.destination} for ${nights} night(s). Best stay total ~$${best.totalUsd} (~$${best.nightlyUsd}/night) at ${best.name}.`,
+      summary: `No verified hotel names returned for ${trip.destination}. Open Booking.com for live stays on your dates.`,
       trip,
       currency: "USD",
-      hotels: live.hotels,
+      hotels: [],
       searchUrl: bookingSearchUrl(trip),
       sources: live.sources,
-      disclaimer:
-        "Live web-sourced hotel rate estimates — confirm total and cancellation terms on the booking link.",
+      disclaimer: "Use the Booking.com link for real properties — we will not invent hotel names.",
       generatedAt: new Date().toISOString(),
     };
   }
@@ -478,10 +511,16 @@ export async function buildItineraryPayload(brief?: string, priorContext?: strin
     live?.flights?.[0] ??
     fromContext.flight ??
     undefined;
-  const hotel =
+  const hotelRaw =
     live?.hotels?.[0] ??
     fromContext.hotel ??
     undefined;
+  const hotel =
+    hotelRaw &&
+    typeof hotelRaw.name === "string" &&
+    /^hotel\s+[a-z]$/i.test(hotelRaw.name.trim())
+      ? undefined
+      : hotelRaw;
 
   const liveDays = await searchLiveItineraryDays(trip, { flight, hotel });
   const days =
