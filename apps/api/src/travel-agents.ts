@@ -47,6 +47,9 @@ const CITY_CODES: Record<string, { name: string; code: string }> = {
   paris: { name: "Paris", code: "CDG" },
   tokyo: { name: "Tokyo", code: "NRT" },
   lagos: { name: "Lagos", code: "LOS" },
+  kenya: { name: "Nairobi", code: "NBO" },
+  nairobi: { name: "Nairobi", code: "NBO" },
+  mombasa: { name: "Mombasa", code: "MBA" },
   dubai: { name: "Dubai", code: "DXB" },
   singapore: { name: "Singapore", code: "SIN" },
   "san francisco": { name: "San Francisco", code: "SFO" },
@@ -72,6 +75,12 @@ const CITY_CODES: Record<string, { name: string; code: string }> = {
   manama: { name: "Manama", code: "BAH" },
   kuwait: { name: "Kuwait City", code: "KWI" },
   "hong kong": { name: "Hong Kong", code: "HKG" },
+  nigeria: { name: "Lagos", code: "LOS" },
+  ghana: { name: "Accra", code: "ACC" },
+  accra: { name: "Accra", code: "ACC" },
+  "south africa": { name: "Johannesburg", code: "JNB" },
+  johannesburg: { name: "Johannesburg", code: "JNB" },
+  "cape town": { name: "Cape Town", code: "CPT" },
 };
 
 function isoDate(d: Date): string {
@@ -84,12 +93,24 @@ function addDays(base: Date, days: number): Date {
   return next;
 }
 
+/** Match city keys on word boundaries so "la" does not hit inside "lagos". */
+function cityKeyIndex(text: string, key: string, from = 0): number {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(?:^|[^a-z])(${escaped})(?![a-z])`, "gi");
+  re.lastIndex = from;
+  const m = re.exec(text);
+  if (!m || m.index == null) return -1;
+  const full = m[0];
+  const matched = m[1] ?? key;
+  return m.index + (full.length - matched.length);
+}
+
 function findCity(text: string, opts?: { excludeCodes?: string[] }): { name: string; code: string } | null {
   const t = text.toLowerCase();
   const exclude = new Set((opts?.excludeCodes ?? []).map((c) => c.toUpperCase()));
   const keys = Object.keys(CITY_CODES).sort((a, b) => b.length - a.length);
   for (const key of keys) {
-    if (!t.includes(key)) continue;
+    if (cityKeyIndex(t, key) < 0) continue;
     const city = CITY_CODES[key]!;
     if (exclude.has(city.code)) continue;
     return city;
@@ -105,7 +126,7 @@ function findAllCities(text: string): { name: string; code: string; index: numbe
   for (const key of keys) {
     let from = 0;
     while (from < t.length) {
-      const idx = t.indexOf(key, from);
+      const idx = cityKeyIndex(t, key, from);
       if (idx < 0) break;
       const end = idx + key.length;
       const overlaps = usedRanges.some(([a, b]) => idx < b && end > a);
@@ -114,11 +135,10 @@ function findAllCities(text: string): { name: string; code: string; index: numbe
         hits.push({ name: city.name, code: city.code, index: idx, keyLen: key.length });
         usedRanges.push([idx, end]);
       }
-      from = idx + 1;
+      from = idx + key.length;
     }
   }
   hits.sort((a, b) => a.index - b.index || b.keyLen - a.keyLen);
-  // Dedupe same airport if matched twice (e.g. qatar + doha)
   const seen = new Set<string>();
   const unique: { name: string; code: string; index: number }[] = [];
   for (const h of hits) {
@@ -166,19 +186,20 @@ export function parseTravelTrip(brief?: string): TravelTrip {
 
   // Fallback: ordered city mentions in the brief (first = origin-ish, last = destination-ish)
   const cities = findAllCities(t);
-  if (!destination && cities.length >= 1) {
-    destination = cities.length >= 2 ? cities[cities.length - 1]! : cities[0]!;
+  // Never treat a lone origin city as the destination ("from Lagos to Kenya" must not become Lagos→Lagos).
+  if (!destination && cities.length >= 2) {
+    destination = cities[cities.length - 1]!;
+  }
+  if (!origin && cities.length >= 1) {
+    const candidate = cities[0]!;
+    if (!destination || candidate.code !== destination.code) origin = candidate;
   }
   if (!origin && cities.length >= 2) {
-    origin = cities[0]!;
-    if (origin.code === destination?.code && cities.length > 2) {
-      origin = cities.find((c) => c.code !== destination!.code) ?? origin;
-    }
+    origin = cities.find((c) => c.code !== destination?.code) ?? cities[0]!;
   }
 
   if (!destination) destination = CITY_CODES.paris!;
   if (!origin || origin.code === destination.code) {
-    // Prefer a second distinct city from the brief before defaulting to NYC
     const other = cities.find((c) => c.code !== destination!.code);
     if (other) origin = other;
     else origin = destination.code === "JFK" ? CITY_CODES.london! : CITY_CODES.nyc!;
@@ -468,7 +489,7 @@ export async function buildItineraryPayload(brief?: string, priorContext?: strin
     nextSteps: [
       "Open the flight book link and confirm seats/fare rules",
       "Open the hotel book link and confirm cancellation policy",
-      "Recheck passport/visa requirements for Qatar before booking",
+      `Recheck passport/visa requirements for ${trip.destination} before booking`,
     ],
     disclaimer: live
       ? "Live web-sourced itinerary sketch — not a ticketed reservation. Verify times and opening hours before travel."

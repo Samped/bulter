@@ -286,14 +286,19 @@ Return ONLY valid JSON (no markdown) with this shape:
   );
   let hotels = normalizeHotels(
     (Array.isArray(parsed.hotels) ? parsed.hotels : []).filter((row) => {
-      if (!row || typeof row !== "object") return true;
+      if (!row || typeof row !== "object") return false;
       const h = row as Record<string, unknown>;
-      const blob = `${h.name ?? ""} ${h.neighborhood ?? ""} ${h.address ?? ""} ${h.bookUrl ?? ""}`.toLowerCase();
+      const blob = `${h.name ?? ""} ${h.neighborhood ?? ""} ${h.address ?? ""}`.toLowerCase();
+      const destOk = destHint(trip).some((tok) => blob.includes(tok));
       const originOnly =
         trip.origin.toLowerCase().length > 2 &&
         blob.includes(trip.origin.toLowerCase()) &&
-        !destHint(trip).some((tok) => blob.includes(tok));
-      return !originOnly;
+        !destOk;
+      // Reject lodging clearly in the wrong city/country (e.g. London when trip is Nairobi).
+      const wrongCity = ["london", "heathrow", "paris", "new york", "los angeles", "dubai"].some(
+        (c) => blob.includes(c) && !destHint(trip).includes(c) && c !== trip.destination.toLowerCase(),
+      );
+      return destOk && !originOnly && !wrongCity;
     }),
     trip,
     nights,
@@ -303,7 +308,13 @@ Return ONLY valid JSON (no markdown) with this shape:
   if (flights.length === 0 && hotels.length === 0) return null;
 
   // Always pin hotel book links to the destination search for these dates.
-  hotels = hotels.map((h) => ({ ...h, bookUrl: hotelsUrl, checkIn: trip.departDate, checkOut: trip.returnDate }));
+  hotels = hotels.map((h) => ({
+    ...h,
+    bookUrl: hotelsUrl,
+    checkIn: trip.departDate,
+    checkOut: trip.returnDate,
+    neighborhood: h.neighborhood || trip.destination,
+  }));
 
   const sources = Array.isArray(parsed.sources)
     ? parsed.sources.map((s) => String(s)).filter(Boolean).slice(0, 12)
