@@ -45,6 +45,7 @@ export function FlightSearchBlock({ data }: { data: Record<string, unknown> }) {
           ? data.summary
           : null;
   const searchUrl = typeof data.searchUrl === "string" ? data.searchUrl : null;
+  const marketFrom = Number(data.marketFromUsd);
   return (
     <section className="paper-section">
       <h2 className="paper-section-title">Flight options</h2>
@@ -52,19 +53,21 @@ export function FlightSearchBlock({ data }: { data: Record<string, unknown> }) {
       <p className="paper-inline-meta">
         {String(trip.origin ?? "")} ({String(trip.originCode ?? "")}) → {String(trip.destination ?? "")} (
         {String(trip.destinationCode ?? "")}) · {String(trip.departDate ?? "")}
+        {Number.isFinite(marketFrom) && marketFrom > 0 ? ` · market from ~$${marketFrom.toFixed(0)}` : ""}
         {data.mode === "live-web" ? " · Live web" : data.mode === "testnet-demo" ? " · Demo" : ""}
       </p>
       {searchUrl && (
         <p className="paper-prose">
           <a href={searchUrl} target="_blank" rel="noreferrer">
-            Open Google Flights for this trip
+            Open live Google Flights for this exact trip
           </a>
+          {" — use this for booking decisions; listed fares can move."}
         </p>
       )}
       <ol className="paper-numbered-list">
         {flights.map((row, i) => {
           const f = row as Record<string, unknown>;
-          const bookUrl = typeof f.bookUrl === "string" ? f.bookUrl : null;
+          const bookUrl = typeof f.bookUrl === "string" ? f.bookUrl : searchUrl;
           return (
             <li key={i}>
               <strong>
@@ -78,7 +81,7 @@ export function FlightSearchBlock({ data }: { data: Record<string, unknown> }) {
               {bookUrl && (
                 <div className="paper-ref-meta">
                   <a href={bookUrl} target="_blank" rel="noreferrer">
-                    Book / confirm
+                    Confirm on Google Flights
                   </a>
                 </div>
               )}

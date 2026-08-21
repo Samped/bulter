@@ -98,6 +98,8 @@ export function combineWorkflowResult(steps: { output?: unknown }[]): Record<str
       }
       if (p.disclaimer) combined.disclaimer = p.disclaimer;
       if (p.mode) combined.mode = p.mode;
+      if (typeof p.searchUrl === "string") combined.searchUrl = p.searchUrl;
+      if (typeof p.marketFromUsd === "number") combined.marketFromUsd = p.marketFromUsd;
     }
     if (p.type === "hotel-search" || Array.isArray(p.hotels)) {
       combined.type = "travel-package";

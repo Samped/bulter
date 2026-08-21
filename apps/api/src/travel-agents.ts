@@ -261,18 +261,22 @@ export async function buildFlightSearchPayload(brief?: string, priorContext?: st
   const live = await liveBundleFor(trip);
   if (live?.flights?.length) {
     const best = live.flights[0]!;
+    const market = live.marketFromUsd;
     return {
       type: "flight-search",
       mode: live.mode,
       provider: live.provider,
-      summary: `${live.flights.length} live round-trip options ${trip.origin} (${trip.originCode}) → ${trip.destination} (${trip.destinationCode}) on ${trip.departDate}. Best RT fare ~$${best.priceUsd} on ${best.carrier}.`,
+      marketFromUsd: market,
+      summary: market
+        ? `${live.flights.length} options ${trip.origin} (${trip.originCode}) → ${trip.destination} (${trip.destinationCode}) on ${trip.departDate}. Google Flights/Kayak market from ~$${market}; listed best ~$${best.priceUsd} (${best.carrier}).`
+        : `${live.flights.length} live round-trip options ${trip.origin} (${trip.originCode}) → ${trip.destination} (${trip.destinationCode}) on ${trip.departDate}. Best RT fare ~$${best.priceUsd} on ${best.carrier}.`,
       trip,
       currency: "USD",
       flights: live.flights,
       searchUrl: googleFlightsUrl(trip),
       sources: live.sources,
       disclaimer:
-        "Live web-sourced round-trip fare estimates — confirm final price on the airline or OTA before purchase.",
+        "Confirm every fare on Google Flights before you buy — listed prices are snapshots and can change.",
       generatedAt: new Date().toISOString(),
     };
   }
@@ -539,19 +543,20 @@ export async function buildItineraryPayload(brief?: string, priorContext?: strin
       hotelUsd: hotelCost,
       nights,
       travelers: trip.travelers,
-      note: "Flight fare treated as round-trip estimate; hotel is stay total.",
+      note: "Flight fare is round-trip; hotel is stay total. Confirm both on Google Flights / Booking before purchase.",
     },
     searchUrls: {
       flights: googleFlightsUrl(trip),
       hotels: bookingSearchUrl(trip),
     },
+    marketFromUsd: live?.marketFromUsd,
     nextSteps: [
-      "Open the flight book link and confirm seats/fare rules",
+      "Open the Google Flights link and confirm seats/fare rules for your dates",
       "Open the hotel book link and confirm cancellation policy",
       `Recheck passport/visa requirements for ${trip.destination} before booking`,
     ],
     disclaimer: liveMode
-      ? "Live web-sourced itinerary sketch — prices are estimates. Confirm totals on the airline/OTA before purchase."
+      ? "Live snapshot — confirm every fare on the linked Google Flights search before you buy; prices move."
       : "Demo itinerary — not a confirmed reservation.",
     generatedAt: new Date().toISOString(),
   };

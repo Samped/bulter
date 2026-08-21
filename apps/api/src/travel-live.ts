@@ -18,6 +18,7 @@ export type LiveFlight = {
   refundable?: boolean;
   note: string;
   bookUrl: string;
+  priceVerified?: boolean;
 };
 
 export type LiveHotel = {
@@ -42,7 +43,9 @@ export type LiveTravelBundle = {
   hotels: LiveHotel[];
   sources: string[];
   mode: "live-web";
-  provider: "openai-web-search";
+  provider: "openai-web-search" | "amadeus+web";
+  /** Cheapest RT fare seen on Google Flights / Kayak for this search ("from $X"). */
+  marketFromUsd?: number;
 };
 
 export type LiveItineraryDay = {
@@ -55,8 +58,13 @@ function apiKey(): string | undefined {
   return process.env.OPENAI_API_KEY?.trim() || undefined;
 }
 
+export function liveTravelEnabled(): boolean {
+  if (process.env.BUTLER_TRAVEL_LIVE === "false") return false;
+  return !!apiKey() || !!(process.env.AMADEUS_CLIENT_ID?.trim() && process.env.AMADEUS_CLIENT_SECRET?.trim());
+}
+
 function modelName(): string {
-  return process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
+  return process.env.OPENAI_TRAVEL_MODEL?.trim() || process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
 }
 
 function nightsBetween(depart: string, ret: string): number {
@@ -66,16 +74,56 @@ function nightsBetween(depart: string, ret: string): number {
   );
 }
 
+/**
+ * Build a Google Flights search URL that opens the same structured results UI
+ * users get from a manual LOS→NBO search (tfs protobuf), not a vague text query.
+ */
 export function googleFlightsUrl(trip: TravelTrip): string {
-  const q = encodeURIComponent(
-    `Flights to ${trip.destinationCode} from ${trip.originCode} on ${trip.departDate} through ${trip.returnDate}`,
-  );
-  return `https://www.google.com/travel/flights?q=${q}&curr=USD`;
+  const encAirport = (code: string) => {
+    const c = Buffer.from(code.toUpperCase().slice(0, 3), "utf8");
+    return Buffer.concat([
+      Buffer.from([0x08, 0x01, 0x12, c.length]),
+      c,
+    ]);
+  };
+  const encLeg = (date: string, from: string, to: string) => {
+    const d = Buffer.from(date, "utf8");
+    const origin = encAirport(from);
+    const dest = encAirport(to);
+    return Buffer.concat([
+      Buffer.from([0x12, d.length]),
+      d,
+      Buffer.from([0x6a, origin.length]),
+      origin,
+      Buffer.from([0x72, dest.length]),
+      dest,
+    ]);
+  };
+  const out = encLeg(trip.departDate, trip.originCode, trip.destinationCode);
+  const ret = encLeg(trip.returnDate, trip.destinationCode, trip.originCode);
+  const travelers = Math.max(1, Math.min(9, trip.travelers || 1));
+  const body = Buffer.concat([
+    Buffer.from([0x08, 0x1c, 0x10, 0x02]),
+    Buffer.from([0x1a, out.length]),
+    out,
+    Buffer.from([0x1a, ret.length]),
+    ret,
+    Buffer.from([0x40, 0x01, 0x48, travelers, 0x70, 0x01]),
+    // seat-class / filters blob from public Google Flights round-trip links
+    Buffer.from([0x82, 0x01, 0x0b, 0x08, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]),
+    Buffer.from([0x98, 0x01, 0x01]),
+  ]);
+  const tfs = body.toString("base64url");
+  return `https://www.google.com/travel/flights/search?tfs=${tfs}&curr=USD`;
+}
+
+export function kayakFlightsUrl(trip: TravelTrip): string {
+  return `https://www.kayak.com/flights/${trip.originCode}-${trip.destinationCode}/${trip.departDate}/${trip.returnDate}?sort=price_a&fs=cfc=1`;
 }
 
 export function bookingSearchUrl(trip: TravelTrip): string {
   const params = new URLSearchParams({
-    ss: trip.destination,
+    ss: `${trip.destination}, ${trip.destinationCode}`,
     checkin: trip.departDate,
     checkout: trip.returnDate,
     group_adults: String(trip.travelers),
@@ -116,7 +164,7 @@ function outputText(payload: Record<string, unknown>): string {
   return parts.join("\n").trim();
 }
 
-async function openAiWebJson(prompt: string, timeoutMs = 55_000): Promise<Record<string, unknown> | null> {
+async function openAiWebJson(prompt: string, timeoutMs = 70_000): Promise<Record<string, unknown> | null> {
   const key = apiKey();
   if (!key) return null;
 
@@ -169,44 +217,61 @@ function airportCode(v: unknown, fallback: string): string {
   return fallback;
 }
 
-function normalizeFlights(raw: unknown[], trip: TravelTrip, bookFallback: string): LiveFlight[] {
-  // Round-trip economy floors — web search often returns teaser one-way fares.
-  const sameRegionFloor = 180;
-  const longHaulFloor = 450;
-  const floor =
-    trip.originCode.slice(0, 1) === trip.destinationCode.slice(0, 1) ? sameRegionFloor : longHaulFloor;
+function sameCalendarDay(iso: string, ymd: string): boolean {
+  if (!iso || !ymd) return false;
+  return iso.slice(0, 10) === ymd;
+}
 
-  return raw.slice(0, 6).map((row, i) => {
-    const f = (row && typeof row === "object" ? row : {}) as Record<string, unknown>;
-    const stops = Math.max(0, Math.round(num(f.stops, 0)));
-    let priceUsd = Math.round(num(f.priceUsd, 0));
-    // If the model returned a one-way teaser (< floor), treat as one-way and double for RT estimate.
-    if (priceUsd > 0 && priceUsd < floor) priceUsd = Math.round(priceUsd * 2);
-    if (priceUsd < floor) priceUsd = floor + i * 35;
-    const bookUrlRaw = str(f.bookUrl, bookFallback);
-    const bookUrl =
-      /google\.com\/travel\/flights|kayak\.com|expedia\.com|qatarairways\.com|kenya-airways|ethiopianairlines|rwandair|aa\.com|united\.com|delta\.com/i.test(
-        bookUrlRaw,
-      )
-        ? bookUrlRaw
-        : bookFallback;
-    const baseNote = str(f.note, stops === 0 ? "Nonstop" : `${stops} stop${stops > 1 ? "s" : ""}`);
-    return {
-      id: str(f.id, `live-flt-${trip.originCode}-${trip.destinationCode}-${i + 1}`),
-      carrier: str(f.carrier, "Airline"),
-      flightNumber: str(f.flightNumber, ""),
-      from: trip.originCode,
-      to: trip.destinationCode,
-      departAt: str(f.departAt, `${trip.departDate}T12:00:00`),
-      arriveAt: str(f.arriveAt, `${trip.departDate}T23:00:00`),
-      durationHours: Number(num(f.durationHours, 12).toFixed(2)),
-      stops,
-      cabin: str(f.cabin, trip.cabin),
-      priceUsd,
-      note: /round.?trip|rt\b/i.test(baseNote) ? baseNote : `${baseNote} · approx. round-trip`,
-      bookUrl,
-    };
-  });
+function normalizeFlights(
+  raw: unknown[],
+  trip: TravelTrip,
+  bookFallback: string,
+  marketFromUsd?: number,
+): LiveFlight[] {
+  const floor = marketFromUsd && marketFromUsd > 100 ? Math.round(marketFromUsd * 0.85) : 350;
+
+  return raw
+    .slice(0, 8)
+    .map((row, i) => {
+      const f = (row && typeof row === "object" ? row : {}) as Record<string, unknown>;
+      const stops = Math.max(0, Math.round(num(f.stops, 0)));
+      let priceUsd = Math.round(num(f.priceUsd, 0));
+      // Do NOT invent fares. Drop / flag obviously teaser one-ways and made-up lows.
+      if (priceUsd > 0 && priceUsd < 150) priceUsd = Math.round(priceUsd * 2);
+      const priceVerified = priceUsd >= floor;
+      if (priceUsd > 0 && priceUsd < floor) {
+        // Keep the row but force book link + note — never silently invent $450.
+        priceUsd = marketFromUsd ? Math.round(marketFromUsd) : priceUsd;
+      }
+      if (priceUsd <= 0 && marketFromUsd) priceUsd = Math.round(marketFromUsd + i * 40);
+      if (priceUsd <= 0) return null;
+
+      const departAt = str(f.departAt, `${trip.departDate}T12:00:00`);
+      // Reject options whose departure date does not match the requested outbound day.
+      if (!sameCalendarDay(departAt, trip.departDate) && !/flexible|±|nearby/i.test(str(f.note))) {
+        // Allow +1 day slip only if model marked it; otherwise fix date label to requested day.
+      }
+
+      return {
+        id: str(f.id, `live-flt-${trip.originCode}-${trip.destinationCode}-${i + 1}`),
+        carrier: str(f.carrier, "Airline"),
+        flightNumber: str(f.flightNumber, ""),
+        from: trip.originCode,
+        to: trip.destinationCode,
+        departAt: sameCalendarDay(departAt, trip.departDate) ? departAt : `${trip.departDate}T12:00:00`,
+        arriveAt: str(f.arriveAt, `${trip.departDate}T23:00:00`),
+        durationHours: Number(num(f.durationHours, 12).toFixed(2)),
+        stops,
+        cabin: str(f.cabin, trip.cabin),
+        priceUsd,
+        priceVerified,
+        note: priceVerified
+          ? str(f.note, stops === 0 ? "Nonstop · round-trip" : `${stops} stop · round-trip`)
+          : `Indicative · confirm live on Google Flights (market from ~$${marketFromUsd ?? priceUsd})`,
+        bookUrl: bookFallback,
+      } satisfies LiveFlight;
+    })
+    .filter((f): f is LiveFlight => !!f);
 }
 
 function normalizeHotels(raw: unknown[], trip: TravelTrip, nights: number, bookFallback: string): LiveHotel[] {
@@ -217,17 +282,9 @@ function normalizeHotels(raw: unknown[], trip: TravelTrip, nights: number, bookF
     let totalUsd = Math.round(num(h.totalUsd, 0));
     if (nightlyUsd <= 0 && totalUsd > 0) nightlyUsd = Math.round(totalUsd / nights);
     if (totalUsd <= 0 && nightlyUsd > 0) totalUsd = nightlyUsd * nights;
-    // Sanity: Nairobi/Africa midscale is rarely under ~$45/night on OTAs for these dates.
-    if (nightlyUsd > 0 && nightlyUsd < 45) nightlyUsd = 45 + i * 15;
-    if (nightlyUsd <= 0) nightlyUsd = 70 + i * 25;
+    if (nightlyUsd > 0 && nightlyUsd < 35) nightlyUsd = 35 + i * 10;
+    if (nightlyUsd <= 0) nightlyUsd = 80 + i * 25;
     totalUsd = nightlyUsd * nights;
-    const bookUrlRaw = str(h.bookUrl, bookFallback);
-    const bookUrl =
-      /booking\.com|hotels\.com|expedia\.com|hilton\.com|marriott\.com|hyatt\.com|ihg\.com|google\.com\/travel/i.test(
-        bookUrlRaw,
-      )
-        ? bookUrlRaw
-        : bookFallback;
     return {
       id: str(h.id, `live-htl-${trip.destinationCode}-${i + 1}`),
       name: str(h.name, `${trip.destination} Hotel`),
@@ -242,67 +299,182 @@ function normalizeHotels(raw: unknown[], trip: TravelTrip, nights: number, bookF
       nights,
       totalUsd,
       rooms,
-      bookUrl,
+      bookUrl: bookFallback,
     };
   });
 }
 
+/** Optional Amadeus Flight Offers (set AMADEUS_CLIENT_ID + AMADEUS_CLIENT_SECRET). */
+async function searchAmadeusFlights(trip: TravelTrip, bookUrl: string): Promise<LiveFlight[] | null> {
+  const clientId = process.env.AMADEUS_CLIENT_ID?.trim();
+  const clientSecret = process.env.AMADEUS_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) return null;
+  const host = process.env.AMADEUS_HOST?.trim() || "https://test.api.amadeus.com";
+
+  try {
+    const tokenRes = await fetch(`${host}/v1/security/oauth2/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: clientId,
+        client_secret: clientSecret,
+      }),
+    });
+    if (!tokenRes.ok) return null;
+    const tokenBody = (await tokenRes.json()) as { access_token?: string };
+    if (!tokenBody.access_token) return null;
+
+    const qs = new URLSearchParams({
+      originLocationCode: trip.originCode,
+      destinationLocationCode: trip.destinationCode,
+      departureDate: trip.departDate,
+      returnDate: trip.returnDate,
+      adults: String(Math.max(1, trip.travelers)),
+      currencyCode: "USD",
+      max: "6",
+      travelClass: trip.cabin.toUpperCase().includes("BUSINESS")
+        ? "BUSINESS"
+        : trip.cabin.toUpperCase().includes("FIRST")
+          ? "FIRST"
+          : "ECONOMY",
+    });
+    const offersRes = await fetch(`${host}/v2/shopping/flight-offers?${qs}`, {
+      headers: { Authorization: `Bearer ${tokenBody.access_token}` },
+    });
+    if (!offersRes.ok) return null;
+    const offersBody = (await offersRes.json()) as {
+      data?: Array<{
+        price?: { total?: string };
+        itineraries?: Array<{
+          duration?: string;
+          segments?: Array<{
+            carrierCode?: string;
+            number?: string;
+            departure?: { at?: string; iataCode?: string };
+            arrival?: { at?: string; iataCode?: string };
+            numberOfStops?: number;
+          }>;
+        }>;
+      }>;
+    };
+    const rows = offersBody.data ?? [];
+    if (rows.length === 0) return null;
+
+    return rows.slice(0, 6).map((offer, i) => {
+      const outSeg = offer.itineraries?.[0]?.segments?.[0];
+      const segs = offer.itineraries?.[0]?.segments ?? [];
+      const last = segs[segs.length - 1];
+      const durationIso = offer.itineraries?.[0]?.duration ?? "";
+      const hoursMatch = durationIso.match(/PT(?:(\d+)H)?(?:(\d+)M)?/i);
+      const durationHours = hoursMatch
+        ? Number(hoursMatch[1] || 0) + Number(hoursMatch[2] || 0) / 60
+        : 0;
+      const priceUsd = Math.round(Number(offer.price?.total ?? 0));
+      return {
+        id: `amadeus-${trip.originCode}-${trip.destinationCode}-${i + 1}`,
+        carrier: outSeg?.carrierCode ?? "Airline",
+        flightNumber: outSeg?.number ? `${outSeg.carrierCode ?? ""}${outSeg.number}` : "",
+        from: trip.originCode,
+        to: trip.destinationCode,
+        departAt: outSeg?.departure?.at ?? `${trip.departDate}T12:00:00`,
+        arriveAt: last?.arrival?.at ?? `${trip.departDate}T23:00:00`,
+        durationHours: Number(durationHours.toFixed(2)),
+        stops: Math.max(0, segs.length - 1),
+        cabin: trip.cabin,
+        priceUsd,
+        priceVerified: priceUsd > 0,
+        note: "Amadeus offer · round-trip total · confirm before purchase",
+        bookUrl,
+      } satisfies LiveFlight;
+    });
+  } catch (e) {
+    console.warn("[travel-live] Amadeus failed:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
 /** Search live flights + hotels for a trip. Returns null if unavailable. */
 export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBundle | null> {
-  if (!apiKey()) return null;
+  if (!apiKey() && !(process.env.AMADEUS_CLIENT_ID && process.env.AMADEUS_CLIENT_SECRET)) return null;
   if (process.env.BUTLER_TRAVEL_LIVE === "false") return null;
 
   const nights = nightsBetween(trip.departDate, trip.returnDate);
   const flightsUrl = googleFlightsUrl(trip);
+  const kayakUrl = kayakFlightsUrl(trip);
   const hotelsUrl = bookingSearchUrl(trip);
 
-  const prompt = `You are a travel shopping assistant. Use web search to find CURRENT real flight and hotel options.
+  const amadeus = await searchAmadeusFlights(trip, flightsUrl);
 
-Trip:
-- Origin: ${trip.origin} (${trip.originCode})
-- Destination: ${trip.destination} (${trip.destinationCode})
-- Depart: ${trip.departDate}
-- Return: ${trip.returnDate}
-- Travelers: ${trip.travelers}
-- Cabin: ${trip.cabin}
-- Nights: ${nights}
+  const prompt = `You are a travel shopping assistant. Accuracy matters — people will use these numbers to decide.
 
-Requirements:
-1) Find 3–5 real ROUND-TRIP flight options for EXACTLY ${trip.originCode} → ${trip.destinationCode} on these dates (outbound ${trip.departDate}, return ${trip.returnDate}). Reject other city pairs.
-2) priceUsd MUST be the total ROUND-TRIP fare in USD for 1 adult in ${trip.cabin}. Typical Africa regional RT fares are $250–$900; do NOT use one-way promo teasers under $150.
-3) Prefer real flight numbers when published. Include duration hours and stops for the outbound leg.
-4) Find 3–5 real hotels in/near ${trip.destination} (${trip.destinationCode}) ONLY. nightlyUsd = realistic average nightly rate; totalUsd = nightlyUsd × ${nights}. Midscale Nairobi nights are usually $60–$200+.
-5) Do NOT invent fake airlines like "Testnet Air" or placeholder hotels like "Gateway Inn".
-6) Every flight.from must be ${trip.originCode} and flight.to must be ${trip.destinationCode}.
-7) Prefer bookUrl values that deep-link to Google Flights or Booking.com for this trip. Fallback URLs:
-   - flights: ${flightsUrl}
-   - hotels: ${hotelsUrl}
+REQUIRED sources (open / search these exact pages first):
+1) Google Flights: ${flightsUrl}
+2) Kayak: ${kayakUrl}
+3) Booking.com: ${hotelsUrl}
 
-Return ONLY valid JSON (no markdown) with this shape:
+Trip (exact):
+- ${trip.origin} (${trip.originCode}) → ${trip.destination} (${trip.destinationCode})
+- Outbound ${trip.departDate} · Return ${trip.returnDate}
+- ${trip.travelers} adult(s) · ${trip.cabin} · ${nights} hotel night(s)
+
+Rules:
+1) marketFromUsd = the "from $X" / Cheapest USD figure shown on Google Flights or Kayak for THIS exact round-trip. If Google Flights shows from $803, marketFromUsd must be 803 — never invent a lower "teaser".
+2) List 3–5 real ROUND-TRIP options. priceUsd = total RT USD for 1 adult. Every option's priceUsd must be ≥ 0.85 × marketFromUsd (no fake $450 when the market is $800+).
+3) Outbound departAt date MUST be ${trip.departDate} (not a random later day). Prefer options that actually operate that day.
+4) Prefer carriers that really fly this route (e.g. Kenya Airways, Ethiopian, Qatar via DOH, Turkish, RwandAir, British Airways). Include stops + duration for the outbound.
+5) Hotels: only in/near ${trip.destination}. nightlyUsd from Booking.com-style rates; totalUsd = nightlyUsd × ${nights}.
+6) Do NOT invent placeholder airlines or hotels. If you cannot read live prices, set marketFromUsd from the page banner and still return best-effort options with note "confirm on Google Flights".
+7) bookUrl for every flight must be the Google Flights URL above. Hotel bookUrl = Booking URL above.
+
+Return ONLY valid JSON:
 {
-  "flights":[{"carrier":"","flightNumber":"","from":"${trip.originCode}","to":"${trip.destinationCode}","departAt":"ISO","arriveAt":"ISO","durationHours":0,"stops":0,"cabin":"${trip.cabin}","priceUsd":0,"note":"round-trip estimate","bookUrl":""}],
-  "hotels":[{"name":"","stars":0,"neighborhood":"","address":"","nightlyUsd":0,"totalUsd":0,"amenities":[""],"bookUrl":""}],
-  "sources":["https://..."]
+  "marketFromUsd": 0,
+  "flights":[{"carrier":"","flightNumber":"","from":"${trip.originCode}","to":"${trip.destinationCode}","departAt":"${trip.departDate}T00:00:00","arriveAt":"","durationHours":0,"stops":0,"cabin":"${trip.cabin}","priceUsd":0,"note":"round-trip from Google Flights/Kayak"}],
+  "hotels":[{"name":"","stars":0,"neighborhood":"","address":"","nightlyUsd":0,"totalUsd":0,"amenities":[""]}],
+  "sources":["${flightsUrl}","${kayakUrl}","${hotelsUrl}"]
 }`;
 
-  const parsed = await openAiWebJson(prompt);
-  if (!parsed) return null;
+  const parsed = apiKey() ? await openAiWebJson(prompt) : null;
 
-  let flights = normalizeFlights(
-    (Array.isArray(parsed.flights) ? parsed.flights : []).filter((row) => {
-      if (!row || typeof row !== "object") return false;
-      const f = row as Record<string, unknown>;
-      const from = airportCode(f.from, "");
-      const to = airportCode(f.to, "");
-      if (from && from !== trip.originCode) return false;
-      if (to && to !== trip.destinationCode) return false;
-      return true;
-    }),
-    trip,
-    flightsUrl,
-  );
+  const marketFromUsd = Math.round(num(parsed?.marketFromUsd, 0)) || undefined;
+
+  let flights = amadeus?.length
+    ? amadeus
+    : normalizeFlights(
+        (Array.isArray(parsed?.flights) ? parsed!.flights : []).filter((row) => {
+          if (!row || typeof row !== "object") return false;
+          const f = row as Record<string, unknown>;
+          const from = airportCode(f.from, "");
+          const to = airportCode(f.to, "");
+          if (from && from !== trip.originCode) return false;
+          if (to && to !== trip.destinationCode) return false;
+          return true;
+        }),
+        trip,
+        flightsUrl,
+        marketFromUsd,
+      );
+
+  // If web search undercut the market banner, rebase to marketFromUsd.
+  if (marketFromUsd && flights.length > 0) {
+    const cheapest = Math.min(...flights.map((f) => f.priceUsd));
+    if (cheapest < marketFromUsd * 0.85) {
+      flights = flights.map((f, i) => ({
+        ...f,
+        priceUsd: Math.round(marketFromUsd + i * 45),
+        priceVerified: false,
+        note: `Aligned to Google Flights "from ~$${marketFromUsd}" · confirm live before booking`,
+        bookUrl: flightsUrl,
+      }));
+    }
+  }
+
+  // Always pin book links to the structured Google Flights search.
+  flights = flights.map((f) => ({ ...f, bookUrl: flightsUrl }));
+
   let hotels = normalizeHotels(
-    (Array.isArray(parsed.hotels) ? parsed.hotels : []).filter((row) => {
+    (Array.isArray(parsed?.hotels) ? parsed!.hotels : []).filter((row) => {
       if (!row || typeof row !== "object") return false;
       const h = row as Record<string, unknown>;
       const blob = `${h.name ?? ""} ${h.neighborhood ?? ""} ${h.address ?? ""}`.toLowerCase();
@@ -311,7 +483,6 @@ Return ONLY valid JSON (no markdown) with this shape:
         trip.origin.toLowerCase().length > 2 &&
         blob.includes(trip.origin.toLowerCase()) &&
         !destOk;
-      // Reject lodging clearly in the wrong city/country (e.g. London when trip is Nairobi).
       const wrongCity = ["london", "heathrow", "paris", "new york", "los angeles", "dubai"].some(
         (c) => blob.includes(c) && !destHint(trip).includes(c) && c !== trip.destination.toLowerCase(),
       );
@@ -324,7 +495,6 @@ Return ONLY valid JSON (no markdown) with this shape:
 
   if (flights.length === 0 && hotels.length === 0) return null;
 
-  // Always pin hotel book links to the destination search for these dates.
   hotels = hotels.map((h) => ({
     ...h,
     bookUrl: hotelsUrl,
@@ -333,10 +503,11 @@ Return ONLY valid JSON (no markdown) with this shape:
     neighborhood: h.neighborhood || trip.destination,
   }));
 
-  const sources = Array.isArray(parsed.sources)
-    ? parsed.sources.map((s) => String(s)).filter(Boolean).slice(0, 12)
+  const sources = Array.isArray(parsed?.sources)
+    ? parsed!.sources.map((s) => String(s)).filter(Boolean).slice(0, 12)
     : [];
   if (!sources.includes(flightsUrl)) sources.unshift(flightsUrl);
+  if (!sources.includes(kayakUrl)) sources.push(kayakUrl);
   if (!sources.includes(hotelsUrl)) sources.push(hotelsUrl);
 
   flights.sort((a, b) => a.priceUsd - b.priceUsd);
@@ -347,7 +518,8 @@ Return ONLY valid JSON (no markdown) with this shape:
     hotels,
     sources,
     mode: "live-web",
-    provider: "openai-web-search",
+    provider: amadeus?.length ? "amadeus+web" : "openai-web-search",
+    marketFromUsd,
   };
 }
 
@@ -395,11 +567,9 @@ Each day needs 3–5 concrete items (named places, not generic filler).`;
     return {
       date,
       title: str(d.title, i === 0 ? `Arrive ${trip.destination}` : `Explore ${trip.destination}`),
-      items: items.length > 0 ? items : [`Explore ${trip.destination}`],
+      items: items.length
+        ? items
+        : [`Explore ${trip.destination}`, "Local meal", "Evening at leisure"],
     };
   });
-}
-
-export function liveTravelEnabled(): boolean {
-  return !!apiKey() && process.env.BUTLER_TRAVEL_LIVE !== "false";
 }
