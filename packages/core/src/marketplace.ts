@@ -539,10 +539,10 @@ export const MARKETPLACE_ETFS: AgentEtf[] = [
   {
     id: "travel-etf",
     name: "Travel ETF",
-    description: "Live flight search → hotel search → day-by-day itinerary with book links",
+    description: "AI-routed live flight search → hotel search → day-by-day itinerary with book links",
     agentIds: ["flight-search-agent", "hotel-search-agent", "itinerary-agent"],
     bundlePriceUsdc: "0.07",
-    etaSeconds: 120,
+    etaSeconds: 150,
   },
 ];
 

@@ -149,8 +149,8 @@ function findAllCities(text: string): { name: string; code: string; index: numbe
   return unique;
 }
 
-/** Parse a free-text travel brief into a structured trip (deterministic defaults for testnet). */
-export function parseTravelTrip(brief?: string): TravelTrip {
+/** Parse a free-text travel brief with local rules (fallback when LLM parse is unavailable). */
+export function parseTravelTripLocal(brief?: string): TravelTrip {
   const t = (brief ?? "").toLowerCase();
 
   // Strongest: "from Lagos to Qatar" / "Lagos to Doha"
@@ -237,6 +237,11 @@ export function parseTravelTrip(brief?: string): TravelTrip {
   };
 }
 
+/** Sync alias — prefer `resolveTravelTrip` for LLM-backed worldwide parsing. */
+export function parseTravelTrip(brief?: string): TravelTrip {
+  return parseTravelTripLocal(brief);
+}
+
 function hashSeed(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
@@ -251,7 +256,8 @@ const CARRIERS = [
 ];
 
 export async function buildFlightSearchPayload(brief?: string, priorContext?: string) {
-  const trip = parseTravelTrip([brief, priorContext].filter(Boolean).join("\n"));
+  const { resolveTravelTrip } = await import("./travel-parse.ts");
+  const trip = await resolveTravelTrip(brief, priorContext);
   const live = await liveBundleFor(trip);
   if (live?.flights?.length) {
     const best = live.flights[0]!;
@@ -314,7 +320,8 @@ export async function buildFlightSearchPayload(brief?: string, priorContext?: st
 }
 
 export async function buildHotelSearchPayload(brief?: string, priorContext?: string) {
-  const trip = parseTravelTrip([brief, priorContext].filter(Boolean).join("\n"));
+  const { resolveTravelTrip } = await import("./travel-parse.ts");
+  const trip = await resolveTravelTrip(brief, priorContext);
   const nights = Math.max(
     1,
     Math.round((new Date(trip.returnDate).getTime() - new Date(trip.departDate).getTime()) / 86_400_000),
@@ -411,7 +418,8 @@ function extractJsonBlocks(context: string): Record<string, unknown>[] {
 
 export async function buildItineraryPayload(brief?: string, priorContext?: string) {
   const context = priorContext ?? "";
-  const trip = parseTravelTrip([brief, context].filter(Boolean).join("\n"));
+  const { resolveTravelTrip } = await import("./travel-parse.ts");
+  const trip = await resolveTravelTrip(brief, context);
   const blocks = extractJsonBlocks(context);
   const flightBlock = blocks.find((b) => b.type === "flight-search") as
     | { flights?: { carrier?: string; flightNumber?: string; priceUsd?: number; from?: string; to?: string }[] }
