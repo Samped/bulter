@@ -424,35 +424,46 @@ function isDemoHotelName(name: string): boolean {
   return /gateway\s*inn|harbor\s*loft|arc\s+.+\s+suites/i.test(name);
 }
 
-/** Probe live RT fares via web search (natural queries — URL-only prompts fail). */
-async function probeGoogleFlightsMarket(
+/** Single web-search call for flights + hotels (dual probes were empty under ETF load). */
+async function probeTravelBundle(
   trip: TravelTrip,
+  nights: number,
   flightsUrl: string,
-): Promise<{ marketFromUsd?: number; options: LiveFlight[] }> {
-  if (!apiKey()) return { options: [] };
+  hotelsUrl: string,
+): Promise<{ marketFromUsd?: number; flights: LiveFlight[]; hotels: LiveHotel[] }> {
+  if (!apiKey()) return { flights: [], hotels: [] };
 
-  const prompt = `Use web search RIGHT NOW for live round-trip economy fares (1 adult, USD):
+  const prompt = `Use web search RIGHT NOW for this trip (1 adult, USD, economy):
 ${trip.origin} (${trip.originCode}) → ${trip.destination} (${trip.destinationCode})
-Depart ${trip.departDate} · Return ${trip.returnDate}
+Depart ${trip.departDate} · Return ${trip.returnDate} · ${nights} hotel nights in ${trip.destination}
 
-Run searches like:
-- "${trip.originCode} ${trip.destinationCode} ${trip.departDate} ${trip.returnDate} Google Flights"
-- "${trip.origin} to ${trip.destination} flights ${trip.departDate} cheapest round trip"
+Search queries to run:
+1) "${trip.originCode} ${trip.destinationCode} ${trip.departDate} ${trip.returnDate} Google Flights"
+2) "${trip.origin} to ${trip.destination} cheapest round trip ${trip.departDate}"
+3) "${trip.destination} hotels ${trip.departDate} ${trip.returnDate} booking.com"
 
-Extract CURRENT prices from Google Flights / Kayak / major OTAs — not blog averages.
-marketFromUsd = cheapest round-trip total shown (integer USD).
-List up to 5 real options with carrier, priceUsd (RT), stops, durationHours, departAt on ${trip.departDate}.
-
-If Google Flights shows "Cheapest from $803", marketFromUsd MUST be 803 (not a remembered $400 teaser).
+Rules:
+- marketFromUsd = cheapest ROUND-TRIP flight total in USD from Google Flights/Kayak (integer). If the page says Cheapest from $803, use 803.
+- flights: 3–5 real carriers with priceUsd (RT), stops, durationHours, departAt on ${trip.departDate}.
+- hotels: 3–5 REAL property names in/near ${trip.destination} (e.g. Ibis Styles, Sarova, Best Western). Never Hotel X/Y/Z or Gateway Inn.
+- nightlyUsd realistic; totalUsd = nightlyUsd × ${nights}.
+- Do not invent Butler Jet / Arc Air / Testnet Air.
 
 Return ONLY JSON:
-{"marketFromUsd":803,"flights":[{"carrier":"RwandAir","flightNumber":"","from":"${trip.originCode}","to":"${trip.destinationCode}","departAt":"${trip.departDate}T14:45:00","arriveAt":"","durationHours":19.5,"stops":1,"cabin":"${trip.cabin}","priceUsd":803,"note":"Google Flights / OTA listed"}],"error":null}`;
+{
+  "marketFromUsd": 803,
+  "flights":[{"carrier":"RwandAir","flightNumber":"","from":"${trip.originCode}","to":"${trip.destinationCode}","departAt":"${trip.departDate}T14:45:00","arriveAt":"","durationHours":19.5,"stops":1,"cabin":"${trip.cabin}","priceUsd":803,"note":"Google Flights listed"}],
+  "hotels":[{"name":"Ibis Styles Nairobi Westlands","stars":3,"neighborhood":"Westlands","address":"","nightlyUsd":100,"totalUsd":${nights * 100},"amenities":["Wi-Fi"]}]
+}`;
 
-  const parsed = await openAiWebJson(prompt, 55_000);
-  if (!parsed) return { options: [] };
+  const parsed = await openAiWebJson(prompt, 60_000);
+  if (!parsed) {
+    console.warn("[travel-live] probeTravelBundle: no JSON from OpenAI");
+    return { flights: [], hotels: [] };
+  }
 
   const marketFromUsd = Math.round(num(parsed.marketFromUsd, 0)) || undefined;
-  const options = normalizeFlights(
+  const flights = normalizeFlights(
     Array.isArray(parsed.flights) ? parsed.flights : [],
     trip,
     flightsUrl,
@@ -462,39 +473,21 @@ Return ONLY JSON:
     .map((f) => ({
       ...f,
       bookUrl: flightsUrl,
-      note: /google|kayak|ota|listed/i.test(f.note) ? f.note : `${f.note} · live web`,
       priceVerified: !!(marketFromUsd && f.priceUsd >= marketFromUsd * 0.85),
     }));
 
-  return { marketFromUsd, options };
-}
+  const hotels = normalizeHotels(
+    Array.isArray(parsed.hotels) ? parsed.hotels : [],
+    trip,
+    nights,
+    hotelsUrl,
+  ).filter((h) => !isPlaceholderHotelName(h.name) && !isDemoHotelName(h.name));
 
-async function probeBookingHotels(
-  trip: TravelTrip,
-  nights: number,
-  hotelsUrl: string,
-): Promise<LiveHotel[]> {
-  if (!apiKey()) return [];
+  console.warn(
+    `[travel-live] ${trip.originCode}-${trip.destinationCode} market=$${marketFromUsd ?? "?"} flights=${flights.length} hotels=${hotels.length}`,
+  );
 
-  const prompt = `Use web search for CURRENT hotel rates in ${trip.destination} (${trip.destinationCode}).
-Check-in ${trip.departDate} · Check-out ${trip.returnDate} · ${nights} nights · USD.
-
-Search: "${trip.destination} hotels ${trip.departDate} ${trip.returnDate} booking.com" and Google Hotels.
-List 3–5 REAL property names that exist (e.g. Ibis Styles, Sarova, Best Western) — never Hotel X/Y/Z or Gateway Inn.
-nightlyUsd = typical nightly USD; totalUsd = nightlyUsd × ${nights}.
-
-Return ONLY JSON:
-{"hotels":[{"name":"Ibis Styles Nairobi Westlands","stars":3,"neighborhood":"Westlands","address":"","nightlyUsd":100,"totalUsd":${nights * 100},"amenities":["Wi-Fi"]}]}`;
-
-  const parsed = await openAiWebJson(prompt, 50_000);
-  if (!parsed || !Array.isArray(parsed.hotels)) return [];
-
-  return normalizeHotels(parsed.hotels, trip, nights, hotelsUrl).filter((h) => {
-    if (isPlaceholderHotelName(h.name) || isDemoHotelName(h.name)) return false;
-    return destHint(trip).some((tok) =>
-      `${h.name} ${h.neighborhood} ${h.address ?? ""}`.toLowerCase().includes(tok),
-    );
-  });
+  return { marketFromUsd, flights, hotels };
 }
 
 /** Search live flights + hotels. Always returns a bundle when live is enabled (never silent demo). */
@@ -507,17 +500,14 @@ export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBund
   const kayakUrl = kayakFlightsUrl(trip);
   const hotelsUrl = bookingSearchUrl(trip);
 
-  const [amadeus, googleProbe, hotelsRaw] = await Promise.all([
-    searchAmadeusFlights(trip, flightsUrl),
-    apiKey()
-      ? probeGoogleFlightsMarket(trip, flightsUrl)
-      : Promise.resolve({ options: [] as LiveFlight[] }),
-    apiKey() ? probeBookingHotels(trip, nights, hotelsUrl) : Promise.resolve([] as LiveHotel[]),
-  ]);
+  const amadeus = await searchAmadeusFlights(trip, flightsUrl);
+  const probed = apiKey()
+    ? await probeTravelBundle(trip, nights, flightsUrl, hotelsUrl)
+    : { flights: [] as LiveFlight[], hotels: [] as LiveHotel[] };
 
-  let marketFromUsd = googleProbe.marketFromUsd;
+  let marketFromUsd = probed.marketFromUsd;
   let flights: LiveFlight[] = [];
-  let hotels = hotelsRaw.filter((h) => !isPlaceholderHotelName(h.name) && !isDemoHotelName(h.name));
+  let hotels = probed.hotels;
 
   if (amadeus?.length) {
     flights = amadeus.filter((f) => !isDemoCarrier(f.carrier));
@@ -525,11 +515,10 @@ export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBund
       const cheapest = Math.min(...flights.map((f) => f.priceUsd));
       marketFromUsd = marketFromUsd ? Math.max(marketFromUsd, cheapest) : cheapest;
     }
-  } else if (googleProbe.options.length > 0) {
-    flights = googleProbe.options.filter((f) => !isDemoCarrier(f.carrier));
+  } else {
+    flights = probed.flights;
   }
 
-  // Discard clearly invented teaser markets (one-way-looking) when nothing is price-verified.
   if (marketFromUsd && marketFromUsd < 250 && flights.every((f) => !f.priceVerified)) {
     console.warn(
       `[travel-live] discarding suspicious marketFromUsd=$${marketFromUsd} for ${trip.originCode}-${trip.destinationCode}`,
@@ -553,7 +542,7 @@ export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBund
 
   flights = flights.map((f) => ({ ...f, bookUrl: flightsUrl }));
 
-  if (flights.length === 0 && marketFromUsd && marketFromUsd >= 500) {
+  if (flights.length === 0 && marketFromUsd && marketFromUsd >= 250) {
     flights = [
       {
         id: `gf-market-${trip.originCode}-${trip.destinationCode}`,
