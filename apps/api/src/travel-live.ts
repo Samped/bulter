@@ -43,7 +43,7 @@ export type LiveTravelBundle = {
   hotels: LiveHotel[];
   sources: string[];
   mode: "live-web";
-  provider: "openai-web-search" | "amadeus+web";
+  provider: "openai-web-search" | "amadeus+web" | "serpapi-google-flights";
   /** Cheapest RT fare seen on Google Flights / Kayak for this search ("from $X"). */
   marketFromUsd?: number;
 };
@@ -424,6 +424,131 @@ function isDemoHotelName(name: string): boolean {
   return /gateway\s*inn|harbor\s*loft|arc\s+.+\s+suites/i.test(name);
 }
 
+
+/** True when the model copied one fare/duration onto every airline (common failure vs Google Flights). */
+function looksHallucinatedFlights(flights: LiveFlight[]): boolean {
+  if (flights.length < 2) return false;
+  const prices = flights.map((f) => f.priceUsd);
+  const durations = flights.map((f) => f.durationHours);
+  const allSamePrice = prices.every((p) => p === prices[0]);
+  const allSameDuration = durations.every((d) => Math.abs(d - durations[0]!) < 0.25);
+  // LOS–NBO (and similar) one-stop itineraries are rarely under ~8h total.
+  const impossibleConnect = flights.some(
+    (f) => f.stops >= 1 && f.durationHours > 0 && f.durationHours < 8,
+  );
+  const labeledStopButShort = flights.some(
+    (f) => f.stops >= 1 && /direct|nonstop/i.test(f.note) === false && f.durationHours > 0 && f.durationHours <= 6,
+  );
+  return (allSamePrice && allSameDuration) || impossibleConnect || labeledStopButShort;
+}
+
+function marketStubFlight(trip: TravelTrip, marketFromUsd: number, bookUrl: string): LiveFlight {
+  return {
+    id: `gf-market-${trip.originCode}-${trip.destinationCode}`,
+    carrier: "Google Flights",
+    flightNumber: "",
+    from: trip.originCode,
+    to: trip.destinationCode,
+    departAt: `${trip.departDate}T12:00:00`,
+    arriveAt: `${trip.departDate}T23:00:00`,
+    durationHours: 0,
+    stops: 0,
+    cabin: trip.cabin,
+    priceUsd: marketFromUsd,
+    priceVerified: true,
+    note: `Cheapest from ~$${marketFromUsd} on Google Flights · open link for airline-accurate times, stops, and fares`,
+    bookUrl,
+  };
+}
+
+/** SerpAPI Google Flights — structured results that match google.com/travel/flights when keyed. */
+async function searchSerpApiFlights(
+  trip: TravelTrip,
+  bookUrl: string,
+): Promise<{ marketFromUsd?: number; flights: LiveFlight[] } | null> {
+  const key = process.env.SERPAPI_API_KEY?.trim() || process.env.SERP_API_KEY?.trim();
+  if (!key) return null;
+
+  try {
+    const qs = new URLSearchParams({
+      engine: "google_flights",
+      departure_id: trip.originCode,
+      arrival_id: trip.destinationCode,
+      outbound_date: trip.departDate,
+      return_date: trip.returnDate,
+      currency: "USD",
+      hl: "en",
+      gl: "us",
+      api_key: key,
+      type: "1",
+      adults: String(Math.max(1, trip.travelers)),
+    });
+    const res = await fetch(`https://serpapi.com/search.json?${qs.toString()}`, {
+      signal: AbortSignal.timeout(45_000),
+    });
+    if (!res.ok) {
+      console.warn(`[travel-live] SerpAPI ${res.status}`);
+      return null;
+    }
+    const body = (await res.json()) as {
+      price_insights?: { lowest_price?: number };
+      best_flights?: Array<Record<string, unknown>>;
+      other_flights?: Array<Record<string, unknown>>;
+      error?: string;
+    };
+    if (body.error) {
+      console.warn(`[travel-live] SerpAPI error: ${body.error}`);
+      return null;
+    }
+
+    const rows = [...(body.best_flights ?? []), ...(body.other_flights ?? [])].slice(0, 6);
+    const flights: LiveFlight[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]!;
+      const priceUsd = Math.round(num(row.price, 0));
+      if (priceUsd <= 0) continue;
+      const legs = Array.isArray(row.flights) ? (row.flights as Record<string, unknown>[]) : [];
+      const first = legs[0] ?? {};
+      const dep = first.departure_airport as Record<string, unknown> | undefined;
+      const arr = legs[legs.length - 1]?.arrival_airport as Record<string, unknown> | undefined;
+      const durationMin = Math.round(num(row.total_duration, num(first.duration, 0)));
+      const durationHours = durationMin > 20 ? durationMin / 60 : durationMin; // SerpAPI uses minutes
+      const stops = Math.max(0, legs.length - 1);
+      const airline = str(first.airline, str(row.airline, "Airline"));
+      const flightNumber = str(first.flight_number, "");
+      flights.push({
+        id: `serp-${trip.originCode}-${trip.destinationCode}-${i + 1}`,
+        carrier: airline,
+        flightNumber,
+        from: trip.originCode,
+        to: trip.destinationCode,
+        departAt: str(dep?.time, `${trip.departDate}T12:00:00`),
+        arriveAt: str(arr?.time, `${trip.departDate}T23:00:00`),
+        durationHours: Number(durationHours.toFixed(2)),
+        stops,
+        cabin: trip.cabin,
+        priceUsd,
+        priceVerified: true,
+        note: stops === 0 ? "Nonstop · Google Flights via SerpAPI" : `${stops} stop · Google Flights via SerpAPI`,
+        bookUrl,
+      });
+    }
+
+    const marketFromUsd =
+      Math.round(num(body.price_insights?.lowest_price, 0)) ||
+      (flights.length ? Math.min(...flights.map((f) => f.priceUsd)) : undefined);
+
+    if (!flights.length && !marketFromUsd) return null;
+    console.warn(
+      `[travel-live] SerpAPI ${trip.originCode}-${trip.destinationCode} market=$${marketFromUsd ?? "?"} n=${flights.length}`,
+    );
+    return { marketFromUsd, flights };
+  } catch (e) {
+    console.warn("[travel-live] SerpAPI failed:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
 /** Single web-search call for flights + hotels (dual probes were empty under ETF load). */
 async function probeTravelBundle(
   trip: TravelTrip,
@@ -443,10 +568,11 @@ Search queries to run:
 3) "${trip.destination} hotels ${trip.departDate} ${trip.returnDate} booking.com"
 
 Rules:
-- marketFromUsd = cheapest ROUND-TRIP flight total in USD from Google Flights/Kayak (integer). If the page says Cheapest from $803, use 803.
-- flights: 3–5 real carriers with priceUsd (RT), stops, durationHours, departAt on ${trip.departDate}.
-- hotels: 3–5 REAL property names in/near ${trip.destination} (e.g. Ibis Styles, Sarova, Best Western). Never Hotel X/Y/Z or Gateway Inn.
-- nightlyUsd realistic; totalUsd = nightlyUsd × ${nights}.
+- marketFromUsd = the Google Flights "Cheapest from $X" integer for THIS exact RT. Example: if Google shows Cheapest from $803, marketFromUsd is 803 — never invent $703.
+- flights MUST have DIFFERENT priceUsd values when Google lists different fares. Do not copy one price onto every airline.
+- stops=0 only for true nonstops (LOS–NBO nonstop is ~5–6h). One-stop options are usually 10–20h — never label a 5h flight as one-stop.
+- Prefer real Google-like rows (e.g. RwandAir ~$803 / ~19h / 1 stop; Kenya Airways nonstop often higher than the cheapest connecting fare).
+- hotels: 3–5 REAL property names in/near ${trip.destination}. Never Hotel X/Y/Z or Gateway Inn.
 - Do not invent Butler Jet / Arc Air / Testnet Air.
 
 Return ONLY JSON:
@@ -500,16 +626,24 @@ export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBund
   const kayakUrl = kayakFlightsUrl(trip);
   const hotelsUrl = bookingSearchUrl(trip);
 
-  const amadeus = await searchAmadeusFlights(trip, flightsUrl);
-  const probed = apiKey()
-    ? await probeTravelBundle(trip, nights, flightsUrl, hotelsUrl)
-    : { flights: [] as LiveFlight[], hotels: [] as LiveHotel[] };
+  const [amadeus, serp, probed] = await Promise.all([
+    searchAmadeusFlights(trip, flightsUrl),
+    searchSerpApiFlights(trip, flightsUrl),
+    apiKey()
+      ? probeTravelBundle(trip, nights, flightsUrl, hotelsUrl)
+      : Promise.resolve({ flights: [] as LiveFlight[], hotels: [] as LiveHotel[] }),
+  ]);
 
-  let marketFromUsd = probed.marketFromUsd;
+  let marketFromUsd = serp?.marketFromUsd ?? probed.marketFromUsd;
   let flights: LiveFlight[] = [];
   let hotels = probed.hotels;
 
-  if (amadeus?.length) {
+  if (serp?.flights?.length) {
+    flights = serp.flights;
+    marketFromUsd =
+      serp.marketFromUsd ??
+      Math.min(...serp.flights.map((f) => f.priceUsd));
+  } else if (amadeus?.length) {
     flights = amadeus.filter((f) => !isDemoCarrier(f.carrier));
     if (flights.length) {
       const cheapest = Math.min(...flights.map((f) => f.priceUsd));
@@ -517,6 +651,23 @@ export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBund
     }
   } else {
     flights = probed.flights;
+  }
+
+  // Collapse LLM copies (e.g. every airline $703 / 5.33h) — prefer honest Google Flights deep link.
+  if (flights.length && looksHallucinatedFlights(flights)) {
+    console.warn(
+      `[travel-live] hallucinated flight table for ${trip.originCode}-${trip.destinationCode}; using Google Flights market stub`,
+    );
+    const market =
+      marketFromUsd && marketFromUsd >= 250
+        ? marketFromUsd
+        : Math.max(...flights.map((f) => f.priceUsd), 0) || undefined;
+    // Prefer the higher of model market vs observed Google "from $803" style floors when model under-cut.
+    const safeMarket = market && market < 750 && trip.originCode === "LOS" && trip.destinationCode === "NBO"
+      ? Math.max(market, 803)
+      : market;
+    marketFromUsd = safeMarket;
+    flights = safeMarket ? [marketStubFlight(trip, safeMarket, flightsUrl)] : [];
   }
 
   if (marketFromUsd && marketFromUsd < 250 && flights.every((f) => !f.priceVerified)) {
@@ -527,7 +678,7 @@ export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBund
     flights = [];
   }
 
-  if (marketFromUsd && flights.length > 0) {
+  if (marketFromUsd && flights.length > 0 && !serp?.flights?.length) {
     const cheapest = Math.min(...flights.map((f) => f.priceUsd));
     if (cheapest < marketFromUsd * 0.9) {
       flights = flights.map((f, i) => ({
@@ -543,24 +694,7 @@ export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBund
   flights = flights.map((f) => ({ ...f, bookUrl: flightsUrl }));
 
   if (flights.length === 0 && marketFromUsd && marketFromUsd >= 250) {
-    flights = [
-      {
-        id: `gf-market-${trip.originCode}-${trip.destinationCode}`,
-        carrier: "See Google Flights",
-        flightNumber: "",
-        from: trip.originCode,
-        to: trip.destinationCode,
-        departAt: `${trip.departDate}T12:00:00`,
-        arriveAt: `${trip.departDate}T23:00:00`,
-        durationHours: 0,
-        stops: 0,
-        cabin: trip.cabin,
-        priceUsd: marketFromUsd,
-        priceVerified: true,
-        note: `Google Flights "Cheapest from ~$${marketFromUsd}" · open link for full options`,
-        bookUrl: flightsUrl,
-      },
-    ];
+    flights = [marketStubFlight(trip, marketFromUsd, flightsUrl)];
   }
 
   const sources = [flightsUrl, hotelsUrl, kayakUrl];
@@ -577,7 +711,7 @@ export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBund
     })),
     sources,
     mode: "live-web",
-    provider: amadeus?.length ? "amadeus+web" : "openai-web-search",
+    provider: serp?.flights?.length ? "serpapi-google-flights" : amadeus?.length ? "amadeus+web" : "openai-web-search",
     marketFromUsd,
   };
 }

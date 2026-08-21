@@ -59,9 +59,9 @@ export function FlightSearchBlock({ data }: { data: Record<string, unknown> }) {
       {searchUrl && (
         <p className="paper-prose">
           <a href={searchUrl} target="_blank" rel="noreferrer">
-            Open live Google Flights for this exact trip
+            Open Google Flights (source of truth for this trip)
           </a>
-          {" — use this for booking decisions; listed fares can move."}
+          {" — listed rows can lag; confirm price, stops, and times there before buying."}
         </p>
       )}
       <ol className="paper-numbered-list">
