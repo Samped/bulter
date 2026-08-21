@@ -601,23 +601,34 @@ export async function buildItineraryPayload(brief?: string, priorContext?: strin
   const hotelCost = Number(hotel?.totalUsd ?? 0);
   const estimateUsd = Number((flightCost + hotelCost).toFixed(2));
   const liveMode = liveDays != null || live != null;
+  const hasBudget = estimateUsd > 0;
 
   return {
     type: "travel-itinerary",
     mode: liveMode ? "live-web" : "testnet-demo",
-    summary: `Itinerary ${trip.origin} → ${trip.destination} (${trip.departDate}–${trip.returnDate}). Est. total ~$${estimateUsd.toFixed(0)} (selected RT flight + ${nights}-night stay).`,
+    summary: hasBudget
+      ? `Itinerary ${trip.origin} → ${trip.destination} (${trip.departDate}–${trip.returnDate}). Est. total ~$${estimateUsd.toFixed(0)} (selected RT flight + ${nights}-night stay).`
+      : `Itinerary ${trip.origin} → ${trip.destination} (${trip.departDate}–${trip.returnDate}). Open Google Flights + Booking.com for live totals before you budget.`,
     trip,
     selectedFlight: flight ?? null,
     selectedHotel: hotel ?? null,
     days,
-    budgetEstimateUsd: estimateUsd,
-    budgetBreakdown: {
-      flightUsd: flightCost,
-      hotelUsd: hotelCost,
-      nights,
-      travelers: trip.travelers,
-      note: "Flight fare is round-trip; hotel is stay total. Confirm both on Google Flights / Booking before purchase.",
-    },
+    budgetEstimateUsd: hasBudget ? estimateUsd : undefined,
+    budgetBreakdown: hasBudget
+      ? {
+          flightUsd: flightCost,
+          hotelUsd: hotelCost,
+          nights,
+          travelers: trip.travelers,
+          note: "Flight fare is round-trip; hotel is stay total. Confirm both on Google Flights / Booking before purchase.",
+        }
+      : {
+          flightUsd: 0,
+          hotelUsd: 0,
+          nights,
+          travelers: trip.travelers,
+          note: "No verified flight/hotel prices in this run — use the linked Google Flights and Booking.com searches.",
+        },
     searchUrls: {
       flights: googleFlightsUrl(trip),
       hotels: bookingSearchUrl(trip),
