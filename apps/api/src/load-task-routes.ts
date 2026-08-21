@@ -297,8 +297,8 @@ export async function loadTaskRoutes(app: Express): Promise<void> {
     return loadMarketplaceState(STATE_PATH, SELLER);
   }
 
-  app.get("/api/marketplace/jobs", (_req, res) => {
-    res.json(loadMp().jobs.slice(-50).reverse());
+  app.get("/api/marketplace/jobs", async (req, res) => {
+    await handleListDeliverables(req, res, STATE_PATH, SELLER);
   });
 
   app.get("/api/marketplace/jobs/:id", async (req, res) => {
