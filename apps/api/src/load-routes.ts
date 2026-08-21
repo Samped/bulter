@@ -56,7 +56,7 @@ export async function loadRoutes(app: Express): Promise<void> {
 
   const { ARC_EIP155, GATEWAY_FACILITATOR, resolveArcRpc } = arc;
   const { decodeBatch } = circleAgentDecode;
-  const { fetchSettlement, resolveBatchTx } = circleAgentTrace;
+  const { fetchSettlement, resolveBatchTx, ownerFromTraceRequest } = circleAgentTrace;
   const {
     arcCanteenAvailable,
     arcCanteenRpcUrl,
@@ -274,13 +274,15 @@ app.get("/api/stack/status", (_req, res) => {
 
 /** Arc 101 — settlement lookup (circle-agent compatible). */
 app.get("/api/settlement/:id", async (req, res) => {
-  const { status, body } = await fetchSettlement(req.params.id);
+  const owner = ownerFromTraceRequest(req);
+  const { status, body } = await fetchSettlement(req.params.id, owner);
   res.status(status).type("application/json").send(body);
 });
 
 app.get("/api/batch-tx/:id", async (req, res) => {
   try {
-    const result = await resolveBatchTx(req.params.id);
+    const owner = ownerFromTraceRequest(req);
+    const result = await resolveBatchTx(req.params.id, owner);
     if ("error" in result && result.error) {
       res.status(result.status ?? 400).json({ error: result.error });
       return;

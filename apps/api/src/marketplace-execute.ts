@@ -411,6 +411,7 @@ export async function executeLocalAgentPay(
       amountUsdc,
       payerAddress: payer.payerAddress,
       executorAddress: payer.executorAddress,
+      payerEmail: payer.payerEmail,
       initiator,
       status: "blocked",
       reason: decision.reason,
@@ -441,6 +442,7 @@ export async function executeLocalAgentPay(
     settlementId,
     payerAddress: payer.payerAddress,
     executorAddress: payer.executorAddress,
+    payerEmail: payer.payerEmail,
     initiator,
     status: "settled",
   };
@@ -562,6 +564,7 @@ export function registerAgentExecuteRoutes(
           settlementId: req.payment?.transaction,
           payerAddress: payer.payerAddress,
           executorAddress: payer.executorAddress,
+          payerEmail: payer.payerEmail,
           initiator: spendInitiatorFromMarketplaceQuery(req.query as Record<string, unknown>),
           status: "blocked",
           reason: decision.reason,
@@ -594,6 +597,7 @@ export function registerAgentExecuteRoutes(
         settlementId: req.payment?.transaction,
         payerAddress: payer.payerAddress,
         executorAddress: payer.executorAddress,
+        payerEmail: payer.payerEmail,
         initiator: spendInitiatorFromMarketplaceQuery(req.query as Record<string, unknown>),
         status: "settled",
       };

@@ -5,6 +5,7 @@ import {
 } from "@butler/core";
 import {
   backfillJobsForOwner,
+  normalizeOwnerEmail,
   resolveJobOwnerFromRequest,
   type JobOwner,
 } from "./job-owner.ts";
@@ -23,6 +24,10 @@ export function libraryJobsForOwner(
   sellerAddress: `0x${string}`,
   owner: JobOwner
 ): { jobs: MarketplaceJob[]; persisted: boolean } {
+  // Library is private to a Circle login email (or that browser session for legacy).
+  if (!normalizeOwnerEmail(owner.email) && !owner.sessionId) {
+    return { jobs: [], persisted: false };
+  }
   const state = loadMarketplaceState(statePath, sellerAddress);
   const candidates = state.jobs.filter((j) => LIBRARY_STATUSES.has(j.status));
   const { jobs, updated } = backfillJobsForOwner(candidates, owner);
@@ -42,6 +47,10 @@ export async function handleListDeliverables(
   sellerAddress: `0x${string}`
 ): Promise<void> {
   const owner = resolveJobOwnerFromRequest(req);
+  if (!normalizeOwnerEmail(owner.email) && !owner.sessionId) {
+    res.json([]);
+    return;
+  }
   const { jobs } = libraryJobsForOwner(statePath, sellerAddress, owner);
   const { buildJobSummary, inferPlanFromJob } = await import("./marketplace-task.ts");
   const rows = jobs
@@ -72,13 +81,22 @@ export async function handleGetDeliverable(
   sellerAddress: `0x${string}`
 ): Promise<void> {
   const owner = resolveJobOwnerFromRequest(req);
+  if (!normalizeOwnerEmail(owner.email) && !owner.sessionId) {
+    res.status(404).json({ error: "Job not found" });
+    return;
+  }
   const state = loadMarketplaceState(statePath, sellerAddress);
   const job = state.jobs.find((j) => j.id === req.params.id);
   if (!job) {
     res.status(404).json({ error: "Job not found" });
     return;
   }
-  const { jobs } = backfillJobsForOwner([job], owner);
+  const { jobs, updated } = backfillJobsForOwner([job], owner);
+  if (updated.length > 0) {
+    const map = new Map(state.jobs.map((j) => [j.id, j]));
+    for (const row of updated) map.set(row.id, row);
+    saveMarketplaceState({ ...state, jobs: Array.from(map.values()) }, statePath);
+  }
   const visible = jobs[0];
   if (!visible) {
     res.status(404).json({ error: "Job not found" });

@@ -40,6 +40,13 @@ export function DeliverablesView({
   const mobileDetail = isMobile && !!selected;
 
   const loadList = useCallback(async () => {
+    if (!payerLoggedIn) {
+      setItems([]);
+      setSelected(null);
+      setLoading(false);
+      setError(null);
+      return [];
+    }
     setLoading(true);
     setError(null);
     const cached = loadLibraryCache();
@@ -64,7 +71,7 @@ export function DeliverablesView({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [payerLoggedIn]);
 
   useEffect(() => {
     void loadList();

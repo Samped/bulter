@@ -47,6 +47,8 @@ export interface SpendRecord {
   executorAddress?: string;
   /** Who triggered the payment — Mine filter uses `user` only. */
   initiator?: SpendInitiator;
+  /** Circle login email that owns this spend (per-account isolation). */
+  payerEmail?: string;
   status: "pending" | "settled" | "blocked" | "failed";
   reason?: string;
 }

@@ -215,7 +215,7 @@ export function App() {
       if (!silent) {
         setRefreshTick((t) => t + 1);
         if (tab === "activity") {
-          await loadActivityLedger(activityScope);
+          await loadActivityLedger("mine");
         }
       }
 
@@ -424,16 +424,14 @@ export function App() {
   }, [tab]);
 
   useEffect(() => {
-    const loggedIn = circleStatus?.loggedIn ?? !!loadPayerDisplayCache()?.loggedIn;
-    if (tab === "activity" && !loggedIn && activityScope === "mine") {
-      setActivityScope("all");
-    }
-  }, [tab, circleStatus?.loggedIn, activityScope]);
+    // Always keep Activity on the signed-in account — never switch to shared "all".
+    if (activityScope !== "mine") setActivityScope("mine");
+  }, [activityScope]);
 
   useEffect(() => {
     if (tab !== "activity") return;
-    void loadActivityLedger(activityScope);
-  }, [tab, activityScope, loadActivityLedger]);
+    void loadActivityLedger("mine");
+  }, [tab, loadActivityLedger]);
 
   useEffect(() => {
     if (!isMobile) {
@@ -536,33 +534,17 @@ export function App() {
       ? `$${formatUsdc(gatewayBalance)}`
       : "—";
 
-  const visibleActivityRecords =
-    activityRecords.length > 0
-      ? activityRecords
-      : activityScope === "all" && ledger.length > 0
-        ? ledger
-        : activityRecords;
+  const visibleActivityRecords = activityRecords;
 
-  const activityCountLabel =
-    activityScope === "mine"
-      ? `${visibleActivityRecords.length} yours · ${ledgerTotalCount || ledger.length} total on Butler`
-      : `${visibleActivityRecords.length || ledgerTotalCount || ledger.length} payments`;
+  const activityCountLabel = `${visibleActivityRecords.length} for your account`;
 
   const showActivityLoading = activityLoading && visibleActivityRecords.length === 0;
 
   const primaryPayerLabel = userWallet || agentStatus?.circleExecutorAddress || activityPayerAddresses[0] || "";
 
-  const activityWalletDesc =
-    activityScope === "mine" && primaryPayerLabel
-      ? (() => {
-          const gateway = activityPayerAddresses.find(
-            (a) => a.toLowerCase() !== primaryPayerLabel.toLowerCase()
-          );
-          return gateway
-            ? `Agent & Auctions · wallet ${shortAddr(primaryPayerLabel)} · Gateway ${shortAddr(gateway)} · ${activityCountLabel}`
-            : `Agent & Auctions only · wallet ${shortAddr(primaryPayerLabel)} · ${activityCountLabel}`;
-        })()
-      : null;
+  const activityWalletDesc = primaryPayerLabel
+    ? `Only your Circle email · wallet ${shortAddr(primaryPayerLabel)} · ${activityCountLabel}`
+    : null;
 
   const canFilterMine =
     !!userWallet ||
@@ -893,49 +875,20 @@ export function App() {
           {tab === "activity" && (
             <div className="activity-view">
             <Panel
-              title={activityScope === "mine" ? "Your payments" : "Payment ledger"}
+              title="Your payments"
               desc={
-                activityScope === "mine"
-                  ? activityWalletDesc ??
-                    (primaryPayerLabel
-                      ? `Agent & Auctions only · wallet ${shortAddr(primaryPayerLabel)} · ${activityCountLabel}`
-                      : `Agent & Auctions payments only · ${activityCountLabel}`)
-                  : `All accounts on this Butler instance · ${activityCountLabel}`
+                activityWalletDesc ??
+                (primaryPayerLabel
+                  ? `Only your Circle account · wallet ${shortAddr(primaryPayerLabel)} · ${activityCountLabel}`
+                  : `Only payments for your signed-in email · ${activityCountLabel}`)
               }
-              className={activityScope === "mine" ? "activity-panel-mine" : ""}
+              className="activity-panel-mine"
               action={
                 <div className="panel-head-actions">
-                  <div className="activity-scope-toggle" role="tablist" aria-label="Activity scope">
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={activityScope === "all"}
-                      className={`activity-scope-btn ${activityScope === "all" ? "active" : ""}`}
-                      onClick={() => setActivityScope("all")}
-                      title="Shared instance ledger — every payer on this Butler"
-                    >
-                      All
-                    </button>
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={activityScope === "mine"}
-                      className={`activity-scope-btn ${activityScope === "mine" ? "active" : ""}`}
-                      onClick={() => setActivityScope("mine")}
-                      disabled={!canFilterMine}
-                      title={
-                        canFilterMine
-                          ? "Show only your payments"
-                          : "Log in with Circle to filter your activity"
-                      }
-                    >
-                      Mine
-                    </button>
-                  </div>
                   <button
                     type="button"
                     className="btn ghost sm"
-                    onClick={() => void loadActivityLedger(activityScope)}
+                    onClick={() => void loadActivityLedger("mine")}
                     aria-label="Refresh ledger"
                   >
                     <IconRefresh size={15} />
@@ -947,13 +900,11 @@ export function App() {
                 <div className="activity-loading muted">Loading payments…</div>
               ) : visibleActivityRecords.length === 0 ? (
                 <EmptyState
-                  title={activityScope === "mine" ? "No Agent or Auctions payments yet" : "No payments yet"}
+                  title="No payments yet"
                   body={
-                    activityScope === "mine"
-                      ? canFilterMine
-                        ? "Mine shows tasks you run from the Agent tab or Auctions. Dev probes, CLI runs, and older history stay under All."
-                        : "Log in with Circle (Payer) to see activity tied to your wallet."
-                      : "All is the shared instance ledger — payments from every Circle account on this Butler. Use Mine for only yours."
+                    canFilterMine
+                      ? "Activity shows only tasks you paid for with this Circle email. Library and traces are private to your account."
+                      : "Log in with Circle (Payer) to see activity for your email only."
                   }
                 />
               ) : (

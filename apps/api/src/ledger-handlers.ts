@@ -4,12 +4,11 @@ import {
   applyJobAttribution,
   attributeLedgerRecords,
   filterLedgerForOwnerScope,
-  filterRecordsForOwner,
   resolveSessionActivityPayerAddresses,
 } from "./ledger-payer.ts";
 import { prefetchGatewayLedgerCache, syncLedgerFromGateway } from "./gateway-ledger-sync.ts";
 import { resolveMarketplaceForLedger, syncLedgerFromJobs } from "./ledger-sync.ts";
-import { resolveJobOwnerFromRequest, resolveOwnerPayerAddresses } from "./job-owner.ts";
+import { resolveJobOwnerFromRequest, resolveOwnerPayerAddresses, normalizeOwnerEmail } from "./job-owner.ts";
 import { LEDGER_BACKFILL_VERSION } from "./route-loader-status.ts";
 
 const JOBS_CACHE_MS = 15_000;
@@ -74,15 +73,22 @@ export async function handleGetLedger(
       ownerPayerAddresses.length > 0 ? ownerPayerAddresses : sessionPayers;
 
     const allRecords = attributed.slice().reverse();
-    const hasOwner = !!(owner.sessionId || owner.payerAddress || owner.gatewayPayerAddress);
+    const hasOwner = !!(
+      normalizeOwnerEmail(owner.email) ||
+      owner.sessionId ||
+      owner.payerAddress ||
+      owner.gatewayPayerAddress
+    );
 
+    // Multi-tenant: never return the shared instance ledger to a browser session.
+    // Logged-in users always get Mine; anonymous gets an empty list.
     let records: SpendRecord[];
-    if (scope === "mine") {
-      records = filterLedgerForOwnerScope(attributed, owner, jobs, auctions).slice().reverse();
-    } else if (hasOwner && scope === "yours") {
-      records = filterRecordsForOwner(attributed, owner, jobs, auctions).slice().reverse();
+    if (!hasOwner) {
+      records = [];
+    } else if (scope === "all" && !normalizeOwnerEmail(owner.email) && !owner.sessionId) {
+      records = [];
     } else {
-      records = allRecords;
+      records = filterLedgerForOwnerScope(attributed, owner, jobs, auctions).slice().reverse();
     }
 
     res.json({

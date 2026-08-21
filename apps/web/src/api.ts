@@ -252,6 +252,18 @@ function sessionHeaders(init?: RequestInit, withSession = true): Headers {
   const headers = new Headers(init?.headers as HeadersInit | undefined);
   if (withSession && typeof window !== "undefined") {
     headers.set("X-Butler-Session", getBrowserSessionId());
+    const email =
+      loadPayerDisplayCache()?.email?.trim().toLowerCase() ||
+      (() => {
+        try {
+          const raw = localStorage.getItem(PAYER_IDENTITY_KEY) ?? "";
+          const part = raw.split("|")[0]?.trim().toLowerCase();
+          return part?.includes("@") ? part : undefined;
+        } catch {
+          return undefined;
+        }
+      })();
+    if (email) headers.set("X-Butler-Payer-Email", email);
   }
   return headers;
 }

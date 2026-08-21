@@ -98,6 +98,8 @@ export interface MarketplaceJob {
   ownerSessionId?: string;
   /** Circle payer wallet that funded this job. */
   payerAddress?: string;
+  /** Circle login email that owns this job (primary Library isolation key). */
+  ownerEmail?: string;
 }
 
 export interface MarketplaceJobStep {
@@ -146,6 +148,8 @@ export interface ReverseAuction {
   /** Browser session that opened this auction (pays and owns the deliverable). */
   ownerSessionId?: string;
   payerAddress?: string;
+  /** Circle login email for auction ownership. */
+  ownerEmail?: string;
   events?: AuctionEvent[];
 }
 

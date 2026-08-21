@@ -5,7 +5,16 @@ const CACHE_VERSION = 1;
 const MAX_ITEMS = 120;
 
 function cacheKey(): string {
-  return `butler.library.v${CACHE_VERSION}.${getBrowserSessionId()}`;
+  const session = getBrowserSessionId();
+  let email = "";
+  try {
+    const raw = localStorage.getItem("butler.payerIdentity") ?? "";
+    email = raw.split("|")[0]?.trim().toLowerCase() ?? "";
+  } catch {
+    /* ignore */
+  }
+  const scope = email.includes("@") ? email : session;
+  return `butler.library.v${CACHE_VERSION}.${scope}`;
 }
 
 export function loadLibraryCache(): MarketplaceDeliverable[] {

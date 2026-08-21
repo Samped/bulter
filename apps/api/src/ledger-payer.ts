@@ -1,7 +1,12 @@
 import { privateKeyToAccount } from "viem/accounts";
 import { getMarketplaceAgent, type MarketplaceJob, type ReverseAuction, type SpendRecord, type SpendInitiator } from "@butler/core";
 import { loadCircleConfig, resolveCircleExecutorAddress, saveCircleConfig } from "./circle-config.ts";
-import { filterJobsForOwner, resolveOwnerPayerAddresses, type JobOwner } from "./job-owner.ts";
+import {
+  filterJobsForOwner,
+  normalizeOwnerEmail,
+  resolveOwnerPayerAddresses,
+  type JobOwner,
+} from "./job-owner.ts";
 
 export function getExecutorWalletAddress(): `0x${string}` | null {
   const fromCircle = resolveCircleExecutorAddress();
@@ -123,13 +128,16 @@ export function applyJobAttribution(
 export function enrichSpendPayer(paymentPayer?: string | null): {
   payerAddress?: string;
   executorAddress?: string;
+  payerEmail?: string;
 } {
   const executor = getExecutorWalletAddress();
   const gateway = paymentPayer?.trim();
   if (gateway) persistGatewayPayer(gateway);
+  const email = normalizeOwnerEmail(loadCircleConfig().email);
   return {
     payerAddress: gateway || executor || undefined,
     executorAddress: executor || undefined,
+    payerEmail: email,
   };
 }
 
@@ -190,15 +198,16 @@ export function filterMineRecords(records: SpendRecord[], payerAddresses: string
   });
 }
 
-/** Activity "Mine" — connected Circle executor + Gateway payer, plus jobs owned by this browser session. */
+/** Activity "Mine" — Circle email first; never use a shared Gateway payer alone. */
 export function filterLedgerForOwnerScope(
   records: SpendRecord[],
   owner: JobOwner,
   jobs: MarketplaceJob[] = [],
   auctions: ReverseAuction[] = []
 ): SpendRecord[] {
-  const payerAddrs = resolveOwnerPayerAddresses(owner);
-  if (payerAddrs.length === 0 && !owner.sessionId) return [];
+  const email = normalizeOwnerEmail(owner.email);
+  const executor = owner.payerAddress?.toLowerCase();
+  if (!email && !executor && !owner.sessionId) return [];
 
   const seen = new Set<string>();
   const out: SpendRecord[] = [];
@@ -210,8 +219,26 @@ export function filterLedgerForOwnerScope(
     }
   };
 
-  if (payerAddrs.length > 0) {
-    push(filterMineRecords(records, payerAddrs));
+  if (email) {
+    push(records.filter((r) => normalizeOwnerEmail(r.payerEmail) === email));
+    // Legacy: this session's Circle executor only (Gateway address is often shared across emails).
+    if (executor) {
+      push(
+        records.filter((r) => {
+          const rowEmail = normalizeOwnerEmail(r.payerEmail);
+          if (rowEmail && rowEmail !== email) return false;
+          return r.executorAddress?.toLowerCase() === executor;
+        })
+      );
+    }
+    push(filterRecordsForOwner(records, owner, jobs, auctions));
+    return out;
+  }
+
+  if (executor) {
+    push(
+      filterMineRecords(records, [executor]).filter((r) => !normalizeOwnerEmail(r.payerEmail))
+    );
   }
   if (owner.sessionId) {
     push(filterRecordsForOwner(records, owner, jobs, auctions));
@@ -236,20 +263,31 @@ export function filterRecordsForOwner(
   jobs: MarketplaceJob[] = [],
   auctions: ReverseAuction[] = []
 ): SpendRecord[] {
-  if (!owner.sessionId && resolveOwnerPayerAddresses(owner).length === 0) {
-    return records;
-  }
+  const email = normalizeOwnerEmail(owner.email);
   const payerAddrs = resolveOwnerPayerAddresses(owner);
+  if (!email && !owner.sessionId && payerAddrs.length === 0) {
+    return [];
+  }
   const jobSettlements = collectOwnerSettlementIds(jobs, owner);
   const attributed = applyJobAttribution(attributeLedgerRecords(records), jobs, auctions);
 
   return attributed.filter((r) => {
+    const rowEmail = normalizeOwnerEmail(r.payerEmail);
+    if (email && rowEmail) return rowEmail === email;
+    if (email && rowEmail && rowEmail !== email) return false;
     if (r.settlementId && jobSettlements.has(r.settlementId)) return true;
-    if (payerAddrs.length > 0) {
+    // Prefer Circle executor — Gateway payer can be shared across emails on this instance.
+    const executor = owner.payerAddress?.toLowerCase();
+    if (executor) {
+      if (r.executorAddress?.toLowerCase() === executor) {
+        return !rowEmail || rowEmail === email;
+      }
+    }
+    if (!email && payerAddrs.length > 0) {
       const payer = r.payerAddress?.toLowerCase();
-      const executor = r.executorAddress?.toLowerCase();
-      if (payer && payerAddrs.includes(payer)) return true;
-      if (executor && payerAddrs.includes(executor)) return true;
+      const exec = r.executorAddress?.toLowerCase();
+      if (payer && payerAddrs.includes(payer)) return !rowEmail;
+      if (exec && payerAddrs.includes(exec)) return !rowEmail;
     }
     return false;
   });
