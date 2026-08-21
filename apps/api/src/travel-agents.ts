@@ -298,6 +298,23 @@ export async function buildFlightSearchPayload(brief?: string, priorContext?: st
     };
   }
 
+  // Live mode is on — never invent Butler Jet / Arc Air. Point users at Google Flights.
+  if (liveTravelEnabled()) {
+    return {
+      type: "flight-search",
+      mode: "live-web",
+      provider: "openai-web-search",
+      summary: `Open Google Flights for live ${trip.originCode} → ${trip.destinationCode} fares on ${trip.departDate} (return ${trip.returnDate}). We will not invent airline quotes.`,
+      trip,
+      currency: "USD",
+      flights: [],
+      searchUrl: googleFlightsUrl(trip),
+      sources: [googleFlightsUrl(trip)],
+      disclaimer: "Live fare lookup did not return verified options — use the Google Flights link for booking decisions.",
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
   const seed = hashSeed(`${trip.originCode}${trip.destinationCode}${trip.departDate}`);
   const flights = [0, 1, 2].map((i) => {
     const carrier = CARRIERS[(seed + i) % CARRIERS.length]!;
@@ -330,12 +347,12 @@ export async function buildFlightSearchPayload(brief?: string, priorContext?: st
   return {
     type: "flight-search",
     mode: "testnet-demo",
-    summary: `${flights.length} flight options ${trip.origin} (${trip.originCode}) → ${trip.destination} (${trip.destinationCode}) on ${trip.departDate}. Best fare $${best.priceUsd} on ${best.carrier}.`,
+    summary: `${flights.length} demo flight options ${trip.origin} (${trip.originCode}) → ${trip.destination} (${trip.destinationCode}) on ${trip.departDate}. Best fare $${best.priceUsd} on ${best.carrier}.`,
     trip,
     currency: "USD",
     flights,
     searchUrl: googleFlightsUrl(trip),
-    disclaimer: "Demo quotes (live search unavailable) — open Google Flights to confirm real fares.",
+    disclaimer: "DEMO ONLY — not real fares. Open Google Flights to confirm.",
     generatedAt: new Date().toISOString(),
   };
 }
@@ -378,6 +395,23 @@ export async function buildHotelSearchPayload(brief?: string, priorContext?: str
       searchUrl: bookingSearchUrl(trip),
       sources: live.sources,
       disclaimer: "Use the Booking.com link for real properties — we will not invent hotel names.",
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  // Live mode is on — never invent Gateway Inn / Arc Suites.
+  if (liveTravelEnabled()) {
+    return {
+      type: "hotel-search",
+      mode: "live-web",
+      provider: "openai-web-search",
+      summary: `Open Booking.com for live stays in ${trip.destination} (${trip.departDate} → ${trip.returnDate}). We will not invent hotel names.`,
+      trip,
+      currency: "USD",
+      hotels: [],
+      searchUrl: bookingSearchUrl(trip),
+      sources: [bookingSearchUrl(trip)],
+      disclaimer: "Live hotel lookup did not return verified properties — use Booking.com for booking decisions.",
       generatedAt: new Date().toISOString(),
     };
   }
@@ -428,12 +462,12 @@ export async function buildHotelSearchPayload(brief?: string, priorContext?: str
   return {
     type: "hotel-search",
     mode: "testnet-demo",
-    summary: `${hotels.length} stays in ${trip.destination} for ${nights} night(s). Best total $${best.totalUsd} at ${best.name}.`,
+    summary: `${hotels.length} DEMO stays in ${trip.destination} for ${nights} night(s). Best total $${best.totalUsd} at ${best.name}.`,
     trip,
     currency: "USD",
     hotels,
     searchUrl: bookingSearchUrl(trip),
-    disclaimer: "Demo hotel quotes (live search unavailable) — open Booking.com to confirm real rates.",
+    disclaimer: "DEMO ONLY — not real hotel rates. Open Booking.com to confirm.",
     generatedAt: new Date().toISOString(),
   };
 }

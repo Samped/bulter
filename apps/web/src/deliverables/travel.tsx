@@ -89,6 +89,20 @@ export function FlightSearchBlock({ data }: { data: Record<string, unknown> }) {
           );
         })}
       </ol>
+      {flights.length === 0 && (
+        <p className="paper-prose">
+          No verified flight quotes for this run
+          {searchUrl ? (
+            <>
+              {" — "}
+              <a href={searchUrl} target="_blank" rel="noreferrer">
+                open Google Flights for live fares
+              </a>
+            </>
+          ) : null}
+          .
+        </p>
+      )}
       {typeof data.disclaimer === "string" && <p className="paper-prose paper-ref-meta">{data.disclaimer}</p>}
     </section>
   );

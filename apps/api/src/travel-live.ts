@@ -439,7 +439,7 @@ CRITICAL:
 Return ONLY JSON:
 {"marketFromUsd":803,"flights":[{"carrier":"RwandAir","flightNumber":"","from":"${trip.originCode}","to":"${trip.destinationCode}","departAt":"${trip.departDate}T14:45:00","arriveAt":"","durationHours":19.5,"stops":1,"cabin":"${trip.cabin}","priceUsd":803,"note":"Google Flights listed"}],"error":null}`;
 
-  const parsed = await openAiWebJson(prompt, 75_000);
+  const parsed = await openAiWebJson(prompt, 55_000);
   if (!parsed) return { options: [] };
 
   const marketFromUsd = Math.round(num(parsed.marketFromUsd, 0)) || undefined;
@@ -492,7 +492,7 @@ Return ONLY JSON:
   });
 }
 
-/** Search live flights + hotels for a trip. Returns null if unavailable. */
+/** Search live flights + hotels. Always returns a bundle when live is enabled (never silent demo). */
 export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBundle | null> {
   if (!apiKey() && !(process.env.AMADEUS_CLIENT_ID && process.env.AMADEUS_CLIENT_SECRET)) return null;
   if (process.env.BUTLER_TRAVEL_LIVE === "false") return null;
@@ -502,25 +502,37 @@ export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBund
   const kayakUrl = kayakFlightsUrl(trip);
   const hotelsUrl = bookingSearchUrl(trip);
 
-  const amadeus = await searchAmadeusFlights(trip, flightsUrl);
-  const googleProbe = apiKey() ? await probeGoogleFlightsMarket(trip, flightsUrl) : { options: [] as LiveFlight[] };
-  const hotels = apiKey() ? await probeBookingHotels(trip, nights, hotelsUrl) : [];
+  const [amadeus, googleProbe, hotelsRaw] = await Promise.all([
+    searchAmadeusFlights(trip, flightsUrl),
+    apiKey()
+      ? probeGoogleFlightsMarket(trip, flightsUrl)
+      : Promise.resolve({ options: [] as LiveFlight[] }),
+    apiKey() ? probeBookingHotels(trip, nights, hotelsUrl) : Promise.resolve([] as LiveHotel[]),
+  ]);
 
   let marketFromUsd = googleProbe.marketFromUsd;
   let flights: LiveFlight[] = [];
+  let hotels = hotelsRaw.filter((h) => !isPlaceholderHotelName(h.name) && !isDemoHotelName(h.name));
 
   if (amadeus?.length) {
-    flights = amadeus;
-    const cheapest = Math.min(...flights.map((f) => f.priceUsd));
-    if (!marketFromUsd || cheapest < (marketFromUsd ?? Infinity)) {
-      // Prefer Amadeus totals when present; still keep Google market banner if higher.
-      marketFromUsd = marketFromUsd ? Math.min(marketFromUsd, cheapest) : cheapest;
+    flights = amadeus.filter((f) => !isDemoCarrier(f.carrier));
+    if (flights.length) {
+      const cheapest = Math.min(...flights.map((f) => f.priceUsd));
+      marketFromUsd = marketFromUsd ? Math.max(marketFromUsd, cheapest) : cheapest;
     }
   } else if (googleProbe.options.length > 0) {
-    flights = googleProbe.options;
+    flights = googleProbe.options.filter((f) => !isDemoCarrier(f.carrier));
   }
 
-  // Rebase any under-market inventions to the Google Flights banner.
+  // Discard hallucinated low markets (common LLM failure vs Google Flights ~$800 for LOS–NBO).
+  if (marketFromUsd && marketFromUsd < 500 && flights.every((f) => !f.priceVerified)) {
+    console.warn(
+      `[travel-live] discarding suspicious marketFromUsd=$${marketFromUsd} for ${trip.originCode}-${trip.destinationCode}`,
+    );
+    marketFromUsd = undefined;
+    flights = [];
+  }
+
   if (marketFromUsd && flights.length > 0) {
     const cheapest = Math.min(...flights.map((f) => f.priceUsd));
     if (cheapest < marketFromUsd * 0.9) {
@@ -536,9 +548,7 @@ export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBund
 
   flights = flights.map((f) => ({ ...f, bookUrl: flightsUrl }));
 
-  // If we only have a market banner and no trustworthy options, still return a stub
-  // so the Library shows the live Google Flights link + market price.
-  if (flights.length === 0 && marketFromUsd) {
+  if (flights.length === 0 && marketFromUsd && marketFromUsd >= 500) {
     flights = [
       {
         id: `gf-market-${trip.originCode}-${trip.destinationCode}`,
@@ -559,10 +569,7 @@ export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBund
     ];
   }
 
-  if (flights.length === 0 && hotels.length === 0 && !marketFromUsd) return null;
-
   const sources = [flightsUrl, hotelsUrl, kayakUrl];
-
   flights.sort((a, b) => a.priceUsd - b.priceUsd);
   hotels.sort((a, b) => a.totalUsd - b.totalUsd);
 
@@ -579,6 +586,14 @@ export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBund
     provider: amadeus?.length ? "amadeus+web" : "openai-web-search",
     marketFromUsd,
   };
+}
+
+function isDemoCarrier(name: string): boolean {
+  return /butler\s*jet|arc\s*air|circle\s*wings|testnet\s*air/i.test(name);
+}
+
+function isDemoHotelName(name: string): boolean {
+  return /gateway\s*inn|harbor\s*loft|arc\s+.+\s+suites/i.test(name);
 }
 
 function destHint(trip: TravelTrip): string[] {
