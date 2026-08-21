@@ -54,7 +54,7 @@ function snippetFromStepBody(body: unknown): string {
     data.type === "hotel-search" ||
     data.type === "travel-itinerary"
   ) {
-    return JSON.stringify(data).slice(0, 3_500);
+    return JSON.stringify(data).slice(0, 6_000);
   }
   if (typeof data.summary === "string" && data.summary.length > 20) return data.summary;
   if (Array.isArray(data.findings) && data.findings.length > 0) {
@@ -353,7 +353,7 @@ export async function runMarketplaceWorkflow(params: {
           outputs.push(row.output);
           if (row.snippet) {
             priorContext = priorContext ? `${priorContext}\n\n---\n\n${row.snippet}` : row.snippet;
-            priorContext = priorContext.slice(0, 4_000);
+            priorContext = priorContext.slice(0, 12_000);
           }
         }
       }
@@ -379,7 +379,7 @@ export async function runMarketplaceWorkflow(params: {
         outputs.push(row.output);
         if (row.snippet) {
           priorContext = priorContext ? `${priorContext}\n\n---\n\n${row.snippet}` : row.snippet;
-          priorContext = priorContext.slice(0, 4_000);
+          priorContext = priorContext.slice(0, 12_000);
         }
       }
     }

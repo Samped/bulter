@@ -265,14 +265,14 @@ export async function buildFlightSearchPayload(brief?: string, priorContext?: st
       type: "flight-search",
       mode: live.mode,
       provider: live.provider,
-      summary: `${live.flights.length} live flight options ${trip.origin} (${trip.originCode}) → ${trip.destination} (${trip.destinationCode}) on ${trip.departDate}. Best fare ~$${best.priceUsd} on ${best.carrier}.`,
+      summary: `${live.flights.length} live round-trip options ${trip.origin} (${trip.originCode}) → ${trip.destination} (${trip.destinationCode}) on ${trip.departDate}. Best RT fare ~$${best.priceUsd} on ${best.carrier}.`,
       trip,
       currency: "USD",
       flights: live.flights,
       searchUrl: googleFlightsUrl(trip),
       sources: live.sources,
       disclaimer:
-        "Live web-sourced fares — prices and seats change quickly. Confirm and book on the airline or OTA link before purchase.",
+        "Live web-sourced round-trip fare estimates — confirm final price on the airline or OTA before purchase.",
       generatedAt: new Date().toISOString(),
     };
   }
@@ -333,14 +333,14 @@ export async function buildHotelSearchPayload(brief?: string, priorContext?: str
       type: "hotel-search",
       mode: live.mode,
       provider: live.provider,
-      summary: `${live.hotels.length} live stays in ${trip.destination} for ${nights} night(s). Best total ~$${best.totalUsd} at ${best.name}.`,
+      summary: `${live.hotels.length} live stays in ${trip.destination} for ${nights} night(s). Best stay total ~$${best.totalUsd} (~$${best.nightlyUsd}/night) at ${best.name}.`,
       trip,
       currency: "USD",
       hotels: live.hotels,
       searchUrl: bookingSearchUrl(trip),
       sources: live.sources,
       disclaimer:
-        "Live web-sourced hotel rates — availability changes. Confirm total and cancellation terms on the booking link.",
+        "Live web-sourced hotel rate estimates — confirm total and cancellation terms on the booking link.",
       generatedAt: new Date().toISOString(),
     };
   }
@@ -401,39 +401,83 @@ export async function buildHotelSearchPayload(brief?: string, priorContext?: str
   };
 }
 
-function extractJsonBlocks(context: string): Record<string, unknown>[] {
-  const blocks: Record<string, unknown>[] = [];
-  const re = /\{[\s\S]*?\}/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(context))) {
+function extractTravelPicks(context: string): {
+  flight?: { carrier?: string; flightNumber?: string; priceUsd?: number; from?: string; to?: string };
+  hotel?: { name?: string; totalUsd?: number; nightlyUsd?: number; neighborhood?: string };
+} {
+  const out: {
+    flight?: { carrier?: string; flightNumber?: string; priceUsd?: number; from?: string; to?: string };
+    hotel?: { name?: string; totalUsd?: number; nightlyUsd?: number; neighborhood?: string };
+  } = {};
+
+  // Prefer complete JSON objects split on agent separators.
+  for (const chunk of context.split(/\n---\n/)) {
+    const start = chunk.indexOf("{");
+    const end = chunk.lastIndexOf("}");
+    if (start < 0 || end <= start) continue;
     try {
-      const parsed = JSON.parse(m[0]) as unknown;
-      if (parsed && typeof parsed === "object") blocks.push(parsed as Record<string, unknown>);
+      const parsed = JSON.parse(chunk.slice(start, end + 1)) as Record<string, unknown>;
+      if ((parsed.type === "flight-search" || Array.isArray(parsed.flights)) && !out.flight) {
+        const flights = Array.isArray(parsed.flights) ? (parsed.flights as Record<string, unknown>[]) : [];
+        const best = flights[0];
+        if (best) {
+          out.flight = {
+            carrier: typeof best.carrier === "string" ? best.carrier : undefined,
+            flightNumber: typeof best.flightNumber === "string" ? best.flightNumber : undefined,
+            priceUsd: Number(best.priceUsd) || undefined,
+            from: typeof best.from === "string" ? best.from : undefined,
+            to: typeof best.to === "string" ? best.to : undefined,
+          };
+        }
+      }
+      if ((parsed.type === "hotel-search" || Array.isArray(parsed.hotels)) && !out.hotel) {
+        const hotels = Array.isArray(parsed.hotels) ? (parsed.hotels as Record<string, unknown>[]) : [];
+        const best = hotels[0];
+        if (best) {
+          out.hotel = {
+            name: typeof best.name === "string" ? best.name : undefined,
+            totalUsd: Number(best.totalUsd) || undefined,
+            nightlyUsd: Number(best.nightlyUsd) || undefined,
+            neighborhood: typeof best.neighborhood === "string" ? best.neighborhood : undefined,
+          };
+        }
+      }
     } catch {
-      /* ignore partial */
+      /* truncated JSON */
     }
   }
-  return blocks;
+
+  if (!out.flight) {
+    const m = context.match(/Best fare ~?\$([0-9]+(?:\.[0-9]+)?)/i);
+    if (m) out.flight = { priceUsd: Number(m[1]) };
+  }
+  if (!out.hotel) {
+    const m = context.match(/Best total ~?\$([0-9]+(?:\.[0-9]+)?)/i);
+    if (m) out.hotel = { totalUsd: Number(m[1]) };
+  }
+  return out;
 }
 
 export async function buildItineraryPayload(brief?: string, priorContext?: string) {
   const context = priorContext ?? "";
   const { resolveTravelTrip } = await import("./travel-parse.ts");
   const trip = await resolveTravelTrip(brief, context);
-  const blocks = extractJsonBlocks(context);
-  const flightBlock = blocks.find((b) => b.type === "flight-search") as
-    | { flights?: { carrier?: string; flightNumber?: string; priceUsd?: number; from?: string; to?: string }[] }
-    | undefined;
-  const hotelBlock = blocks.find((b) => b.type === "hotel-search") as
-    | { hotels?: { name?: string; totalUsd?: number; neighborhood?: string }[] }
-    | undefined;
-
-  const flight = flightBlock?.flights?.[0];
-  const hotel = hotelBlock?.hotels?.[0];
   const nights = Math.max(
     1,
     Math.round((new Date(trip.returnDate).getTime() - new Date(trip.departDate).getTime()) / 86_400_000),
   );
+
+  // Reuse the same live search cache as flight/hotel agents (authoritative picks + prices).
+  const live = await liveBundleFor(trip);
+  const fromContext = extractTravelPicks(context);
+  const flight =
+    live?.flights?.[0] ??
+    fromContext.flight ??
+    undefined;
+  const hotel =
+    live?.hotels?.[0] ??
+    fromContext.hotel ??
+    undefined;
 
   const liveDays = await searchLiveItineraryDays(trip, { flight, hotel });
   const days =
@@ -447,7 +491,7 @@ export async function buildItineraryPayload(brief?: string, priorContext?: strin
           title: `Arrive ${trip.destination}`,
           items: [
             flight
-              ? `Land via ${flight.carrier ?? "carrier"} ${flight.flightNumber ?? ""} (${flight.from}→${flight.to})`
+              ? `Land via ${flight.carrier ?? "carrier"} ${flight.flightNumber ?? ""} (${flight.from ?? trip.originCode}→${flight.to ?? trip.destinationCode})`
               : `Arrive ${trip.destinationCode}`,
             hotel ? `Check in — ${hotel.name} (${hotel.neighborhood ?? "city"})` : "Check in to lodging",
             "Light walk + dinner near hotel",
@@ -479,17 +523,24 @@ export async function buildItineraryPayload(brief?: string, priorContext?: strin
   const flightCost = Number(flight?.priceUsd ?? 0) * trip.travelers;
   const hotelCost = Number(hotel?.totalUsd ?? 0);
   const estimateUsd = Number((flightCost + hotelCost).toFixed(2));
-  const live = liveDays != null;
+  const liveMode = liveDays != null || live != null;
 
   return {
     type: "travel-itinerary",
-    mode: live ? "live-web" : "testnet-demo",
-    summary: `Itinerary ${trip.origin} → ${trip.destination} (${trip.departDate}–${trip.returnDate}). Est. total ~$${estimateUsd} for selected flight + stay.`,
+    mode: liveMode ? "live-web" : "testnet-demo",
+    summary: `Itinerary ${trip.origin} → ${trip.destination} (${trip.departDate}–${trip.returnDate}). Est. total ~$${estimateUsd.toFixed(0)} (selected RT flight + ${nights}-night stay).`,
     trip,
     selectedFlight: flight ?? null,
     selectedHotel: hotel ?? null,
     days,
     budgetEstimateUsd: estimateUsd,
+    budgetBreakdown: {
+      flightUsd: flightCost,
+      hotelUsd: hotelCost,
+      nights,
+      travelers: trip.travelers,
+      note: "Flight fare treated as round-trip estimate; hotel is stay total.",
+    },
     searchUrls: {
       flights: googleFlightsUrl(trip),
       hotels: bookingSearchUrl(trip),
@@ -499,8 +550,8 @@ export async function buildItineraryPayload(brief?: string, priorContext?: strin
       "Open the hotel book link and confirm cancellation policy",
       `Recheck passport/visa requirements for ${trip.destination} before booking`,
     ],
-    disclaimer: live
-      ? "Live web-sourced itinerary sketch — not a ticketed reservation. Verify times and opening hours before travel."
+    disclaimer: liveMode
+      ? "Live web-sourced itinerary sketch — prices are estimates. Confirm totals on the airline/OTA before purchase."
       : "Demo itinerary — not a confirmed reservation.",
     generatedAt: new Date().toISOString(),
   };

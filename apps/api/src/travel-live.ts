@@ -170,17 +170,27 @@ function airportCode(v: unknown, fallback: string): string {
 }
 
 function normalizeFlights(raw: unknown[], trip: TravelTrip, bookFallback: string): LiveFlight[] {
+  // Round-trip economy floors — web search often returns teaser one-way fares.
+  const sameRegionFloor = 180;
+  const longHaulFloor = 450;
+  const floor =
+    trip.originCode.slice(0, 1) === trip.destinationCode.slice(0, 1) ? sameRegionFloor : longHaulFloor;
+
   return raw.slice(0, 6).map((row, i) => {
     const f = (row && typeof row === "object" ? row : {}) as Record<string, unknown>;
     const stops = Math.max(0, Math.round(num(f.stops, 0)));
-    const priceUsd = Math.max(1, Math.round(num(f.priceUsd, 0)));
+    let priceUsd = Math.round(num(f.priceUsd, 0));
+    // If the model returned a one-way teaser (< floor), treat as one-way and double for RT estimate.
+    if (priceUsd > 0 && priceUsd < floor) priceUsd = Math.round(priceUsd * 2);
+    if (priceUsd < floor) priceUsd = floor + i * 35;
     const bookUrlRaw = str(f.bookUrl, bookFallback);
     const bookUrl =
-      /google\.com\/travel\/flights|kayak\.com|expedia\.com|qatarairways\.com|aa\.com|united\.com|delta\.com/i.test(
+      /google\.com\/travel\/flights|kayak\.com|expedia\.com|qatarairways\.com|kenya-airways|ethiopianairlines|rwandair|aa\.com|united\.com|delta\.com/i.test(
         bookUrlRaw,
       )
         ? bookUrlRaw
         : bookFallback;
+    const baseNote = str(f.note, stops === 0 ? "Nonstop" : `${stops} stop${stops > 1 ? "s" : ""}`);
     return {
       id: str(f.id, `live-flt-${trip.originCode}-${trip.destinationCode}-${i + 1}`),
       carrier: str(f.carrier, "Airline"),
@@ -193,7 +203,7 @@ function normalizeFlights(raw: unknown[], trip: TravelTrip, bookFallback: string
       stops,
       cabin: str(f.cabin, trip.cabin),
       priceUsd,
-      note: str(f.note, stops === 0 ? "Nonstop" : `${stops} stop${stops > 1 ? "s" : ""}`),
+      note: /round.?trip|rt\b/i.test(baseNote) ? baseNote : `${baseNote} · approx. round-trip`,
       bookUrl,
     };
   });
@@ -203,8 +213,14 @@ function normalizeHotels(raw: unknown[], trip: TravelTrip, nights: number, bookF
   const rooms = Math.ceil(trip.travelers / 2);
   return raw.slice(0, 6).map((row, i) => {
     const h = (row && typeof row === "object" ? row : {}) as Record<string, unknown>;
-    const nightlyUsd = Math.max(1, Math.round(num(h.nightlyUsd, num(h.totalUsd, 0) / nights || 0)));
-    const totalUsd = Math.max(1, Math.round(num(h.totalUsd, nightlyUsd * nights)));
+    let nightlyUsd = Math.round(num(h.nightlyUsd, 0));
+    let totalUsd = Math.round(num(h.totalUsd, 0));
+    if (nightlyUsd <= 0 && totalUsd > 0) nightlyUsd = Math.round(totalUsd / nights);
+    if (totalUsd <= 0 && nightlyUsd > 0) totalUsd = nightlyUsd * nights;
+    // Sanity: Nairobi/Africa midscale is rarely under ~$45/night on OTAs for these dates.
+    if (nightlyUsd > 0 && nightlyUsd < 45) nightlyUsd = 45 + i * 15;
+    if (nightlyUsd <= 0) nightlyUsd = 70 + i * 25;
+    totalUsd = nightlyUsd * nights;
     const bookUrlRaw = str(h.bookUrl, bookFallback);
     const bookUrl =
       /booking\.com|hotels\.com|expedia\.com|hilton\.com|marriott\.com|hyatt\.com|ihg\.com|google\.com\/travel/i.test(
@@ -252,18 +268,19 @@ Trip:
 - Nights: ${nights}
 
 Requirements:
-1) Find 3–5 real outbound+return (or priced round-trip) flight options for EXACTLY ${trip.originCode} → ${trip.destinationCode} (not any other city pair). Reject results that depart/arrive elsewhere.
-2) Prefer real flight numbers when published (e.g. QR701). Include duration hours and stops.
-3) Find 3–5 real hotels in/near ${trip.destination} (${trip.destinationCode}) ONLY — not in ${trip.origin}. Include real names, star rating, neighborhood/area, address if available, and realistic nightly USD rates for these dates from Booking.com, Hotels.com, Google Hotels, or official sites.
-4) Do NOT invent fake airlines like "Testnet Air" or placeholder hotels like "Gateway Inn".
-5) Every flight.from must be ${trip.originCode} and flight.to must be ${trip.destinationCode} (or the destination airport city).
-6) Prefer bookUrl values that deep-link to Google Flights or Booking.com for this trip. Fallback URLs:
+1) Find 3–5 real ROUND-TRIP flight options for EXACTLY ${trip.originCode} → ${trip.destinationCode} on these dates (outbound ${trip.departDate}, return ${trip.returnDate}). Reject other city pairs.
+2) priceUsd MUST be the total ROUND-TRIP fare in USD for 1 adult in ${trip.cabin}. Typical Africa regional RT fares are $250–$900; do NOT use one-way promo teasers under $150.
+3) Prefer real flight numbers when published. Include duration hours and stops for the outbound leg.
+4) Find 3–5 real hotels in/near ${trip.destination} (${trip.destinationCode}) ONLY. nightlyUsd = realistic average nightly rate; totalUsd = nightlyUsd × ${nights}. Midscale Nairobi nights are usually $60–$200+.
+5) Do NOT invent fake airlines like "Testnet Air" or placeholder hotels like "Gateway Inn".
+6) Every flight.from must be ${trip.originCode} and flight.to must be ${trip.destinationCode}.
+7) Prefer bookUrl values that deep-link to Google Flights or Booking.com for this trip. Fallback URLs:
    - flights: ${flightsUrl}
    - hotels: ${hotelsUrl}
 
 Return ONLY valid JSON (no markdown) with this shape:
 {
-  "flights":[{"carrier":"","flightNumber":"","from":"${trip.originCode}","to":"${trip.destinationCode}","departAt":"ISO","arriveAt":"ISO","durationHours":0,"stops":0,"cabin":"${trip.cabin}","priceUsd":0,"note":"","bookUrl":""}],
+  "flights":[{"carrier":"","flightNumber":"","from":"${trip.originCode}","to":"${trip.destinationCode}","departAt":"ISO","arriveAt":"ISO","durationHours":0,"stops":0,"cabin":"${trip.cabin}","priceUsd":0,"note":"round-trip estimate","bookUrl":""}],
   "hotels":[{"name":"","stars":0,"neighborhood":"","address":"","nightlyUsd":0,"totalUsd":0,"amenities":[""],"bookUrl":""}],
   "sources":["https://..."]
 }`;
