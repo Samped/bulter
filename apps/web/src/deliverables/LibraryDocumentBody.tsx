@@ -1,6 +1,11 @@
 import type { MarketplaceDeliverable } from "../api.ts";
 import { CombinedDeliverableBody, DeliverableSummary } from "./DeliverableContent.tsx";
 import { IntelDeliverableBody } from "./defi-agents.tsx";
+import {
+  DefiExecutionDeliverableBody,
+  isDefiExecutionPayload,
+  renderDefiExecutionBlocks,
+} from "./defi-execution.tsx";
 import { isIntelPayload } from "./intel-payload.ts";
 import { TravelDeliverableBody, isTravelPayload, renderTravelBlocks } from "./travel.tsx";
 import { parseDeliverablePayload, resolveDeliverablePayload } from "./payload.ts";
@@ -9,6 +14,15 @@ import { parseDeliverablePayload, resolveDeliverablePayload } from "./payload.ts
 export function LibraryDocumentBody({ job }: { job: MarketplaceDeliverable }) {
   const payload = resolveDeliverablePayload(job);
   const doneSteps = job.steps.filter((s) => s.status === "done" && s.output != null);
+
+  if (payload && isDefiExecutionPayload(payload)) {
+    return <DefiExecutionDeliverableBody payload={payload} />;
+  }
+
+  const defiExecBlocks = renderDefiExecutionBlocks(doneSteps);
+  if (defiExecBlocks.length > 0) {
+    return <div className="paper-intel-root">{defiExecBlocks}</div>;
+  }
 
   if (payload && isTravelPayload(payload)) {
     return <TravelDeliverableBody payload={payload} />;

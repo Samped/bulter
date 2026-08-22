@@ -63,6 +63,7 @@ export function combineWorkflowResult(steps: { output?: unknown }[]): Record<str
       if (typeof p.summary === "string") combined.technicalSummary = p.summary;
     }
     if (p.type === "defi" || Array.isArray(p.topProtocols)) combined.defi = p;
+    if (p.type === "defi-execution") combined.defiExecution = p;
     if (p.type === "macro" || typeof p.fedOutlook === "string") combined.macro = p;
     if (p.type === "onchain" || Array.isArray(p.signals)) combined.onchain = p;
     if (p.type === "portfolio-risk" || typeof p.portfolioRiskScore === "number") combined.portfolioRisk = p;

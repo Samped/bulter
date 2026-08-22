@@ -22,6 +22,7 @@ import {
   renderDeFiAgentBlocks,
   resolveDeFiPayload,
 } from "./defi-agents.tsx";
+import { DefiExecutionBlock, isDefiExecutionPayload } from "./defi-execution.tsx";
 
 function ReportBlock({ data }: { data: Record<string, unknown> }) {
   const report = data.report as Record<string, unknown> | undefined;
@@ -503,6 +504,10 @@ function ChartBlock({ data }: { data: Record<string, unknown> }) {
 
 function renderPayload(data: Record<string, unknown>) {
   const blocks: ReactNode[] = [];
+  if (isDefiExecutionPayload(data)) {
+    blocks.push(<DefiExecutionBlock key="defi-execution" data={data} />);
+    return blocks;
+  }
   if (data.report && typeof data.report === "object") blocks.push(<ReportBlock key="report" data={data} />);
   if (Array.isArray(data.headlines)) blocks.push(<HeadlinesBlock key="headlines" data={data} />);
   if (data.type === "onchain" || Array.isArray(data.signals)) {
@@ -587,6 +592,7 @@ export function CombinedDeliverableBody({
 
   const onchain = merged.onchain as Record<string, unknown> | undefined;
   const defi = merged.defi as Record<string, unknown> | undefined;
+  const defiExecution = merged.defiExecution as Record<string, unknown> | undefined;
   const macro = merged.macro as Record<string, unknown> | undefined;
   const risk = merged.risk as Record<string, unknown> | undefined;
   const walletData = resolveDeFiPayload(merged, "walletReputation") ?? merged;
@@ -609,6 +615,7 @@ export function CombinedDeliverableBody({
   }
   if (onchain) blocks.push(<OnchainBlock key="onchain" data={onchain} />);
   if (chartData) blocks.push(<ChartBlock key="chart" data={chartData} />);
+  if (defiExecution) blocks.push(<DefiExecutionBlock key="defi-execution" data={defiExecution} />);
   if (defi) blocks.push(<DefiBlock key="defi" data={defi} />);
   if (macro) blocks.push(<MacroBlock key="macro" data={macro} />);
   if (Array.isArray(merged.papers)) blocks.push(<ResearchBlock key="research" data={merged} />);

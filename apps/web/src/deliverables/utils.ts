@@ -32,6 +32,8 @@ export const AGENT_COLORS: Record<string, string> = {
   "research-agent": "#8b5cf6",
   "sentiment-agent": "#f59e0b",
   "chart-agent": "#06b6d4",
+  "defi-agent": "#06b6d4",
+  "defi-execution-agent": "#14b8a6",
   "report-agent": "#ec4899",
   "audit-agent": "#ef4444",
 };

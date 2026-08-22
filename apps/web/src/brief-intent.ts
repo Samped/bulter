@@ -111,6 +111,17 @@ export function resolveBtcPipelineRouting(brief: string): BtcPipelineRouting | n
   return { qualityTier: "standard", auctionMode: "etf", etfId: "btc-onchain-etf" };
 }
 
+export function isDefiExecutionBrief(brief: string): boolean {
+  if (wantsDeepBrief(brief) && !/\b(swap|bridge|cctp)\b/.test(brief.toLowerCase())) return false;
+  if (isTravelBrief(brief) || isAuditOnlyBrief(brief) || isEquityInvestmentBrief(brief)) return false;
+  const t = brief.toLowerCase();
+  return (
+    /\b(defi[- ]?execution|swap\s+usdc|bridge\s+usdc|cctp|universal\s+router)\b/.test(t) ||
+    (/\b(swap|bridge)\b/.test(t) && /\b(usdc|weth|eth)\b/.test(t)) ||
+    (/\b(plan|quote)\b/.test(t) && /\b(swap|bridge)\b/.test(t))
+  );
+}
+
 export function isHeadlineOnlyBrief(brief: string): boolean {
   const t = brief.toLowerCase();
   const wantsHeadlines =
