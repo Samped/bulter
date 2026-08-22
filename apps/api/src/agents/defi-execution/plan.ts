@@ -55,8 +55,13 @@ export function buildDefiExecutionPayload(brief?: string): DefiExecutionPayload 
         steps.push(...planSwapStub(intent));
       }
     } else if (intent.action === "swap") {
-      // already may have dex_unavailable from validateIntent
-      if (!blockers.some((b) => b.code === "dex_unavailable_on_chain")) {
+      if (intent.sourceChain !== intent.destChain) {
+        blockers.push({
+          code: "dex_unavailable_on_chain",
+          severity: "hard",
+          message: `Same-chain swap required; parsed ${intent.sourceChain} → ${intent.destChain}. Use “on <chain>” for the venue (e.g. “swap USDC to ETH on Base”), or say bridge for cross-chain USDC.`,
+        });
+      } else if (!blockers.some((b) => b.code === "dex_unavailable_on_chain")) {
         blockers.push({
           code: "dex_unavailable_on_chain",
           severity: "hard",
