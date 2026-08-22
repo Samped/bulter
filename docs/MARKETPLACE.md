@@ -45,6 +45,7 @@ Each agent: `GET /marketplace/agents/{id}/execute` (Circle Gateway paywall).
 | Chart Agent | $0.015 | 10s | Support / resistance / RSI |
 | On-Chain Agent | $0.018 | 16s | Flows, whales, signals |
 | DeFi Agent | $0.02 | 18s | Aave, Uniswap, TVL context |
+| **DeFi Execution Agent** | $0.04 | 28s | Security-first USDC swap/bridge **planner** (CCTP + DEX stubs; broadcast off) |
 | Research Agent | $0.02 | 20s | Papers & executive summary |
 | Macro Agent | $0.025 | 22s | Fed, CPI, macro scenarios |
 | Sentiment Agent | $0.03 | 12s | Sentiment scoring |
