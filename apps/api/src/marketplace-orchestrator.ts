@@ -52,7 +52,8 @@ function snippetFromStepBody(body: unknown): string {
   if (
     data.type === "flight-search" ||
     data.type === "hotel-search" ||
-    data.type === "travel-itinerary"
+    data.type === "travel-itinerary" ||
+    data.type === "defi-execution"
   ) {
     return JSON.stringify(data).slice(0, 6_000);
   }

@@ -173,6 +173,17 @@ const AGENT_SERVICES: Record<string, AgentServiceDef> = {
       return buildDefiPayload(briefFrom(req));
     },
   },
+  "defi-execution-agent": {
+    price: "$0.04",
+    merchantId: "defi-execution",
+    category: "services",
+    policyAgent: "broker",
+    etaSeconds: 28,
+    payload: async (req) => {
+      const { buildDefiExecutionPayload } = await import("./agents/defi-execution/index.ts");
+      return buildDefiExecutionPayload(briefFrom(req));
+    },
+  },
   "macro-agent": {
     price: "$0.025",
     merchantId: "research-papers",
