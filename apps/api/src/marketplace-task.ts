@@ -364,7 +364,26 @@ export function formatTaskResult(result: unknown): string {
       .join("\n");
   }
 
-  if (obj.type === "risk" || typeof obj.riskScore === "number") {
+  if (obj.type === "defi-execution" || (obj.intent && Array.isArray(obj.quotes) && Array.isArray(obj.securityChecks))) {
+    const intent = (obj.intent ?? {}) as Record<string, unknown>;
+    const tokenIn = (intent.tokenIn ?? {}) as Record<string, unknown>;
+    const tokenOut = (intent.tokenOut ?? {}) as Record<string, unknown>;
+    const quotes = Array.isArray(obj.quotes) ? (obj.quotes as Record<string, unknown>[]) : [];
+    const q0 = quotes[0];
+    const steps = Array.isArray(obj.steps) ? (obj.steps as unknown[]) : [];
+    return [
+      `DeFi ${obj.mode ?? "plan"} · ${intent.action ?? "route"} · ${intent.sourceChain ?? "?"} → ${intent.destChain ?? "?"}`,
+      `${intent.amountIn ?? "?"} ${tokenIn.symbol ?? ""} → ${tokenOut.symbol ?? ""}`,
+      q0 ? `Quote: ${q0.amountIn} ${q0.tokenIn} → ~${q0.amountOutEstimated} ${q0.tokenOut} (${q0.routeLabel})` : null,
+      steps.length ? `${steps.length} plan step(s)` : null,
+      typeof obj.summary === "string" ? obj.summary : null,
+      obj.executionEnabled ? "Broadcast flag on (still gated)." : "Broadcast disabled — plan only.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (obj.type === "risk") {
     const factors = (obj.factors as Record<string, unknown>[] | undefined)
       ?.map((f) => `- [${f.severity}] ${f.name}: ${f.note}`)
       .join("\n");

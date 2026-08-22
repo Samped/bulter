@@ -44,6 +44,9 @@ export function LibraryDocumentBody({ job }: { job: MarketplaceDeliverable }) {
   const summary = job.summary?.trim();
   if (summary) {
     const parsed = parseDeliverablePayload(summary);
+    if (parsed && isDefiExecutionPayload(parsed)) {
+      return <DefiExecutionDeliverableBody payload={parsed} />;
+    }
     if (parsed && isIntelPayload(parsed)) {
       return <IntelDeliverableBody payload={parsed} brief={job.brief} />;
     }

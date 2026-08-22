@@ -73,14 +73,18 @@ export function combineWorkflowResult(steps: { output?: unknown }[]): Record<str
       if (typeof p.summary === "string") combined.technicalSummary = p.summary;
     }
     if (p.type === "defi" || Array.isArray(p.topProtocols)) combined.defi = p;
-    if (p.type === "defi-execution") combined.defiExecution = p;
+    if (p.type === "defi-execution") {
+      combined.type = "defi-execution";
+      combined.defiExecution = p;
+      Object.assign(combined, p);
+    }
     if (p.type === "macro" || typeof p.fedOutlook === "string") combined.macro = p;
     if (p.type === "onchain" || Array.isArray(p.signals)) combined.onchain = p;
     if (p.type === "portfolio-risk" || typeof p.portfolioRiskScore === "number") combined.portfolioRisk = p;
     if (p.type === "crypto-news-intelligence") combined.newsIntelligence = p;
     if (p.type === "wallet-reputation") combined.walletReputation = p;
     if (p.type === "token-research") combined.tokenResearch = p;
-    if (p.type === "risk" || typeof p.riskScore === "number") combined.risk = p;
+    if (p.type === "risk") combined.risk = p;
     if (typeof p.contract === "string" || p.type === "audit" || Array.isArray(p.findings)) {
       combined.type = "audit";
       combined.contract = p.contract;

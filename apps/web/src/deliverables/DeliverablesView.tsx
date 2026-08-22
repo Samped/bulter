@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatUsdc, getMarketplaceDeliverable, getMarketplaceDeliverables, type MarketplaceDeliverable } from "../api.ts";
 import { IconCheck, IconChevronLeft, IconChevronRight, IconDownload, IconLibrary, IconRefresh, IconSearch } from "../icons.tsx";
 import { LibraryDocumentBody } from "./LibraryDocumentBody.tsx";
+import { isDefiExecutionPayload } from "./defi-execution.tsx";
+import { isIntelPayload } from "./intel-payload.ts";
 import { resolveDeliverablePayload } from "./payload.ts";
 import { combineWorkflowResult } from "./combine.ts";
 import { downloadText, slugify } from "./format.ts";
@@ -13,7 +15,6 @@ import { exportPaperPdf } from "./pdfExport.ts";
 import { formatRelativeTime, jobStatusLabel, strategyLabel } from "./utils.ts";
 import { auditPaperTitle, isAuditDeliverable } from "./audit.ts";
 import { billPaperTitle, isBillDeliverable } from "./bill.ts";
-import { isIntelPayload } from "./intel-payload.ts";
 import { loadLibraryCache, mergeLibraryItems, saveLibraryCache } from "./library-cache.ts";
 
 export function DeliverablesView({
@@ -138,6 +139,11 @@ export function DeliverablesView({
   );
   const displaySummary = useMemo(() => {
     if (!selected) return "";
+    if (structuredPayload && isDefiExecutionPayload(structuredPayload)) {
+      return typeof structuredPayload.summary === "string"
+        ? structuredPayload.summary
+        : selected.brief ?? "";
+    }
     if (structuredPayload && isIntelPayload(structuredPayload)) {
       return typeof structuredPayload.summary === "string" ? structuredPayload.summary : selected.brief ?? "";
     }
@@ -145,6 +151,9 @@ export function DeliverablesView({
       return selected.summary.trim();
     }
     const merged = doneSteps.length > 0 ? combineWorkflowResult(doneSteps) : null;
+    if (merged && isDefiExecutionPayload(merged)) {
+      return typeof merged.summary === "string" ? merged.summary : selected.brief ?? "";
+    }
     if (merged) {
       return [
         merged.report && typeof (merged.report as Record<string, unknown>).title === "string"

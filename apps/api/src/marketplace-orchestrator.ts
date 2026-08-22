@@ -52,10 +52,14 @@ function snippetFromStepBody(body: unknown): string {
   if (
     data.type === "flight-search" ||
     data.type === "hotel-search" ||
-    data.type === "travel-itinerary" ||
-    data.type === "defi-execution"
+    data.type === "travel-itinerary"
   ) {
     return JSON.stringify(data).slice(0, 6_000);
+  }
+  if (data.type === "defi-execution") {
+    return typeof data.summary === "string" && data.summary.length > 20
+      ? data.summary
+      : `DeFi ${String(data.mode ?? "plan")} · ${String((data.intent as Record<string, unknown> | undefined)?.action ?? "route")}`;
   }
   if (typeof data.summary === "string" && data.summary.length > 20) return data.summary;
   if (Array.isArray(data.findings) && data.findings.length > 0) {

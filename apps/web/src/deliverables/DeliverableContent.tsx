@@ -558,7 +558,8 @@ function DefiBlock({ data }: { data: Record<string, unknown> }) {
 }
 
 function RiskBlock({ data }: { data: Record<string, unknown> }) {
-  if (data.type !== "risk" && typeof data.riskScore !== "number") return null;
+  // Require explicit risk payloads — defi-execution also has riskScore and must not match here.
+  if (data.type !== "risk") return null;
   return (
     <section className="paper-section">
       <h2 className="paper-section-title">
@@ -580,6 +581,14 @@ export function CombinedDeliverableBody({
   const merged = combineWorkflowResult(steps);
   if (!merged) {
     return <p className="paper-prose paper-empty">No structured output was stored for this job.</p>;
+  }
+
+  if (isDefiExecutionPayload(merged)) {
+    return (
+      <div className="paper-intel-root">
+        <DefiExecutionBlock data={merged} />
+      </div>
+    );
   }
 
   const intelBlocks = renderDeFiAgentBlocks(merged, brief);
