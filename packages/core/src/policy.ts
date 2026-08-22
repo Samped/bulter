@@ -55,13 +55,23 @@ export const DEFAULT_MERCHANTS: Merchant[] = [
     priceUsdc: "0.02",
     enabled: true,
   },
+  {
+    id: "defi-execution",
+    label: "DeFi Execution Planner",
+    category: "services",
+    kind: "x402",
+    target: "/marketplace/agents/defi-execution-agent/execute",
+    priceUsdc: "0.04",
+    enabled: true,
+  },
 ];
 
 export const DEFAULT_AGENTS: AgentBudget[] = [
   { role: "research", dailyLimitUsdc: "5", categories: ["apis"], enabled: true },
   { role: "bills", dailyLimitUsdc: "20", categories: ["bills"], enabled: true },
   { role: "shopping", dailyLimitUsdc: "10", categories: ["shopping"], enabled: false },
-  { role: "broker", dailyLimitUsdc: "1", categories: ["services"], enabled: false },
+  /** Broker role: DeFi execution planner fees only — not on-chain swap authority. */
+  { role: "broker", dailyLimitUsdc: "2", categories: ["services"], enabled: true },
 ];
 
 export function createDefaultPolicy(owner: `0x${string}`): ButlerPolicy {

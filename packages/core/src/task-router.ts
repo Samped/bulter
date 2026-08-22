@@ -4,7 +4,7 @@ import {
   type MarketplaceAgent,
 } from "./agent-registry.ts";
 import { getMarketplaceEtf, MARKETPLACE_ETFS } from "./marketplace.ts";
-import { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, isHolderInfoBrief, isEquityInvestmentBrief, resolveExpressBrief, wantsDeepBrief } from "./brief-intent.ts";
+import { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, isHolderInfoBrief, isEquityInvestmentBrief, isDefiExecutionBrief, resolveExpressBrief, wantsDeepBrief } from "./brief-intent.ts";
 
 export type TaskStrategy = "etf" | "workflow" | "direct";
 
@@ -52,6 +52,7 @@ function scoreAgent(agent: MarketplaceAgent, task: string): number {
     "report-agent": ["report", "investment", "summary", "brief", "synthesize"],
     "audit-agent": ["audit", "solidity", "contract", "security", "slither", "smart contract"],
     "defi-agent": ["defi", "yield", "tvl", "protocol", "uniswap", "aave", "liquidity"],
+    "defi-execution-agent": ["swap", "bridge", "cctp", "usdc", "defi-execution", "universal router"],
     "macro-agent": ["macro", "fed", "rates", "cpi", "inflation", "economy"],
     "onchain-agent": ["onchain", "on-chain", "whale", "flows", "holders", "network"],
     "competitor-agent": ["competitor", "moat", "versus", "vs", "market share", "landscape"],

@@ -202,6 +202,21 @@ export function isTokenResearchBrief(brief: string): boolean {
   );
 }
 
+/**
+ * DeFi swap / bridge / CCTP execution planner — not research DeFi Agent.
+ * Prefer explicit execution verbs so "DeFi exposure" still hits research ETFs.
+ */
+export function isDefiExecutionBrief(brief: string): boolean {
+  if (wantsDeepBrief(brief) && !/\b(swap|bridge|cctp)\b/.test(brief.toLowerCase())) return false;
+  if (isTravelBrief(brief) || isAuditOnlyBrief(brief) || isEquityInvestmentBrief(brief)) return false;
+  const t = brief.toLowerCase();
+  return (
+    /\b(defi[- ]?execution|swap\s+usdc|bridge\s+usdc|cctp|universal\s+router)\b/.test(t) ||
+    (/\b(swap|bridge)\b/.test(t) && /\b(usdc|weth|eth)\b/.test(t)) ||
+    (/\b(plan|quote)\b/.test(t) && /\b(swap|bridge)\b/.test(t))
+  );
+}
+
 /** DeFi portfolio risk — Portfolio Risk Agent. */
 export function isPortfolioRiskBrief(brief: string): boolean {
   if (wantsDeepBrief(brief)) return false;
@@ -288,6 +303,16 @@ export function resolveExecutionShape(brief: string): ExecutionShapeResult {
       shape: "multi",
       confidence: "high",
       reason: "Comprehensive or multi-agent report requested",
+    };
+  }
+
+  if (isDefiExecutionBrief(brief)) {
+    return {
+      shape: "single",
+      confidence: "high",
+      reason: "DeFi swap/bridge execution plan",
+      suggestedAgentId: "defi-execution-agent",
+      suggestedCategory: "market-data",
     };
   }
 
@@ -396,6 +421,9 @@ export function resolveExpressBrief(brief: string): ExpressBrief | null {
   }
   if (isWalletReputationBrief(brief)) {
     return { category: "market-data", agentId: "wallet-reputation-agent", label: "wallet reputation" };
+  }
+  if (isDefiExecutionBrief(brief)) {
+    return { category: "market-data", agentId: "defi-execution-agent", label: "defi execution plan" };
   }
   if (isTokenResearchBrief(brief)) {
     return { category: "research", agentId: "token-research-agent", label: "token research" };

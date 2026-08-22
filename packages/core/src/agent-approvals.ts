@@ -9,6 +9,9 @@ export interface AgentApprovalsFile {
 
 const DEFAULT_LOCAL_IDS = MARKETPLACE_AGENTS.map((a) => a.id);
 
+/** Agents that can move/plan user funds — never auto-approved when approval gate is on. */
+export const EXECUTION_SENSITIVE_AGENT_IDS = new Set(["defi-execution-agent"]);
+
 let memoryApproved: Set<string> | null = null;
 let memoryPath: string | null = null;
 
@@ -17,8 +20,9 @@ export function requireAgentApproval(): boolean {
 }
 
 function defaultApprovals(): AgentApprovalsFile {
+  // Seed without execution-sensitive agents — operator must opt in.
   return {
-    approvedAgentIds: [...DEFAULT_LOCAL_IDS],
+    approvedAgentIds: DEFAULT_LOCAL_IDS.filter((id) => !EXECUTION_SENSITIVE_AGENT_IDS.has(id)),
     updatedAt: Math.floor(Date.now() / 1000),
   };
 }
@@ -66,9 +70,22 @@ export function getApprovedAgentIds(path?: string): Set<string> {
 }
 
 export function isAgentApproved(agentId: string, path?: string): boolean {
+  const approvals = getApprovedAgentIds(path ?? memoryPath ?? undefined);
+
+  // When broadcast is on, execution agents must be explicitly approved — no silent pass.
+  if (
+    EXECUTION_SENSITIVE_AGENT_IDS.has(agentId) &&
+    process.env.BUTLER_DEFI_BROADCAST === "true"
+  ) {
+    return approvals.has(agentId);
+  }
+
   if (!requireAgentApproval()) return true;
-  if (DEFAULT_LOCAL_IDS.includes(agentId)) return true;
-  return getApprovedAgentIds(path ?? memoryPath ?? undefined).has(agentId);
+
+  if (DEFAULT_LOCAL_IDS.includes(agentId) && !EXECUTION_SENSITIVE_AGENT_IDS.has(agentId)) {
+    return true;
+  }
+  return approvals.has(agentId);
 }
 
 export function setAgentApproved(agentId: string, approved: boolean, path: string): Set<string> {

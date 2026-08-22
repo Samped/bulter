@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { ButlerPolicy, SpendRecord } from "./types.ts";
-import { createDefaultPolicy, DEFAULT_MERCHANTS } from "./policy.ts";
+import { createDefaultPolicy, DEFAULT_AGENTS, DEFAULT_MERCHANTS } from "./policy.ts";
 
 export interface ButlerState {
   policy: ButlerPolicy;
@@ -19,7 +19,7 @@ function readRawStateFile(path: string): Record<string, unknown> {
   }
 }
 
-/** Ensure newly shipped merchants (e.g. travel-search) appear in existing policies. */
+/** Ensure newly shipped merchants (e.g. travel-search, defi-execution) appear in existing policies. */
 function mergeDefaultMerchants(policy: ButlerPolicy): { policy: ButlerPolicy; changed: boolean } {
   const have = new Set((policy.merchants ?? []).map((m) => m.id));
   const missing = DEFAULT_MERCHANTS.filter((m) => !have.has(m.id));
@@ -28,6 +28,34 @@ function mergeDefaultMerchants(policy: ButlerPolicy): { policy: ButlerPolicy; ch
     policy: { ...policy, merchants: [...policy.merchants, ...missing] },
     changed: true,
   };
+}
+
+/** Ensure new agent roles (e.g. broker) exist; do not overwrite operator caps/enabled flags on existing roles. */
+function mergeDefaultAgents(policy: ButlerPolicy): { policy: ButlerPolicy; changed: boolean } {
+  const have = new Set((policy.agents ?? []).map((a) => a.role));
+  const missing = DEFAULT_AGENTS.filter((a) => !have.has(a.role));
+  let agents = policy.agents ?? [];
+  let changed = false;
+  if (missing.length > 0) {
+    agents = [...agents, ...missing];
+    changed = true;
+  }
+  // If broker exists but was disabled from an older default, enable when merchant defi-execution is present.
+  agents = agents.map((a) => {
+    if (a.role !== "broker") return a;
+    const hasDefiMerchant = (policy.merchants ?? []).some((m) => m.id === "defi-execution");
+    if (hasDefiMerchant && !a.enabled) {
+      changed = true;
+      return {
+        ...a,
+        enabled: true,
+        categories: a.categories.includes("services") ? a.categories : [...a.categories, "services"],
+        dailyLimitUsdc: a.dailyLimitUsdc === "1" ? "2" : a.dailyLimitUsdc,
+      };
+    }
+    return a;
+  });
+  return { policy: { ...policy, agents }, changed };
 }
 
 export function loadState(path = DEFAULT_PATH, owner: `0x${string}` = "0x0000000000000000000000000000000000000001"): ButlerState {
@@ -47,10 +75,12 @@ export function loadState(path = DEFAULT_PATH, owner: `0x${string}` = "0x0000000
     const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<ButlerState>;
     const records = Array.isArray(raw.records) ? raw.records : [];
     let policy = isValidPolicy(raw.policy) ? raw.policy : createDefaultPolicy(owner);
-    const merged = mergeDefaultMerchants(policy);
-    policy = merged.policy;
+    const mergedMerchants = mergeDefaultMerchants(policy);
+    policy = mergedMerchants.policy;
+    const mergedAgents = mergeDefaultAgents(policy);
+    policy = mergedAgents.policy;
     const state = { policy, records };
-    if (!isValidPolicy(raw.policy) || merged.changed) {
+    if (!isValidPolicy(raw.policy) || mergedMerchants.changed || mergedAgents.changed) {
       saveState(state, path);
     }
     return state;

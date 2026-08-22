@@ -296,6 +296,18 @@ export const MARKETPLACE_AGENTS: MarketplaceAgent[] = [
     capabilities: ["defi", "yield", "tvl", "protocols"],
   },
   {
+    id: "defi-execution-agent",
+    name: "DeFi Execution Agent",
+    tagline: "Security-first USDC swap/bridge planner — allowlisted plugins, plan-only by default",
+    category: "market-data",
+    servicePath: "/marketplace/agents/defi-execution-agent/execute",
+    priceUsdc: "0.04",
+    etaSeconds: 28,
+    merchantId: "defi-execution",
+    policyAgent: "broker",
+    capabilities: ["swap", "bridge", "cctp", "defi-execution", "quote", "plan"],
+  },
+  {
     id: "macro-agent",
     name: "Macro Agent",
     tagline: "Fed, rates, CPI & cross-asset macro briefings",
@@ -541,6 +553,15 @@ export const MARKETPLACE_ETFS: AgentEtf[] = [
     etaSeconds: 68,
   },
   {
+    id: "defi-execution-etf",
+    name: "DeFi Execution ETF",
+    description:
+      "Security-first USDC route planner — quote + allowlisted CCTP/swap plan (broadcast off by default)",
+    agentIds: ["defi-execution-agent"],
+    bundlePriceUsdc: "0.04",
+    etaSeconds: 28,
+  },
+  {
     id: "travel-etf",
     name: "Travel ETF",
     description: "AI-routed live flight search → hotel search → day-by-day itinerary with book links",
@@ -670,6 +691,8 @@ export function scoreEtfForBrief(
   }
 
   if (etf.id === "defi-alpha-etf" && /defi|yield|tvl|uniswap|aave/.test(t)) score += 18;
+  if (etf.id === "defi-execution-etf" && /swap|bridge|cctp|defi execution|universal router/.test(t)) score += 45;
+  if (etf.id === "defi-execution-etf" && isEquityInvestmentBrief(brief)) score -= 60;
   if (etf.id === "macro-radar-etf" && /macro|fed|rates|cpi|inflation|economy/.test(t)) score += 18;
   if (etf.id === "crypto-research-etf" && /crypto|btc|eth|sol/.test(t)) score += 12;
   if (etf.id === "bill-audit-bundle" && /bill|subscription|utility|invoice/.test(t)) score += 20;

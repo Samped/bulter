@@ -40,6 +40,7 @@ const QUALITY_TIER_AGENTS: Record<QualityTier, string[] | null> = {
     "report-agent",
     "macro-agent",
     "defi-agent",
+    "defi-execution-agent",
     "onchain-agent",
     "token-research-agent",
     "chart-agent",
