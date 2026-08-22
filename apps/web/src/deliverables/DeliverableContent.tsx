@@ -94,6 +94,19 @@ function MarketBlock({ data }: { data: Record<string, unknown> }) {
   if (typeof data.symbol !== "string" || data.price == null) return null;
   const change = Number(data.change24h);
   const positive = !Number.isNaN(change) && change >= 0;
+  const changeLabel = Number.isFinite(change) ? `${positive ? "+" : ""}${change.toFixed(2)}%` : `${String(data.change24h ?? "?")}%`;
+  const priceNum = Number(data.price);
+  const priceLabel = Number.isFinite(priceNum)
+    ? `$${priceNum.toLocaleString(undefined, { maximumFractionDigits: priceNum >= 100 ? 2 : 4 })}`
+    : `$${String(data.price)}`;
+  const volNum = Number(data.volume);
+  const volumeLabel = Number.isFinite(volNum)
+    ? volNum >= 1e9
+      ? `${(volNum / 1e9).toFixed(2)}B`
+      : volNum >= 1e6
+        ? `${(volNum / 1e6).toFixed(2)}M`
+        : volNum.toLocaleString()
+    : String(data.volume ?? "—");
   return (
     <section className="paper-section">
       <h2 className="paper-section-title">Market Snapshot</h2>
@@ -104,18 +117,15 @@ function MarketBlock({ data }: { data: Record<string, unknown> }) {
         </div>
         <div className="paper-stat">
           <span className="paper-stat-label">Price</span>
-          <span className="paper-stat-value">${String(data.price)}</span>
+          <span className="paper-stat-value">{priceLabel}</span>
         </div>
         <div className="paper-stat">
           <span className="paper-stat-label">24h Change</span>
-          <span className={`paper-stat-value ${positive ? "up" : "down"}`}>
-            {positive ? "+" : ""}
-            {String(data.change24h ?? "?")}%
-          </span>
+          <span className={`paper-stat-value ${positive ? "up" : "down"}`}>{changeLabel}</span>
         </div>
         <div className="paper-stat">
           <span className="paper-stat-label">Volume</span>
-          <span className="paper-stat-value">{String(data.volume ?? "—")}</span>
+          <span className="paper-stat-value">{volumeLabel}</span>
         </div>
       </div>
     </section>
@@ -287,6 +297,7 @@ function AuditBlock({
 }
 
 function OnchainBlock({ data }: { data: Record<string, unknown> }) {
+  if (data.source === "skipped-equity") return null;
   if (data.type !== "onchain" && !Array.isArray(data.signals)) return null;
   const market = data.marketContext as Record<string, unknown> | undefined;
   const signals = Array.isArray(data.signals) ? (data.signals as Record<string, unknown>[]) : [];
@@ -531,6 +542,7 @@ function MacroBlock({ data }: { data: Record<string, unknown> }) {
 }
 
 function DefiBlock({ data }: { data: Record<string, unknown> }) {
+  if (data.source === "skipped-equity") return null;
   if (data.type !== "defi" && !Array.isArray(data.topProtocols)) return null;
   return (
     <section className="paper-section">

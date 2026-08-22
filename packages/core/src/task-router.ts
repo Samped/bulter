@@ -4,7 +4,7 @@ import {
   type MarketplaceAgent,
 } from "./agent-registry.ts";
 import { getMarketplaceEtf, MARKETPLACE_ETFS } from "./marketplace.ts";
-import { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, isHolderInfoBrief, resolveExpressBrief, wantsDeepBrief } from "./brief-intent.ts";
+import { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, isHolderInfoBrief, isEquityInvestmentBrief, resolveExpressBrief, wantsDeepBrief } from "./brief-intent.ts";
 
 export type TaskStrategy = "etf" | "workflow" | "direct";
 
@@ -301,13 +301,16 @@ export function planTaskExecution(params: {
   }
 
   if (wantsDeepBrief(task)) {
-    const deep = getMarketplaceEtf("deep-dive-etf");
+    const equity = isEquityInvestmentBrief(task);
+    const deep = getMarketplaceEtf(equity ? "nvidia-investment-report" : "deep-dive-etf");
     if (deep) {
       return {
         strategy: "etf",
         etfId: deep.id,
         agentIds: deep.agentIds,
-        reason: `Deep dive — all specialists contribute; Report Agent delivers one unified document.`,
+        reason: equity
+          ? `Equity investment report — news, market, research, and report agents.`
+          : `Deep dive — all specialists contribute; Report Agent delivers one unified document.`,
         estimatedUsdc: deep.bundlePriceUsdc,
         etaSeconds: deep.etaSeconds,
       };

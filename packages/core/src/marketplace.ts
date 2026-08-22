@@ -1,6 +1,6 @@
 /** Butler Agentic hub — agent commerce via x402. */
 
-import { isHeadlineOnlyBrief, isChartOnlyBrief, isAuditOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, resolveExpressBrief, wantsDeepBrief } from "./brief-intent.ts";
+import { isHeadlineOnlyBrief, isChartOnlyBrief, isAuditOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, isEquityInvestmentBrief, resolveExpressBrief, wantsDeepBrief } from "./brief-intent.ts";
 
 export type MarketplaceCategory =
   | "research"
@@ -644,7 +644,11 @@ export function scoreEtfForBrief(
   }
 
   if (wantsDeepBrief(brief)) {
-    if (etf.id === "deep-dive-etf") score += 65;
+    if (isEquityInvestmentBrief(brief)) {
+      if (etf.id === "nvidia-investment-report") score += 80;
+      else if (etf.id === "deep-dive-etf") score -= 80;
+      else score -= 55;
+    } else if (etf.id === "deep-dive-etf") score += 65;
     else if (etf.id === "btc-full-thesis-etf" && /investment thesis/.test(t) && /btc|bitcoin/.test(t)) score += 30;
     else score -= 55;
   }
@@ -679,17 +683,21 @@ export function scoreEtfForBrief(
   }
 
   if (etf.id === "nvidia-investment-report") {
-    if (/nvda|nvidia|tsla|aapl|msft|stock|equity|share/.test(t)) score += 22;
+    if (isEquityInvestmentBrief(brief) || /nvda|nvidia|tsla|aapl|msft|stock|equity|share/.test(t)) score += 40;
     else score -= 40;
   }
 
   if (/full|comprehensive|deep dive|thesis|multi.?agent|all agents/.test(t)) {
     if (etf.id === "btc-full-thesis-etf" && /btc|bitcoin/.test(t)) score += 35;
+    else if (isEquityInvestmentBrief(brief) && etf.id === "nvidia-investment-report") score += 20;
     else score += Math.min(etf.agentIds.length, 4) * 2;
   }
 
   if (qualityTier === "full") {
-    if (etf.id === "deep-dive-etf") score += 55;
+    if (isEquityInvestmentBrief(brief)) {
+      if (etf.id === "nvidia-investment-report") score += 55;
+      else if (etf.id === "deep-dive-etf") score -= 40;
+    } else if (etf.id === "deep-dive-etf") score += 55;
     else score -= 25;
   }
 

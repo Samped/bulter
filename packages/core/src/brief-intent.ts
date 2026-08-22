@@ -6,6 +6,23 @@ export interface ExpressBrief {
   label: string;
 }
 
+/**
+ * Equity / public-company investment research — not crypto Deep Dive.
+ * "Research a stock and create an investment report" must use the stock pipeline.
+ */
+export function isEquityInvestmentBrief(brief: string): boolean {
+  const t = brief.toLowerCase();
+  if (
+    /\b(btc|bitcoin|eth\b|ethereum|solana|\bsol\b|crypto|defi|on[- ]?chain|onchain|web3|tokenomics)\b/.test(t)
+  ) {
+    return false;
+  }
+  return (
+    /\b(stock|stocks|equity|equities|share|shares|ticker|nyse|nasdaq|s&p|earnings|sec filing)\b/.test(t) ||
+    /\b(nvda|nvidia|aapl|apple|msft|microsoft|tsla|tesla|amzn|amazon|meta|goog|google|amd|intc)\b/.test(t)
+  );
+}
+
 /** Multi-agent ETF / full report — all specialists contribute one unified deliverable. */
 export function wantsDeepBrief(brief: string): boolean {
   const t = brief.toLowerCase();
@@ -64,6 +81,11 @@ export function resolveDeepWorkRouting(brief: string): BtcPipelineRouting | null
     return resolveTravelPipelineRouting(brief);
   }
   if (wantsDeepBrief(brief)) {
+    // Stock / equity reports → Investment Research ETF (news→market→research→report).
+    // Crypto Deep Dive includes on-chain/DeFi specialists and must not run for equities.
+    if (isEquityInvestmentBrief(brief)) {
+      return { qualityTier: "standard", auctionMode: "etf", etfId: "nvidia-investment-report" };
+    }
     return { qualityTier: "full", auctionMode: "etf", etfId: "deep-dive-etf" };
   }
   return resolveBtcPipelineRouting(brief);

@@ -11,7 +11,6 @@ import {
   wantsDeepBrief,
   isAuditOnlyBrief,
   isBillOnlyBrief,
-  isTravelBrief,
   resolveTravelPipelineRouting,
   listMarketplaceAgents,
   loadMarketplaceState,
@@ -464,21 +463,14 @@ export async function runButler(opts: {
     auctionMode: opts.auctionMode,
     category: opts.category,
   });
-  const btcRoute = !express ? resolveBtcPipelineRouting(brief) : null;
   const travelRoute = !express ? resolveTravelPipelineRouting(brief) : null;
-  const deepRequested =
-    !express &&
-    !isAuditOnlyBrief(brief) &&
-    !isBillOnlyBrief(brief) &&
-    !isTravelBrief(brief) &&
-    (wantsDeepBrief(brief) || opts.qualityTier === "full");
-  const deepWork = deepRequested
-    ? { qualityTier: "full" as const, auctionMode: "etf" as const, etfId: "deep-dive-etf" as const }
-    : travelRoute
-      ? travelRoute
-      : !express && btcRoute
-        ? resolveDeepWorkRouting(brief)
-        : null;
+  // Pin Deep Dive / equity investment / Travel / BTC pipelines before the remote catalog can pick a smaller ETF.
+  const deepWork =
+    !express && !isAuditOnlyBrief(brief) && !isBillOnlyBrief(brief)
+      ? resolveDeepWorkRouting(brief)
+      : null;
+  const btcRoute =
+    !express && !deepWork && !travelRoute ? resolveBtcPipelineRouting(brief) : null;
   const qualityTier = express
     ? "brief"
     : deepWork
@@ -501,7 +493,13 @@ export async function runButler(opts: {
           : defaultAuctionMode(qualityTier, opts.auctionMode, brief);
   const maxBudgetUsdc =
     opts.maxBudgetUsdc?.trim() ||
-    (deepWork?.etfId === "deep-dive-etf" ? "0.30" : travelRoute ? "0.15" : undefined);
+    (deepWork?.etfId === "deep-dive-etf"
+      ? "0.30"
+      : deepWork?.etfId === "nvidia-investment-report"
+        ? "0.15"
+        : travelRoute
+          ? "0.15"
+          : undefined);
 
   const readiness = agentRunReadiness();
   if (!readiness.canRun) {

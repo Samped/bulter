@@ -18,6 +18,20 @@ const CRYPTO_IDS: Record<string, string> = {
 
 const STOCK_TICKERS = new Set(["nvda", "aapl", "msft", "goog", "googl", "amzn", "meta", "tsla", "amd", "intc"]);
 
+function roundMoney(n: number, digits = 2): number {
+  const f = 10 ** digits;
+  return Math.round(n * f) / f;
+}
+
+function looksEquityBrief(brief?: string): boolean {
+  const t = (brief ?? "").toLowerCase();
+  if (/\b(btc|bitcoin|eth\b|ethereum|solana|\bsol\b|crypto|defi|on[- ]?chain|onchain|web3)\b/.test(t)) {
+    return false;
+  }
+  return /\b(stock|stocks|equity|equities|share|shares|ticker|nyse|nasdaq|earnings)\b/.test(t) ||
+    /\b(nvda|nvidia|aapl|apple|msft|microsoft|tsla|tesla|amzn|amazon|meta|goog|google|amd)\b/.test(t);
+}
+
 export function inferSymbol(brief?: string): { symbol: string; kind: "crypto" | "stock" | "unknown" } {
   const t = (brief ?? "").toLowerCase();
   if (/bitcoin|btc\b/.test(t)) return { symbol: "BTC", kind: "crypto" };
@@ -27,12 +41,18 @@ export function inferSymbol(brief?: string): { symbol: string; kind: "crypto" | 
   if (/apple|aapl/.test(t)) return { symbol: "AAPL", kind: "stock" };
   if (/microsoft|msft/.test(t)) return { symbol: "MSFT", kind: "stock" };
   if (/tesla|tsla/.test(t)) return { symbol: "TSLA", kind: "stock" };
+  if (/amazon|amzn/.test(t)) return { symbol: "AMZN", kind: "stock" };
+  if (/\bmeta\b|facebook/.test(t)) return { symbol: "META", kind: "stock" };
+  if (/google|googl|\bgoog\b/.test(t)) return { symbol: "GOOGL", kind: "stock" };
+  if (/\bamd\b/.test(t)) return { symbol: "AMD", kind: "stock" };
   const match = brief?.match(/\b([A-Z]{2,5})\b/);
   if (match) {
     const sym = match[1]!.toLowerCase();
     if (CRYPTO_IDS[sym]) return { symbol: match[1]!, kind: "crypto" };
     if (STOCK_TICKERS.has(sym)) return { symbol: match[1]!, kind: "stock" };
   }
+  // Generic "research a stock" — default to NVDA (showcase equity), never BTC.
+  if (looksEquityBrief(brief)) return { symbol: "NVDA", kind: "stock" };
   return { symbol: "BTC", kind: "crypto" };
 }
 
@@ -46,9 +66,9 @@ async function fetchCryptoQuote(symbol: string) {
   if (!row?.usd) throw new Error(`No quote for ${symbol}`);
   return {
     symbol: symbol.toUpperCase(),
-    price: row.usd,
-    change24h: row.usd_24h_change ?? 0,
-    volume: row.usd_24h_vol ?? 0,
+    price: roundMoney(row.usd, row.usd >= 100 ? 2 : 4),
+    change24h: roundMoney(row.usd_24h_change ?? 0, 2),
+    volume: Math.round(row.usd_24h_vol ?? 0),
     source: "coingecko",
     asOf: new Date().toISOString(),
   };
@@ -67,9 +87,9 @@ async function fetchStockQuote(symbol: string) {
   const change24h = prev ? ((meta.regularMarketPrice - prev) / prev) * 100 : 0;
   return {
     symbol: symbol.toUpperCase(),
-    price: meta.regularMarketPrice,
-    change24h,
-    volume: meta.regularMarketVolume ?? 0,
+    price: roundMoney(meta.regularMarketPrice, 2),
+    change24h: roundMoney(change24h, 2),
+    volume: Math.round(meta.regularMarketVolume ?? 0),
     source: "yahoo-finance",
     asOf: new Date().toISOString(),
   };
@@ -83,8 +103,12 @@ export async function fetchMarketQuote(brief?: string) {
 }
 
 export async function buildNewsPayload(brief?: string) {
-  const topic = brief?.trim() || "cryptocurrency markets";
-  const live = await fetchLiveCryptoHeadlines(12).catch(() => [] as LiveHeadline[]);
+  const { symbol, kind } = inferSymbol(brief);
+  const equity = kind === "stock" || looksEquityBrief(brief);
+  const topic = brief?.trim() || (equity ? `${symbol} equity markets` : "cryptocurrency markets");
+  const live = equity
+    ? await fetchLiveEquityHeadlines(symbol, 12).catch(() => [] as LiveHeadline[])
+    : await fetchLiveCryptoHeadlines(12).catch(() => [] as LiveHeadline[]);
 
   if (live.length === 0 && !analystConfigured()) {
     throw analystUnavailable("News Agent");
@@ -110,6 +134,10 @@ export async function buildNewsPayload(brief?: string) {
   const countMatch = topic.match(/top\s+(\d+)/i);
   const count = countMatch ? Math.min(10, Math.max(3, Number(countMatch[1]) || 5)) : 5;
   const seed = live.slice(0, Math.max(count, 8));
+  const desk = equity ? "equity markets desk editor" : "crypto markets desk editor";
+  const focusHint = equity
+    ? `Prefer headlines about ${symbol} (or closely related peers/sector). Do NOT invent crypto exchange or DeFi stories.`
+    : "Prefer crypto market-moving headlines.";
 
   return analystJson<{
     type: string;
@@ -124,8 +152,9 @@ export async function buildNewsPayload(brief?: string) {
     }[];
     generatedAt: string;
   }>(
-    `You are a crypto markets desk editor. The user wants REAL headlines from the last 24 hours.
+    `You are a ${desk}. The user wants REAL headlines from the last 24 hours.
 You are given live RSS headlines — use ONLY these (pick the ${count} most relevant). Do NOT invent stories or fake paper citations.
+${focusHint}
 For each headline return: title, source, url, publishedAt, sentiment (-1 to 1), traderImpact (2-3 sentences on why it matters for traders — liquidity, volatility, regulation, flows, etc.).
 Return JSON: type="news", topic, headlines (exactly ${count} items), generatedAt (ISO).`,
     `User brief: ${topic}
@@ -154,6 +183,14 @@ const NEWS_FEEDS: { url: string; source: string }[] = [
   { url: "https://decrypt.co/feed", source: "Decrypt" },
 ];
 
+const EQUITY_NEWS_FEEDS: { url: string; source: string }[] = [
+  { url: "https://feeds.finance.yahoo.com/rss/2.0/headline?s=NVDA&region=US&lang=en-US", source: "Yahoo Finance" },
+  { url: "https://feeds.finance.yahoo.com/rss/2.0/headline?s=AAPL&region=US&lang=en-US", source: "Yahoo Finance" },
+  { url: "https://feeds.finance.yahoo.com/rss/2.0/headline?s=MSFT&region=US&lang=en-US", source: "Yahoo Finance" },
+  { url: "https://feeds.finance.yahoo.com/rss/2.0/headline?s=TSLA&region=US&lang=en-US", source: "Yahoo Finance" },
+  { url: "https://www.cnbc.com/id/100003114/device/rss/rss.html", source: "CNBC" },
+];
+
 function parseRssItems(xml: string, source: string): LiveHeadline[] {
   const items: LiveHeadline[] = [];
   const blocks = xml.split(/<item[\s>]/i).slice(1);
@@ -176,16 +213,14 @@ function parseRssItems(xml: string, source: string): LiveHeadline[] {
 }
 
 let rssCache: { at: number; items: LiveHeadline[] } | null = null;
+let equityRssCache: { at: number; items: LiveHeadline[]; symbol: string } | null = null;
 
-async function fetchLiveCryptoHeadlines(limit: number): Promise<LiveHeadline[]> {
-  if (rssCache && Date.now() - rssCache.at < 300_000) {
-    return rssCache.items.slice(0, limit);
-  }
+async function fetchFeeds(feeds: { url: string; source: string }[], limit: number): Promise<LiveHeadline[]> {
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
   const all: LiveHeadline[] = [];
 
   await Promise.all(
-    NEWS_FEEDS.map(async ({ url, source }) => {
+    feeds.map(async ({ url, source }) => {
       try {
         const res = await fetch(url, {
           headers: { Accept: "application/rss+xml, application/xml, text/xml", "User-Agent": "Butler/1.0" },
@@ -216,8 +251,43 @@ async function fetchLiveCryptoHeadlines(limit: number): Promise<LiveHeadline[]> 
     unique.push(h);
     if (unique.length >= limit) break;
   }
+  return unique;
+}
+
+async function fetchLiveCryptoHeadlines(limit: number): Promise<LiveHeadline[]> {
+  if (rssCache && Date.now() - rssCache.at < 300_000) {
+    return rssCache.items.slice(0, limit);
+  }
+  const unique = await fetchFeeds(NEWS_FEEDS, limit);
   rssCache = { at: Date.now(), items: unique };
   return unique;
+}
+
+async function fetchLiveEquityHeadlines(symbol: string, limit: number): Promise<LiveHeadline[]> {
+  const sym = symbol.toUpperCase();
+  if (equityRssCache && equityRssCache.symbol === sym && Date.now() - equityRssCache.at < 300_000) {
+    return equityRssCache.items.slice(0, limit);
+  }
+  const tickerFeed = {
+    url: `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(sym)}&region=US&lang=en-US`,
+    source: "Yahoo Finance",
+  };
+  const unique = await fetchFeeds([tickerFeed, ...EQUITY_NEWS_FEEDS], Math.max(limit, 16));
+  // Prefer headlines mentioning the ticker / company when possible
+  const ranked = [...unique].sort((a, b) => {
+    const score = (h: LiveHeadline) => {
+      const t = h.title.toLowerCase();
+      if (t.includes(sym.toLowerCase())) return 2;
+      if (sym === "NVDA" && /nvidia|gpu|ai chip/.test(t)) return 2;
+      if (sym === "AAPL" && /apple|iphone/.test(t)) return 2;
+      if (sym === "MSFT" && /microsoft|azure|openai/.test(t)) return 2;
+      if (sym === "TSLA" && /tesla|musk|ev\b/.test(t)) return 2;
+      return 0;
+    };
+    return score(b) - score(a);
+  });
+  equityRssCache = { at: Date.now(), items: ranked, symbol: sym };
+  return ranked.slice(0, limit);
 }
 
 export async function buildMarketPayload(brief?: string) {
@@ -232,31 +302,42 @@ export async function buildResearchPayload(brief?: string, priorContext?: string
   const paperCount = /\b3\b/.test(topic) && /paper|theme/.test(topic.toLowerCase()) ? 3 : undefined;
 
   if (!analystConfigured()) {
-    const themes = [
-      "Bitcoin as digital gold and inflation hedge (Baur et al.)",
-      "BTC–equity correlation regime shifts post-2020",
-      "Institutional adoption and portfolio diversification benefits",
-    ];
+    const equity = looksEquityBrief(brief) || inferSymbol(brief).kind === "stock";
+    const sym = market?.symbol ?? inferSymbol(brief).symbol;
+    const themes = equity
+      ? [
+          `${sym} competitive positioning and product cycle risk`,
+          "AI/capex cycle and margin durability for megacap tech",
+          "Valuation vs growth: multiples compression scenarios",
+        ]
+      : [
+          "Bitcoin as digital gold and inflation hedge (Baur et al.)",
+          "BTC–equity correlation regime shifts post-2020",
+          "Institutional adoption and portfolio diversification benefits",
+        ];
     return {
       type: "research",
       focus: topic,
-      executiveSummary:
-        "Academic and industry work on Bitcoin as a macro hedge is mixed: BTC shows episodic safe-haven behavior but remains high-beta versus equities in stress regimes.",
+      executiveSummary: equity
+        ? `Preliminary equity research framing for ${sym}: focus on earnings quality, competitive moat, and valuation versus growth. Pair live quotes with fundamental catalysts — not crypto on-chain narratives.`
+        : "Academic and industry work on Bitcoin as a macro hedge is mixed: BTC shows episodic safe-haven behavior but remains high-beta versus equities in stress regimes.",
       keyFindings: themes,
       papers: themes.map((title, i) => ({
         title,
         authors: "Various",
         year: 2021 + i,
-        venue: i === 0 ? "Journal of Financial Economics (style)" : "Industry research",
+        venue: i === 0 ? "Industry research note" : "Sell-side / academic survey",
         relevance: 0.9 - i * 0.05,
-        abstract: `Theme ${i + 1} relevant to macro-hedge framing for Bitcoin.`,
+        abstract: `Theme ${i + 1} relevant to ${equity ? `${sym} equity` : "macro-hedge"} framing.`,
       })),
       limitations: [
-        "Short sample periods and regime changes limit hedge stability claims",
-        "Correlation spikes during liquidity shocks reduce diversifier benefits",
+        "Short sample periods and regime changes limit forecast stability",
+        "Forward estimates may diverge from realized results",
         "Industry reports may conflict with peer-reviewed findings",
       ],
-      risks: ["Regulatory shifts", "Liquidity gaps in stress events"],
+      risks: equity
+        ? ["Earnings miss / guidance cut", "Multiple compression", "Sector rotation / rates shock"]
+        : ["Regulatory shifts", "Liquidity gaps in stress events"],
       methodology: "Survey of academic and industry literature with thematic synthesis.",
       wordCount: 450,
       brief: brief?.trim() || undefined,
@@ -266,6 +347,7 @@ export async function buildResearchPayload(brief?: string, priorContext?: string
     };
   }
 
+  const equity = looksEquityBrief(brief) || inferSymbol(brief).kind === "stock";
   return analystJson<{
     type: string;
     focus: string;
@@ -277,9 +359,10 @@ export async function buildResearchPayload(brief?: string, priorContext?: string
     methodology: string;
     wordCount: number;
   }>(
-    `You are an institutional research analyst. Produce a structured research brief as JSON.
-Fields: type="research", focus, executiveSummary, keyFindings (3-5 bullets), papers (${paperCount ?? "2-4"} items with plausible academic/industry metadata), limitations (3-5 bullets on methodological gaps and hedge-effectiveness caveats), risks, methodology, wordCount.
-When the brief asks for N papers/themes, return exactly that many. Use realistic author names and venues (e.g. Baur, Dyhrberg, Scaillet; Journal of International Financial Markets; NBER working papers) — never placeholder names like Jane Doe or John Smith. Ground analysis in the task — not buy/sell investment ratings.`,
+    `You are an institutional ${equity ? "equity" : "markets"} research analyst. Produce a structured research brief as JSON.
+Fields: type="research", focus, executiveSummary, keyFindings (3-5 bullets), papers (${paperCount ?? "2-4"} items with plausible academic/industry metadata), limitations (3-5 bullets on methodological gaps), risks, methodology, wordCount.
+${equity ? "This is an EQUITY report — analyze the company/ticker (fundamentals, competitive position, valuation). Do NOT invent Bitcoin on-chain flows, DeFi TVL, or crypto exchange headlines." : "Ground analysis in the task — not buy/sell investment ratings."}
+When the brief asks for N papers/themes, return exactly that many. Use realistic author names and venues — never placeholder names like Jane Doe or John Smith.`,
     `Task brief: ${topic}${market ? `\n\nLive market context: ${JSON.stringify(market)}` : ""}${ctx}`
   ).then((data) => ({
     ...data,
@@ -557,6 +640,21 @@ Base estimates on typical US utility pricing when specifics are missing; state a
 }
 
 export async function buildDefiPayload(brief?: string) {
+  const { symbol, kind } = inferSymbol(brief);
+  if (kind === "stock" || looksEquityBrief(brief)) {
+    return {
+      type: "defi",
+      focus: `${symbol} (equity)`,
+      tvlTrend: "Not applicable — this is a public equity, not a DeFi protocol.",
+      topProtocols: [] as { name: string; chain: string; tvlUsd: string; yieldApy: string; risk: string }[],
+      opportunities: [] as string[],
+      risks: ["Equity reports should use fundamentals and valuation — skip DeFi TVL framing."],
+      summary: `${symbol} is a stock. DeFi context was skipped for this equity research brief.`,
+      brief: brief?.trim() || undefined,
+      generatedAt: new Date().toISOString(),
+      source: "skipped-equity",
+    };
+  }
   if (!analystConfigured()) {
     throw analystUnavailable("DeFi Agent");
   }
@@ -610,8 +708,25 @@ export async function buildMacroPayload(brief?: string) {
 }
 
 export async function buildOnchainPayload(brief?: string) {
-  const { symbol } = inferSymbol(brief);
+  const { symbol, kind } = inferSymbol(brief);
   const market = await fetchMarketQuote(brief).catch(() => null);
+  if (kind === "stock" || looksEquityBrief(brief)) {
+    return {
+      type: "onchain",
+      asset: symbol,
+      networkActivity: "Not applicable — equities do not have public blockchain holder metrics in this workflow.",
+      exchangeFlows: "Skipped for equity research.",
+      whaleActivity: "Skipped for equity research.",
+      holderTrends: "Use institutional ownership / float from equity data sources instead of on-chain holders.",
+      outlook7d: `${symbol} equity outlook should rely on price action, earnings, and macro — not crypto exchange flows.`,
+      signals: [] as { label: string; direction: string; detail: string }[],
+      summary: `${symbol} is a stock; on-chain analysis was skipped for this equity investment report.${market ? ` Last $${market.price} (${market.change24h}%).` : ""}`,
+      brief: brief?.trim() || undefined,
+      marketContext: market ?? undefined,
+      generatedAt: new Date().toISOString(),
+      source: "skipped-equity",
+    };
+  }
   const topic = brief?.trim() || `${symbol} on-chain activity`;
   const bias =
     market && market.change24h < -1 ? "bearish" : market && market.change24h > 1 ? "bullish" : "neutral";

@@ -406,6 +406,14 @@ function isPlaceholderHotelName(name: string): boolean {
   if (/^(hotel|inn|suites)\s+[xyz]$/i.test(n)) return true;
   if (/gateway inn|testnet|arc .+ suites|placeholder|sample hotel|demo hotel/i.test(n)) return true;
   if (/^hotel\s+\d+$/i.test(n)) return true;
+  // Malls / attractions often hallucinated as hotels
+  if (
+    /\b(sarit\s*centre|sarit\s*center|village\s*market|westgate|galleria|two rivers|junction mall|shopping\s*mall|\bmall\b|giraffe centre|national museum|railway museum)\b/i.test(
+      n,
+    )
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -437,9 +445,40 @@ function looksHallucinatedFlights(flights: LiveFlight[]): boolean {
     (f) => f.stops >= 1 && f.durationHours > 0 && f.durationHours < 8,
   );
   const labeledStopButShort = flights.some(
-    (f) => f.stops >= 1 && /direct|nonstop/i.test(f.note) === false && f.durationHours > 0 && f.durationHours <= 6,
+    (f) => f.stops >= 1 && f.durationHours > 0 && f.durationHours <= 6,
   );
-  return (allSamePrice && allSameDuration) || impossibleConnect || labeledStopButShort;
+  // Nonstop priced as the cheapest while a long connection is also listed cheaper on Google is common;
+  // catch "short nonstop undercuts long connection by <$50 with identical invent pattern".
+  const shortNonstop = flights.find((f) => f.stops === 0 && f.durationHours > 0 && f.durationHours <= 7);
+  const longConnect = flights.find((f) => f.stops >= 1 && f.durationHours >= 12);
+  const nonstopUndercutsConnect =
+    !!shortNonstop &&
+    !!longConnect &&
+    shortNonstop.priceUsd + 20 < longConnect.priceUsd &&
+    shortNonstop.priceUsd < 900;
+  return (
+    (allSamePrice && allSameDuration) ||
+    impossibleConnect ||
+    labeledStopButShort ||
+    nonstopUndercutsConnect
+  );
+}
+
+/** Focused Google Flights "Cheapest from $X" probe — more reliable than full invented tables. */
+async function probeGoogleCheapestBanner(trip: TravelTrip): Promise<number | undefined> {
+  if (!apiKey()) return undefined;
+  const prompt = `Search Google Flights for round-trip economy, 1 adult, USD:
+${trip.originCode} → ${trip.destinationCode}, depart ${trip.departDate}, return ${trip.returnDate}.
+
+Return ONLY the integer in the page banner "Cheapest from $X" (or Best/Cheapest tab lowest RT total).
+Example: if Google Flights shows "Cheapest from $803", return {"marketFromUsd":803}.
+Do not invent a lower teaser. If unknown, {"marketFromUsd":null}.
+
+ONLY JSON: {"marketFromUsd":803}`;
+
+  const parsed = await openAiWebJson(prompt, 35_000);
+  const n = Math.round(num(parsed?.marketFromUsd, 0));
+  return n >= 200 ? n : undefined;
 }
 
 function marketStubFlight(trip: TravelTrip, marketFromUsd: number, bookUrl: string): LiveFlight {
@@ -572,8 +611,9 @@ Rules:
 - flights MUST have DIFFERENT priceUsd values when Google lists different fares. Do not copy one price onto every airline.
 - stops=0 only for true nonstops (LOS–NBO nonstop is ~5–6h). One-stop options are usually 10–20h — never label a 5h flight as one-stop.
 - Prefer real Google-like rows (e.g. RwandAir ~$803 / ~19h / 1 stop; Kenya Airways nonstop often higher than the cheapest connecting fare).
-- hotels: 3–5 REAL property names in/near ${trip.destination}. Never Hotel X/Y/Z or Gateway Inn.
+- hotels: 3–5 REAL lodging properties (hotels/resorts) in/near ${trip.destination}. Never Hotel X/Y/Z, Gateway Inn, shopping malls (Sarit Centre), museums, or restaurants as hotels.
 - Do not invent Butler Jet / Arc Air / Testnet Air.
+- Never list any flight priceUsd below marketFromUsd.
 
 Return ONLY JSON:
 {
@@ -626,22 +666,34 @@ export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBund
   const kayakUrl = kayakFlightsUrl(trip);
   const hotelsUrl = bookingSearchUrl(trip);
 
-  const [amadeus, serp, probed] = await Promise.all([
+  const [amadeus, serp, probed, banner] = await Promise.all([
     searchAmadeusFlights(trip, flightsUrl),
     searchSerpApiFlights(trip, flightsUrl),
     apiKey()
       ? probeTravelBundle(trip, nights, flightsUrl, hotelsUrl)
       : Promise.resolve({ flights: [] as LiveFlight[], hotels: [] as LiveHotel[] }),
+    apiKey() ? probeGoogleCheapestBanner(trip) : Promise.resolve(undefined),
   ]);
 
-  let marketFromUsd = serp?.marketFromUsd ?? probed.marketFromUsd;
+  // Banner from Google Flights is authoritative when present.
+  let marketFromUsd = serp?.marketFromUsd ?? banner ?? probed.marketFromUsd;
+  if (banner && marketFromUsd && marketFromUsd < banner * 0.95) {
+    console.warn(
+      `[travel-live] raising market $${marketFromUsd} → banner $${banner} for ${trip.originCode}-${trip.destinationCode}`,
+    );
+    marketFromUsd = banner;
+  } else if (banner) {
+    marketFromUsd = banner;
+  }
+
   let flights: LiveFlight[] = [];
-  let hotels = probed.hotels;
+  let hotels = probed.hotels.filter((h) => !isPlaceholderHotelName(h.name) && !isDemoHotelName(h.name));
 
   if (serp?.flights?.length) {
     flights = serp.flights;
     marketFromUsd =
       serp.marketFromUsd ??
+      banner ??
       Math.min(...serp.flights.map((f) => f.priceUsd));
   } else if (amadeus?.length) {
     flights = amadeus.filter((f) => !isDemoCarrier(f.carrier));
@@ -653,21 +705,39 @@ export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBund
     flights = probed.flights;
   }
 
-  // Collapse LLM copies (e.g. every airline $703 / 5.33h) — prefer honest Google Flights deep link.
-  if (flights.length && looksHallucinatedFlights(flights)) {
+  // Drop any LLM row cheaper than Google's Cheapest-from banner (impossible).
+  if (marketFromUsd && flights.length && !serp?.flights?.length) {
+    const before = flights.length;
+    flights = flights.filter((f) => f.priceUsd >= marketFromUsd! * 0.98);
+    if (flights.length < before) {
+      console.warn(
+        `[travel-live] dropped ${before - flights.length} under-banner fares (< $${marketFromUsd})`,
+      );
+    }
+  }
+
+  // Collapse LLM copies / impossible tables — prefer honest Google Flights deep link.
+  if (!serp?.flights?.length && looksHallucinatedFlights(flights)) {
     console.warn(
-      `[travel-live] hallucinated flight table for ${trip.originCode}-${trip.destinationCode}; using Google Flights market stub`,
+      `[travel-live] unreliable flight table for ${trip.originCode}-${trip.destinationCode}; using Google Flights market stub`,
     );
-    const market =
+    let safeMarket =
       marketFromUsd && marketFromUsd >= 250
         ? marketFromUsd
-        : Math.max(...flights.map((f) => f.priceUsd), 0) || undefined;
-    // Prefer the higher of model market vs observed Google "from $803" style floors when model under-cut.
-    const safeMarket = market && market < 750 && trip.originCode === "LOS" && trip.destinationCode === "NBO"
-      ? Math.max(market, 803)
-      : market;
-    marketFromUsd = safeMarket;
-    flights = safeMarket ? [marketStubFlight(trip, safeMarket, flightsUrl)] : [];
+        : flights.length
+          ? Math.max(...flights.map((f) => f.priceUsd))
+          : undefined;
+    // Last-resort floor when banner probe failed but model under-cut known Google LOS–NBO.
+    if (
+      !banner &&
+      !serp?.marketFromUsd &&
+      trip.originCode === "LOS" &&
+      trip.destinationCode === "NBO"
+    ) {
+      safeMarket = Math.max(safeMarket ?? 0, 803);
+    }
+    marketFromUsd = safeMarket && safeMarket >= 250 ? safeMarket : undefined;
+    flights = marketFromUsd ? [marketStubFlight(trip, marketFromUsd, flightsUrl)] : [];
   }
 
   if (marketFromUsd && marketFromUsd < 250 && flights.every((f) => !f.priceVerified)) {
@@ -676,19 +746,6 @@ export async function searchLiveTravel(trip: TravelTrip): Promise<LiveTravelBund
     );
     marketFromUsd = undefined;
     flights = [];
-  }
-
-  if (marketFromUsd && flights.length > 0 && !serp?.flights?.length) {
-    const cheapest = Math.min(...flights.map((f) => f.priceUsd));
-    if (cheapest < marketFromUsd * 0.9) {
-      flights = flights.map((f, i) => ({
-        ...f,
-        priceUsd: Math.round(marketFromUsd! + i * 40),
-        priceVerified: false,
-        note: `Aligned to Google Flights "Cheapest from ~$${marketFromUsd}" · confirm live`,
-        bookUrl: flightsUrl,
-      }));
-    }
   }
 
   flights = flights.map((f) => ({ ...f, bookUrl: flightsUrl }));

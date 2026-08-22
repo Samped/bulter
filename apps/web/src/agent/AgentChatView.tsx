@@ -53,7 +53,7 @@ interface ChatMessage {
 }
 
 const STARTERS = [
-  "Research a stock and create an investment report",
+  "Research NVDA and create an investment report",
   "Plan a trip from NYC to London with flights and hotels",
   "Audit my Solidity contract for vulnerabilities",
   "Research BTC on-chain flows and DeFi exposure",

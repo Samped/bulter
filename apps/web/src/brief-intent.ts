@@ -8,6 +8,19 @@ export interface ExpressBrief {
   label: string;
 }
 
+export function isEquityInvestmentBrief(brief: string): boolean {
+  const t = brief.toLowerCase();
+  if (
+    /\b(btc|bitcoin|eth\b|ethereum|solana|\bsol\b|crypto|defi|on[- ]?chain|onchain|web3|tokenomics)\b/.test(t)
+  ) {
+    return false;
+  }
+  return (
+    /\b(stock|stocks|equity|equities|share|shares|ticker|nyse|nasdaq|s&p|earnings|sec filing)\b/.test(t) ||
+    /\b(nvda|nvidia|aapl|apple|msft|microsoft|tsla|tesla|amzn|amazon|meta|goog|google|amd|intc)\b/.test(t)
+  );
+}
+
 export function isTravelBrief(brief: string): boolean {
   const t = brief.toLowerCase();
   if (/\b(btc|bitcoin|ethereum|defi|on[- ]?chain|solidity|smart contract)\b/.test(t) && !/\b(flight|hotel|itinerary|trip to)\b/.test(t)) {
@@ -72,6 +85,9 @@ export function resolveDeepWorkRouting(brief: string): BtcPipelineRouting | null
     return { qualityTier: "standard", auctionMode: "etf", etfId: "travel-etf" };
   }
   if (wantsDeepBrief(brief)) {
+    if (isEquityInvestmentBrief(brief)) {
+      return { qualityTier: "standard", auctionMode: "etf", etfId: "nvidia-investment-report" };
+    }
     return { qualityTier: "full", auctionMode: "etf", etfId: "deep-dive-etf" };
   }
   return resolveBtcPipelineRouting(brief);

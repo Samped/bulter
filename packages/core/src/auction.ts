@@ -1,4 +1,4 @@
-import { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, isHolderInfoBrief, resolveExpressBrief, resolveExecutionShape, wantsDeepBrief } from "./brief-intent.ts";
+import { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, isHolderInfoBrief, isEquityInvestmentBrief, resolveExpressBrief, resolveExecutionShape, wantsDeepBrief } from "./brief-intent.ts";
 import { getMarketplaceAgent, listMarketplaceAgents, type AgentCreditScore } from "./agent-registry.ts";
 import { etfAgentsApproved, isAgentApproved } from "./agent-approvals.ts";
 import { buildQuote, MARKETPLACE_ETFS, pickAuctionWinner, scoreEtfForBrief, type AuctionBid, type AuctionEvent, type MarketplaceCategory, type QualityTier, type ReverseAuction } from "./marketplace.ts";
@@ -68,11 +68,12 @@ export function etfsEligibleForAuction(
   const tier = auction.qualityTier ?? "standard";
 
   if (wantsDeepBrief(auction.brief)) {
+    const equity = isEquityInvestmentBrief(auction.brief);
     return MARKETPLACE_ETFS.filter(
       (etf) =>
         etfAgentsApproved(etf.agentIds) &&
         bidWithinBudget(etf.bundlePriceUsdc, auction.maxBudgetUsdc) &&
-        etf.id === "deep-dive-etf"
+        etf.id === (equity ? "nvidia-investment-report" : "deep-dive-etf")
     );
   }
 
@@ -86,11 +87,12 @@ export function etfsEligibleForAuction(
   }
 
   if (tier === "full") {
+    const equity = isEquityInvestmentBrief(auction.brief);
     return MARKETPLACE_ETFS.filter(
       (etf) =>
         etfAgentsApproved(etf.agentIds) &&
         bidWithinBudget(etf.bundlePriceUsdc, auction.maxBudgetUsdc) &&
-        etf.id === "deep-dive-etf"
+        etf.id === (equity ? "nvidia-investment-report" : "deep-dive-etf")
     );
   }
 
@@ -473,7 +475,7 @@ export function initializeAuction(params: {
 }
 
 /** Headlines-only tasks should not run multi-agent ETF pipelines. */
-export { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, resolveExpressBrief, resolveDeepWorkRouting, resolveBtcPipelineRouting, resolveTravelPipelineRouting, isTravelBrief, wantsDeepBrief } from "./brief-intent.ts";
+export { isHeadlineOnlyBrief, isChartOnlyBrief, isOnchainOnlyBrief, isResearchLiteratureBrief, isEquityInvestmentBrief, resolveExpressBrief, resolveDeepWorkRouting, resolveBtcPipelineRouting, resolveTravelPipelineRouting, isTravelBrief, wantsDeepBrief } from "./brief-intent.ts";
 
 export function inferAuctionCategory(brief: string): MarketplaceCategory {
   const t = brief.toLowerCase();
